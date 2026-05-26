@@ -390,7 +390,7 @@ VLA가 비전 이해·의도 파악·동작 계획 전부 end-to-end 처리.
 | 모션 레이어 | DSR 좌표 제어 | RL 정책 | Doosan Python SDK |
 | ROS2 의존성 | 전체 | 전체 | 없음 |
 | unit_actions | O | O | X |
-| 모호한 명령 | Gemma4 확인 요청 | Gemma4 확인 요청 | 키워드 파서 제한 |
+| 모호한 명령 | Gemma 4 확인 요청 | Gemma 4 확인 요청 | 키워드 파서 제한 |
 | 새 공구 추가 | YAML + YOLOv8 재학습 | YAML + YOLOv8 재학습 | demo 추가 + VLA 재학습 |
 | GPU VRAM | ~5.5–7.5GB | ~6.5–8.5GB | ~5–6GB(Q4) |
 | 생산 적합성 | 높음 | 중간 | 연구용 |

@@ -24,7 +24,7 @@
 
 ## 프로젝트 개요
 
-음성 명령으로 공구함에서 공구를 꺼내 **Staging Area**에 거치하고, 반납 명령 시 슬롯에 되돌려놓는 시스템. 세 가지 제어 트랙(A: Gemma4+BT+DSR, B: Gemma4+BT+RL, C: VLA end-to-end)을 병행 구현해 Phase 7에서 비교 평가한다.
+음성 명령으로 공구함에서 공구를 꺼내 **Staging Area**에 거치하고, 반납 명령 시 슬롯에 되돌려놓는 시스템. 세 가지 제어 트랙(A: Gemma 4+BT+DSR, B: Gemma 4+BT+RL, C: VLA end-to-end)을 병행 구현해 Phase 7에서 비교 평가한다.
 
 - **하드웨어**: Doosan e0509 · RH-P12-RN · RealSense D455f · PLC
 - **개발 머신**: Vector 16 HX AI A2XWIG (주) · HP ProBook 450 G10 (보조)
@@ -201,8 +201,8 @@
 | 시나리오 | Track A | Track B | Track C |
 |----------|---------|---------|---------|
 | Fetch — 명확한 공구 명 | 기준 | vs A | vs A |
-| Fetch — 모호한 공구 명 | Gemma4 확인 | Gemma4 확인 | 키워드 파서 실패 → 거부 |
-| Fetch — 대출 중인 공구 | Gemma4 차단 | Gemma4 차단 | Python gate 차단 |
+| Fetch — 모호한 공구 명 | Gemma 4 확인 | Gemma 4 확인 | 키워드 파서 실패 → 거부 |
+| Fetch — 대출 중인 공구 | Gemma 4 차단 | Gemma 4 차단 | Python gate 차단 |
 | Return — 정확한 슬롯 반납 | 기준 | vs A | vs A |
 | FOD 알림 (분실 초과) | DB/PLC 알림 | DB/PLC 알림 | DB/PLC 알림 |
 
