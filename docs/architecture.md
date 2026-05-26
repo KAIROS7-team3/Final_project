@@ -318,12 +318,12 @@ in_slot ──[fetch]──→ out ──[place_at_staging]──→ staged
 | 시스템 상태 | 색상 | 모드 |
 |-------------|------|------|
 | 대기/준비 | 초록 | Solid |
-| STT 수음 중 | 파랑 | Pulse |
+| STT 수음 중 | 하양 | Pulse |
 | LLM/VLA 추론 중 | 노랑 | Pulse |
-| 로봇 이동 중 | 파랑 | 빠른 Pulse |
-| Staging Area 거치 중 | 청록 | Solid |
-| 반납 진행 중 | 보라 | Pulse |
-| 공구 분실/FOD | 주황 | Flash |
+| 로봇 이동 중 | 하양 | 빠른 Pulse |
+| Staging Area 거치 중 | 초록 | Solid |
+| 반납 진행 중 | 하양 | Pulse |
+| 공구 분실/FOD | 노랑 | Flash |
 | 오류 | 빨강 | Flash |
 | E-Stop 활성 | 빨강 | Solid |
 

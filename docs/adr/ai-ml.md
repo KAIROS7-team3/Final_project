@@ -43,9 +43,10 @@
 
 | # | 항목 | 결정 시점 |
 |---|------|----------|
-| 4 | Gemma 4 파인튜닝 필요 여부 | Phase 5 전 |
+| 4 | Gemma 4 파인튜닝 필요 여부 | Phase 5a 전 |
 | 5 | Track C VLA 모델 선정 (OpenVLA / π0 / 기타) | Phase 6 전 |
-| 6 | Track B RL 학습 전략 (시뮬 전용 vs Demo+RL) | Phase 5 전 |
+| 6 | Track B RL 학습 전략 (시뮬 전용 vs Demo+RL) | **Phase 0.5 종료** (Track B 시뮬 PoC) |
 | 22 | VLA 입력 형식 (단일 프레임 vs 시퀀스) | 모델 선정 후 (#5) |
-| 23 | Track B RL 시뮬레이션 환경 (Isaac Sim vs MuJoCo) | Phase 5 전 |
-| 24 | RL 학습 Sim-to-real 전략 | Phase 5 전 |
+| 23 | Track B RL 시뮬레이션 환경 (Isaac Sim vs MuJoCo) | **Phase 0.5 종료** (Track B 시뮬 PoC) |
+| 24 | RL 학습 Sim-to-real 전략 | **Phase 0.5 종료** (Track B 시뮬 PoC) |
+| 35 | Omniverse Replicator 합성 데이터 도입 여부 (RL·VLA·YOLOv8 학습) | **Phase 0.5 종료** (#23에서 Isaac Sim 채택 시) |

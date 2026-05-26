@@ -1,7 +1,8 @@
 # Track C VLA — Demonstration 수집 워크플로우
 
 > Track C VLA 모델 파인튜닝용 demonstration 데이터를 수집하는 전체 절차.
-> Phase 5 종료 ~ Phase 6 시작 사이에 수행. 약 **900 demo / 7.5h 순수 녹화 / 20h+ 실패 포함**.
+> **본격 수집**: Phase 4 안정화 후(G4 통과 후) 시작. 옵션 A(Track A 활용)는 Phase 5a 종료 후 가능, 옵션 B/C는 Phase 4 종료 후 즉시 가능.
+> 약 **900 demo / 7.5h 순수 녹화 / 20h+ 실패 포함**.
 > 참조: `docs/adr/ai-ml.md` ADR-004, 미결 #5 (VLA 모델 선정), `.claude/skills/demo-collection.md`
 
 ---
@@ -42,7 +43,7 @@
 
 | 방식 | 설명 | 장점 | 단점 |
 |------|------|------|------|
-| **A. Track A 활용** | Track A(BT+DSR)로 자동 실행, 결과 녹화 | 자동화 가능, 일관된 품질 | Track A 코드 완성 의존 (Phase 5 후) |
+| **A. Track A 활용** | Track A(BT+DSR)로 자동 실행, 결과 녹화 | 자동화 가능, 일관된 품질 | Track A 코드 완성 의존 (Phase 5a 후) |
 | **B. Kinesthetic teaching** | 로봇 free-drive 모드 → 사람이 직접 움직임 | 코드 의존 없음, 다양한 trajectory | 운영자 부담, e0509 free-drive 학습 필요 |
 | **C. Teleoperation** | 조이스틱/SpaceMouse로 원격 조작 | 안전, 다양성 | 입력 장치 + 매핑 코드 필요 |
 
@@ -181,9 +182,9 @@ data/track_c_demos/
 
 | 스크립트 | 역할 | 작성 시점 |
 |----------|------|----------|
-| `scripts/record_demo.py` | 1회 demo 녹화 (모든 채널 동기) | Phase 5 종료 |
-| `scripts/list_demos.py` | manifest.jsonl 조회·필터 | Phase 5 종료 |
-| `scripts/validate_demo.py` | §6.1 demo 단위 검증 | Phase 5 종료 |
+| `scripts/record_demo.py` | 1회 demo 녹화 (모든 채널 동기) | Phase 4 종료 |
+| `scripts/list_demos.py` | manifest.jsonl 조회·필터 | Phase 4 종료 |
+| `scripts/validate_demo.py` | §6.1 demo 단위 검증 | Phase 4 종료 |
 | `scripts/build_dataset.py` | manifest → 학습용 split (HF Dataset / RLDS 형식) | Phase 6 시작 |
 | `scripts/replay_demo.py` | 녹화된 trajectory를 시뮬레이션에서 재생 (검증용) | Phase 6 시작 |
 

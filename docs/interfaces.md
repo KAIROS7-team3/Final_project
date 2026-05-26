@@ -52,7 +52,7 @@
 
 | 필드 | 타입 | 의미 |
 |------|------|------|
-| `led_color` | `string` | `green` \| `blue` \| `yellow` \| `cyan` \| `purple` \| `orange` \| `red` |
+| `led_color` | `string` | `green` \| `yellow` \| `red` \| `white` |
 | `led_mode` | `string` | `solid` \| `pulse` \| `flash` |
 | `system_state` | `string` | `idle` \| `listening` \| `inferring` \| `moving` \| `error` \| `e_stop` |
 

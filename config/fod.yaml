@@ -11,7 +11,7 @@ schema:
 # 결정 #8: 기본 10분, 운영 상황에 따라 조정 가능
 checkout_timeout_minutes: 10
 
-# missing 전환 후 fod_alert (PLC 주황 점멸)까지 유예 시간 (S-8)
+# missing 전환 후 fod_alert (PLC 노랑 점멸)까지 유예 시간 (S-8)
 # 수락 기준: FOD 알림이 공구 분실 후 30초 이내 (docs/conventions.md)
 missing_to_alert_seconds: 30
 
@@ -27,10 +27,10 @@ boot_reconciliation:
 
 # 운영자 알림 정책 (결정 #28: v1.0은 PLC LED만 사용)
 alert:
-  plc_color: orange
+  plc_color: yellow
   plc_mode: flash                      # PLC LED enum: solid | pulse | flash
   require_operator_ack: true           # ack 전까지 새 fetch 거부
 
 # 미해결: missing → fod_alert 후 자동 복구 정책
 # 운영자가 공구를 슬롯에 다시 넣으면 자동으로 in_slot 복구할지,
-# 운영자 명시적 ack를 요구할지 → Phase 5 결정 필요
+# 운영자 명시적 ack를 요구할지 → Phase 5a 결정 필요

@@ -30,12 +30,11 @@ when_to_use: >
 from enum import IntEnum
 
 class LEDState(IntEnum):
-    OFF       = 0   # 꺼짐 (공구 제자리 있음, 대기)
-    GREEN     = 1   # 녹색 — fetch 대상 (현재 요청된 공구)
-    YELLOW    = 2   # 황색 — staged (Staging Area에 있음)
-    RED       = 3   # 적색 — missing / FOD alert
-    BLINK_GREEN = 4 # 녹색 깜빡 — return 유도
-    BLINK_RED   = 5 # 적색 깜빡 — FOD 경고
+    OFF    = 0  # 꺼짐 (공구 제자리, 대기)
+    GREEN  = 1  # 초록 — fetch 대상 / 거치 완료
+    YELLOW = 2  # 노랑 — staged / FOD 경고
+    RED    = 3  # 빨강 — missing / 오류 / E-Stop
+    WHITE  = 4  # 하양 — 이동 중 / STT 수음 / 추론 중
 
 # 공구 슬롯 → Modbus 주소 매핑
 # config/plc.yaml에서 로드 (하드코딩 금지)
@@ -260,8 +259,8 @@ def on_return_complete(tool_id: str, plc: PLCClient):
     plc.set_led(tool_id, LEDState.OFF)
 
 def on_fod_alert(tool_id: str, plc: PLCClient):
-    # FOD 경고 → 적색 깜빡
-    plc.set_led(tool_id, LEDState.BLINK_RED)
+    # FOD 경고 → 노랑 Flash
+    plc.set_led(tool_id, LEDState.YELLOW)
 ```
 
 ## 8. 연결 관리 (Context Manager)

@@ -16,6 +16,8 @@
 | world 파일 | `simulation/worlds/toolbox_scene.world` |
 | `use_sim_time` | **true** (시뮬레이션 실행 시 항상) |
 
+> **확장 가능성 (미결 #23, #35)**: Track B RL 학습 환경으로 Isaac Sim 채택 시, **Omniverse Replicator** 기반 합성 데이터(도메인 랜덤화·자동 라벨링)를 RL·VLA fine-tuning·YOLOv8 학습에 도입할 수 있다. 이 경우 Gazebo는 BT 골든 파일 회귀 전용으로 유지하고, Isaac Sim은 학습용 별도 트랙으로 운영한다.
+
 ---
 
 ## 2. 실행 명령
@@ -123,7 +125,7 @@ orchestrator/tests/bt_regression/
 | Fetch — `in_slot` 공구 | Staging Area 거치 완료, DB `staged` 갱신, PLC 초록 |
 | Fetch — `out` 공구 | 명령 차단, DB `rejected` 기록 |
 | Return — `staged` 공구 | 슬롯 반납 완료, DB `in_slot` 갱신 |
-| FOD 타임아웃 | 10분 후 `fod_alert` 전이, PLC 주황 점멸 |
+| FOD 타임아웃 | 10분 후 `fod_alert` 전이, PLC 노랑 점멸 |
 | BT 에러 복구 | 그리퍼 실패 → 복구 서브트리 실행 → 홈 복귀 |
 
 ### 수락 기준 (시뮬레이션)

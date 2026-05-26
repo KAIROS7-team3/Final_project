@@ -44,6 +44,18 @@
 
 > 3명일 경우: 인프라+퍼셉션 / 음성LLM+TrackC / 제어A+B 통합.
 
+### 확정된 5명 분배 (v1.0)
+
+| 담당자 | 패키지 / 모듈 | 비고 |
+|--------|---------------|------|
+| **A** | `db`, `plc`, `voice` (Whisper + Gemma 4) | 음성과 DB/PLC를 단일 담당 |
+| **B** | `motion` (DSR + RL), Isaac Sim/Lab | Track A/B 모션 + RL 시뮬 환경 |
+| **C** | `vision` (YOLOv8, Pose, Tracker) | 데이터셋 수집·학습 포함 |
+| **D** | `orchestrator` (BT), `interfaces`, **공통 인프라** | Docker, CI, CycloneDDS, systemd, HAL 스켈레톤, unit_actions/ 시그니처 동결 책임 |
+| **E** | Track C VLA 전체 (`track_c_vla.py`, demo 수집, fine-tuning) | Phase 4 안정화 후 본격 수집 |
+
+> **공통 인프라 책임**: D가 단일 책임자(설계 결정). Phase 0 ① interfaces / ③ unit_actions 동결 + Docker / CI / CycloneDDS / systemd / 통합 launch 구성을 모두 D가 주관. HAL 인터페이스 서명은 D가 정의, 구현은 B가 모션 드라이버 작업과 함께 채움.
+
 ---
 
 ## 개발 단계
@@ -89,6 +101,19 @@
 ./run.sh --track C   # ROS2 완전 종료 확인 후 track_c_vla.py 시작
 ```
 
+### Phase 0.5: Track B 시뮬 환경 PoC (2주, Phase 0과 일부 병행)
+
+> **목적**: Phase 5b 진입 전에 RL 학습 미결 사항을 조기 해소. 담당: B.
+> **종료 조건**: 아래 4개 미결 사항 결정 + ADR 작성 + Phase 5b 진입 가능 판정.
+
+- [ ] **#23 결정**: Isaac Sim vs MuJoCo — Doosan e0509 URDF 임포트 PoC + 학습 throughput 비교
+- [ ] **#24 결정**: Sim-to-real 전략 — domain randomization / system identification / DR+SI 하이브리드 중 선택
+- [ ] **#6 결정**: RL 학습 전략 — 시뮬 전용 vs Demo+RL (BC 사전학습 + RL fine-tuning)
+- [ ] **#35 결정**: Omniverse Replicator 도입 여부 — #23에서 Isaac Sim 채택 시에만 평가
+- [ ] PoC 결과 → 4개 ADR 작성 (`docs/adr/ai-ml.md` 갱신) + `docs/simulation.md` Isaac Sim 트랙 항목 확정
+
+> **위험 완화**: 4개 미결 사항 중 하나라도 Phase 5b 진입 시점까지 미결정이면 Phase 5b 작업 중단 — Phase 5a (Track A)만 진행.
+
 ### Phase 1: 하드웨어 드라이버 (2–3주)
 
 - [ ] doosan-robot2 드라이버 bring-up + 관절 상태 검증
@@ -121,25 +146,38 @@
 - [ ] 예외 케이스: 파지 실패, Staging Area 장애물, 공구 낙하
 - [ ] Staging Area 주기 vision 확인 (idle 시 YOLOv8 → DB 갱신)
 
-### Phase 5: Track A/B — Gemma 4 + Behavior Tree (6–10주)
+### Phase 5a: Track A — Gemma 4 + BT + DSR (6–8주)
 
-**Gemma 4 의도 노드:**
+> Phase 4 안정화 후 시작. 담당: A(Gemma 4) + D(BT) + B(DSR). Track B와 무관하게 독립 진행.
+
+**Gemma 4 의도 노드 (담당: A):**
 - [ ] 로컬 Gemma 4 추론 설정
 - [ ] 시스템 프롬프트: 의도 분류 + 공구 ID 해석
 - [ ] DB 가용성 확인 연동
-- [ ] 불가 명령: 운영자 안내 + DB 로그 + PLC 주황 점멸
+- [ ] 불가 명령: 운영자 안내 + DB 로그 + PLC 노랑 점멸
 
-**Behavior Tree:**
+**Behavior Tree (담당: D):**
 - [ ] FetchTool / ReturnTool 서브트리
 - [ ] 에러 복구 서브트리
 - [ ] Blackboard 스키마: `{active_tool_id, tool_pose, staging_state, intent}`
 
-**모션:**
+**모션 (담당: B):**
 - [ ] Track A: DSRArmDriver → unit_action_server
-- [ ] Track B: RL 학습 (Isaac Sim / MuJoCo) + 정책 배포 노드
 
-### Phase 6: Track C — VLA (약 10–18주, Phase 0③ 완료 후 즉시 시작)
+### Phase 5b: Track B — RL 정책 + 정책 배포 (6–10주, Phase 0.5 통과 시에만)
 
+> **진입 조건**: Phase 0.5에서 #6/#23/#24/#35 모두 결정 완료 + Track A 5a 진행 중.
+> Phase 0.5 미통과 시 본 단계 생략 — Track A 단독 진행.
+
+- [ ] Track B: RL 학습 (Phase 0.5에서 결정된 시뮬 환경에서 진행)
+- [ ] Isaac Sim 채택 시 **Omniverse Replicator** 기반 합성 데이터 파이프라인 구축 (#35 채택 시)
+- [ ] 정책 배포 노드 (RLPolicyDriver → unit_action_server)
+- [ ] Sim-to-real 적용 (#24 결정 전략 따라)
+
+### Phase 6: Track C — VLA (약 10–18주, Phase 4 안정화 후 본격 시작)
+
+> **시작 시점**: Phase 0③ 완료 시점부터 환경/모델 선정 작업은 가능하나, **demonstration 본격 수집은 Phase 4 (Staging Area 동작) 안정화 후**.
+> 이유: VLA demo는 fetch+return 전 사이클 녹화 → Staging Area 거치 동작이 검증되어야 의미 있는 데이터 확보.
 > VRAM 제약으로 fine-tuning은 클라우드(Lambda Labs, Vast.ai 등) 필요. Phase 0 초기에 환경 확정.
 
 **Phase 6a: Demonstration 수집 + Fine-tuning (4–8주)**
@@ -184,6 +222,34 @@
 - [ ] Docker Compose: STT / 퍼셉션 / Gemma 4 / VLA / 제어 / DB / PLC
 - [ ] ROS2 bag + DB 감사 로그 전 세션 보관
 - [ ] HP ProBook: rqt 모니터링 대시보드 + DB 뷰어 + PLC 상태 패널
+
+---
+
+## 마일스톤 게이트 (Phase 진입 조건)
+
+> 각 Phase는 이전 Phase의 **게이트 조건을 모두 만족**해야 진입한다. 게이트 미통과 시 후속 Phase 작업 금지 — 게이트 해소 작업이 우선.
+> 게이트 판정은 주간 통합 회의에서 합의. 미통과 시 issue 생성 + 다음 회의까지 해소 책임자 명시.
+
+| 게이트 | 진입 대상 | 조건 | 판정 책임 |
+|--------|-----------|------|-----------|
+| **G0 → 1** | Phase 1 | `interfaces` 동결 완료 + `unit_actions/` 시그니처 동결 + `interfaces/CHANGELOG.md` 생성 + Docker 빌드 통과 | D |
+| **G0.5 → 5b** | Phase 5b | 미결 #6/#23/#24/#35 모두 ADR 작성 완료 + `docs/simulation.md` Isaac Sim 트랙 항목 확정 | B + 팀 합의 |
+| **G1 → 2** | Phase 2 | 4종 드라이버(arm/gripper/camera/plc) bring-up 검증 + hand-eye 캘리브레이션 RMSE ≤ 5mm | B, C, A |
+| **G2 → 3** | Phase 3 | Whisper STT 9종 키워드 인식률 ≥ 95% + YOLOv8 9종 mAP ≥ 0.85 + 슬롯 보정 ±5mm | A, C |
+| **G3 → 4** | Phase 4 | `CheckToolFeasibility` 9종 정상 응답 + FOD 시뮬 타임아웃 동작 + PLC 4색 점등 검증 | A |
+| **G4 → 5a** | Phase 5a | Staging Area 거치 9종 × 3 사이클 전 통과 + 거치 오차 ±5mm + 예외 케이스 3종 복구 | D + B, C |
+| **G4 → 6** | Phase 6 본격 수집 | G4 동일 + 9종 fetch+return 단일 사이클 시뮬레이션 검증 | E |
+| **G5a → 7** | Phase 7 Track A 평가 | Track A 9종 × 3 사이클 fetch+return 100% 성공 (HIL) | D + B |
+| **G5b → 7** | Phase 7 Track B 평가 | Track B 9종 × 3 사이클 fetch+return 100% 성공 (HIL) + sim-to-real gap 측정 | B |
+| **G6 → 7** | Phase 7 Track C 평가 | Track C 9종 × 3 사이클 100% 성공 + SafetyValidator 통과 100% | E |
+| **G7 → 9** | Phase 9 배포 | 3 트랙 비교표 작성 완료 + 회귀 테스트 자동화 통과 | 팀 합의 |
+
+### 게이트 운영 규칙
+
+- **G0.5 미통과**: Phase 5b(Track B) 작업 금지. Track A만 진행. Phase 7도 Track A/C 2-way 비교로 축소.
+- **G2 미통과**: Phase 3 시작 보류. 인식률 미달 시 데이터셋 보강 → 재학습 → 재판정.
+- **G4 미통과**: Phase 5a/5b/6 모두 보류. Staging Area는 모든 트랙의 공통 의존성.
+- **게이트 통과는 영구적이지 않다**: 후속 Phase에서 회귀 발생 시 해당 게이트 재검증 필요.
 
 ---
 
