@@ -57,7 +57,7 @@
 | 13 | Staging Area 거치 후 로봇 동작 | 홈 복귀 + LED 초록 |
 | 14 | Track A vs B 병행 여부 | 둘 다 개발 |
 | 15 | GPU VRAM 전략 | 트랙 하나씩 전환 (→ ADR-011) |
-| 16 | 팀 구성 | 3–5명, docs/architecture.md §12 참조 |
+| 16 | 팀 구성 | 3–5명, `robot-arm-project.md` "팀 구성 권장안" 참조 |
 | 17 | Track C 그리퍼 제어 | VLA 출력에 gripper command 포함 |
 | 18 | Staging Area 복수 슬롯 | 공구별 지정 슬롯 (`config/staging_area.yaml`) |
 | 19 | 동작 중 음성 명령 | 이동 중 무시, 홈 복귀 후 수신 재개 |

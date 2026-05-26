@@ -28,12 +28,11 @@ when_to_use: >
 ```
 config/
 ├── staging_area.yaml    # 공구별 Staging Area 좌표
-├── toolbox.yaml         # 슬롯 좌표 + 공구 기하
-├── hand_eye.yaml        # 카메라-엔드이펙터 변환
+├── toolbox.yaml         # 슬롯 좌표 + 공구 기하 + 공구 클래스
+├── hand_eye.yaml        # 카메라-엔드이펙터 변환 (gitignored, 장비별 로컬)
 ├── robot_poses.yaml     # home, scan 포즈
 ├── fod.yaml             # FOD 임계 시간 등 운영 파라미터
-├── workspace.yaml       # 작업공간 경계
-└── tools.yaml           # 공구 클래스 정의
+└── runtime.yaml         # 비-시크릿 런타임 상수 (robot_model, whisper_model_size, operator_id)
 
 .env                     # 시크릿 (gitignored)
 .env.example             # 변수 이름만 (git 포함)

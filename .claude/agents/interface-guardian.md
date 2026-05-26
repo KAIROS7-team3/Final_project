@@ -22,7 +22,7 @@ Three control tracks share these boundaries (changes require team consensus):
 |-------|-----------|-------------|
 | `interfaces/` (ROS2 msg/srv/action) | Track A/B only | Phase 0 ① complete |
 | `unit_actions/` function signatures | Track A/B only | Phase 0 ③ complete |
-| `hal/` interface (ArmInterface, GripperInterface, FTSensorInterface) | Track A/B only | Phase 0 ② complete |
+| `hal/` interface (ArmInterface, GripperInterface, CameraInterface) | Track A/B only | Phase 0 ② complete |
 | `db_core/` DBClient API | All three tracks | Phase 0 complete |
 | `plc_core/` PLCClient API | All three tracks | Phase 0 complete |
 | `config/` YAML schemas | All three tracks | Phase 0 complete |

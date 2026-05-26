@@ -31,7 +31,7 @@
 
 ### 공구 목록
 
-9종 (드라이버 3 · 렌치 3 · 플라이어 3). `config/tools.yaml`로 관리.
+9종 (드라이버 3 · 렌치 3 · 플라이어 3). `config/toolbox.yaml`로 관리 (슬롯 좌표 + 공구 기하 동일 파일).
 
 ---
 
@@ -274,33 +274,16 @@ Robot state → Doosan SDK   → joint state
 
 ## 9. DB 스키마
 
-```sql
-CREATE TABLE tools (
-    tool_id     TEXT PRIMARY KEY,
-    label       TEXT,
-    slot_row    INT,
-    slot_col    INT,
-    grasp_axis  TEXT   -- 'shaft' | 'handle'
-);
+> 상세 컬럼 정의·제약·인덱스·트리거는 [`db-schema.md`](db-schema.md)가 단일 진실. 여기서는 트랙 무관 동작 규칙만 정리.
 
-CREATE TABLE tool_status (
-    tool_id           TEXT PRIMARY KEY REFERENCES tools(tool_id),
-    status            TEXT,  -- 'in_slot'|'out'|'staged'|'missing'|'fod_alert'
-    status_changed_at REAL,
-    last_verified_at  REAL
-);
+핵심 테이블:
 
-CREATE TABLE tool_events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    tool_id     TEXT,
-    event_type  TEXT,  -- 'fetch'|'placed_at_staging'|'picked_from_staging'
-                       -- |'return'|'missing'|'fod_alert'|'rejected'|'error'
-    operator_id TEXT,  -- v1.0: 고정 'operator_01'
-    timestamp   REAL,
-    track       TEXT,  -- 'A'|'B'|'C'
-    notes       TEXT
-);
-```
+| 테이블 | 역할 |
+|--------|------|
+| `tools` | 공구 카탈로그 + 현재 상태 (`current_status`, `home_slot_row/col`) |
+| `tool_events` | 모든 이벤트의 append-only 로그 (`fetch`, `placed_at_staging`, `picked_from_staging`, `return`, `missing`, `fod_alert`, `rejected`, `error`) |
+| `operators` | 운영자 카탈로그 (v1.0: 단일 row `operator_01`) |
+| `system_events` | 부팅·reconciliation·E-stop 등 시스템 이벤트 |
 
 ### DB 기반 명령 차단 (전 트랙 공통)
 

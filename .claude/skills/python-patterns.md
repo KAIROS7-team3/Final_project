@@ -138,7 +138,7 @@ logger.info("[grasp] tool_id=%s pose=(%.3f, %.3f, %.3f)" % (tool_id, x, y, z))
 
 ```python
 # ✅ context manager로 자원 정리 보장
-with open("config/tools.yaml") as f:
+with open("config/toolbox.yaml") as f:
     tools = yaml.safe_load(f)
 
 # 커스텀 context manager
@@ -207,7 +207,7 @@ asyncio.run(main())
 from pathlib import Path
 
 config_dir = Path(__file__).parent.parent / "config"
-tools_file = config_dir / "tools.yaml"
+tools_file = config_dir / "toolbox.yaml"
 
 if tools_file.exists():
     text = tools_file.read_text()

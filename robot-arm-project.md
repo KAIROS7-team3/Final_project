@@ -57,7 +57,7 @@
 - [ ] interfaces 동결 선언 — 이후 변경은 팀 합의 + `interfaces/CHANGELOG.md` 갱신 필수
 
 **② HAL 인터페이스 정의**
-- [ ] HAL 스텁: `SimulatedArm`, `SimulatedGripper`, `SimulatedFTSensor`, `SimulatedCamera`
+- [ ] HAL 스텁: `SimulatedArm`, `SimulatedGripper`, `SimulatedCamera` (F/T 센서는 v1.0 미사용 — ADR #1)
 - [ ] HAL 인터페이스 서명 동결
 
 **③ unit_actions/ 인터페이스 정의**

@@ -73,7 +73,7 @@ Node(
 | 요소 | 설명 |
 |------|------|
 | 공구함 모델 | 9종 슬롯 배치, 실제 치수 기반 |
-| 공구 모델 | 9종 (`config/tools.yaml` 기하 참조) |
+| 공구 모델 | 9종 (`config/toolbox.yaml` 기하 참조) |
 | 조명 | 실험실 실내 조명 시뮬레이션 |
 | Staging Area | 거치대 모델 포함 |
 | 카메라 위치 | `config/hand_eye.yaml` 기준 고정 마운트 재현 |
