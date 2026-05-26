@@ -1,0 +1,36 @@
+# FOD (Foreign Object Detection) — 공구 분실 감지 운영 파라미터
+#
+# 참조: .claude/rules/safety.md S-8, docs/decisions.md ADR / 결정 #8
+
+schema:
+  version: 1
+  required: [checkout_timeout_minutes, alert_grace_seconds]
+  optional: [staging_recheck_interval_seconds, missing_to_alert_seconds]
+
+# 공구 대출 임계 시간 — 이 시간을 넘기면 missing 상태로 자동 전환 (S-8)
+# 결정 #8: 기본 10분, 운영 상황에 따라 조정 가능
+checkout_timeout_minutes: 10
+
+# missing 전환 후 fod_alert (PLC 주황 점멸)까지 유예 시간 (S-8)
+# 수락 기준: FOD 알림이 공구 분실 후 30초 이내 (docs/conventions.md)
+missing_to_alert_seconds: 30
+
+# Staging Area 무단 회수 감지 (결정 #26)
+# idle 상태에서 주기적으로 YOLOv8로 staging 슬롯 확인
+staging_recheck_interval_seconds: 60
+
+# 부팅 시 reconciliation (S-9)
+boot_reconciliation:
+  enabled: true
+  scan_pose: scan_toolbox              # robot_poses.yaml 키
+  detection_confidence_threshold: 0.85 # YOLOv8 confidence
+
+# 운영자 알림 정책 (결정 #28: v1.0은 PLC LED만 사용)
+alert:
+  plc_color: orange
+  plc_mode: flash                      # PLC LED enum: solid | pulse | flash
+  require_operator_ack: true           # ack 전까지 새 fetch 거부
+
+# 미해결: missing → fod_alert 후 자동 복구 정책
+# 운영자가 공구를 슬롯에 다시 넣으면 자동으로 in_slot 복구할지,
+# 운영자 명시적 ack를 요구할지 → Phase 5 결정 필요

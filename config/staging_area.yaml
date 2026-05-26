@@ -1,0 +1,38 @@
+# 공구별 Staging Area 거치 좌표
+#
+# 운영자가 공구를 집어가기 쉬운 위치. 공구마다 별도 슬롯 사용 (결정 #18).
+# 좌표계: robot_base_link (REP-103, x: forward, y: left, z: up)
+# 단위: meters, 각도는 quaternion (x, y, z, w) — E-1 준수
+# 참조: docs/architecture.md, docs/frames.md, .claude/rules/engineering.md E-1/E-4
+
+schema:
+  version: 1
+  required_fields: [tool_id, position, orientation]
+  optional_fields: [approach_offset_z, notes]
+
+defaults:
+  # 거치 시 위쪽에서 접근할 때의 오프셋 (안전 진입 거리)
+  approach_offset_z: 0.10  # 100mm 위에서 진입
+
+staging_slots:
+  # ⚠️ Phase 0 ② hand-eye 캘리브레이션 후 실제 값 확정. 아래는 스키마 예시.
+
+  - tool_id: screwdriver_phillips_small
+    position: { x: 0.450, y: 0.250, z: 0.150 }
+    orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
+    notes: "TBD — 캘리브레이션 후 측정"
+
+  - tool_id: screwdriver_flat_small
+    position: { x: 0.450, y: 0.300, z: 0.150 }
+    orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
+    notes: "TBD"
+
+  - tool_id: wrench_8mm
+    position: { x: 0.450, y: 0.350, z: 0.150 }
+    orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
+    notes: "TBD"
+
+  # ... 총 9종 공구 (전체 목록은 toolbox.yaml 참조)
+
+# 수락 기준 (docs/conventions.md):
+# - Staging Area 거치 성공률 ≥ 98% (지정 좌표 ±5mm)

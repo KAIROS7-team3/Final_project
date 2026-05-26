@@ -1,0 +1,14 @@
+# 운영 시 사용하는 비-시크릿 상수
+# 환경별로 다른 값(IP·시리얼·토큰)은 .env, 시크릿도 .env 사용 (P-3)
+
+hardware:
+  # Doosan e0509 협동 로봇 (URDF/드라이버 선택용)
+  robot_model: e0509
+
+voice:
+  # Whisper STT 모델 크기 — 결정 #21 (small, 결과 불량 시 medium 업그레이드)
+  whisper_model_size: small
+
+operator:
+  # v1.0 고정값 — 결정 #20
+  default_id: operator_01

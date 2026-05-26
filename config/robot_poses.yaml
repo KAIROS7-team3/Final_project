@@ -1,0 +1,40 @@
+# 사전 정의 로봇 포즈
+#
+# 단위: joint 각도는 rad (E-1), Cartesian은 m + quaternion
+# 좌표계: robot_base_link (REP-103)
+# 로봇: Doosan e0509 (6-DOF) — joint 순서 [j1, j2, j3, j4, j5, j6]
+# 참조: docs/hardware.md, .claude/rules/engineering.md E-1
+
+schema:
+  version: 1
+  joint_count: 6
+  joint_order: ["j1", "j2", "j3", "j4", "j5", "j6"]
+  joint_unit: rad
+
+# ⚠️ Phase 0 ② 실기 측정 후 확정. 아래는 e0509 일반적인 시작점 예시.
+
+poses:
+  # 홈 포즈 — 명령 대기 상태, 운영자 시야 방해 안 함, 카메라가 공구함 향함
+  home:
+    joints: [0.0, -0.524, 1.571, 0.0, 1.571, 0.0]   # [0°, -30°, 90°, 0°, 90°, 0°]
+    description: "대기 자세. 동작 종료 후 자동 복귀 (결정 #13, S-7)."
+
+  # 공구함 전체 스캔 포즈 — 부팅 시 reconciliation (S-9)
+  scan_toolbox:
+    joints: [0.0, -0.349, 1.222, 0.0, 1.396, 0.0]   # [0°, -20°, 70°, 0°, 80°, 0°]
+    description: "공구함 전체가 카메라 시야에 들어오는 포즈. 부팅 시 YOLOv8 스캔."
+
+  # Staging Area 전체 스캔 포즈 — 무단 회수 감지 (결정 #26)
+  scan_staging:
+    joints: [1.571, -0.349, 1.222, 0.0, 1.396, 0.0]  # [90°, -20°, 70°, 0°, 80°, 0°]
+    description: "Staging Area 전체가 시야에 들어오는 포즈. idle 시 주기적 확인."
+
+  # 캘리브레이션 시작 포즈
+  calibration_start:
+    joints: [0.0, -0.785, 1.571, 0.0, 0.785, 0.0]   # [0°, -45°, 90°, 0°, 45°, 0°]
+    description: "Hand-eye 캘리브레이션 첫 포즈. 이후 자동으로 다양한 자세 순회."
+
+# 안전 제약 (safety.md S-5):
+# - 모든 포즈는 e0509 operational range 내
+# - 소프트 리밋이 하드웨어 리밋보다 항상 좁아야 함
+# - 새 포즈 추가 시 safety-reviewer 검토 필수

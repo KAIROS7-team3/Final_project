@@ -1,0 +1,62 @@
+# 공구함 슬롯 좌표 + 공구 기하 정보
+#
+# 부팅 시 YOLOv8 reconciliation (S-9), 슬롯 반납 동작에서 사용.
+# 좌표계: robot_base_link (REP-103)
+# 단위: meters, 각도 rad/quaternion — E-1 준수
+# 참조: docs/architecture.md, docs/frames.md, .claude/rules/safety.md S-9
+
+schema:
+  version: 1
+  toolbox:
+    required: [origin, slot_size, grid_rows, grid_cols, orientation]
+  tools:
+    required: [tool_id, slot_row, slot_col, dimensions]
+    optional: [mass_kg, grasp_approach, notes]
+
+# 공구함 자체 위치/크기 (운영자가 공구함을 옮기면 이 값만 갱신)
+toolbox:
+  origin: { x: 0.300, y: -0.200, z: 0.050 }   # 슬롯 (0,0)의 좌상단 모서리
+  orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
+  slot_size: { x: 0.060, y: 0.060 }            # 슬롯 한 칸의 가로/세로
+  grid_rows: 3
+  grid_cols: 3
+  slot_depth_z: 0.040                          # 공구가 슬롯에 들어간 깊이
+
+# 9종 공구 카탈로그 (수락 기준: 분류 정확도 ≥ 95%)
+# ⚠️ Phase 0 ② 캘리브레이션 + 실제 공구 측정 후 값 확정. 아래는 스키마 예시.
+tools:
+  - tool_id: screwdriver_phillips_small
+    slot_row: 0
+    slot_col: 0
+    dimensions: { length: 0.180, diameter: 0.020 }   # m
+    mass_kg: 0.080
+    grasp_approach: top                              # top | side | front
+    notes: "TBD"
+
+  - tool_id: screwdriver_flat_small
+    slot_row: 0
+    slot_col: 1
+    dimensions: { length: 0.180, diameter: 0.020 }
+    mass_kg: 0.080
+    grasp_approach: top
+    notes: "TBD"
+
+  - tool_id: wrench_8mm
+    slot_row: 0
+    slot_col: 2
+    dimensions: { length: 0.140, diameter: 0.015 }
+    mass_kg: 0.060
+    grasp_approach: top
+    notes: "TBD"
+
+  # TODO: 나머지 6종 공구 추가 (총 9종)
+  # - allen_key_4mm
+  # - allen_key_5mm
+  # - pliers_needle_nose
+  # - cutter_diagonal
+  # - hammer_small
+  # - tape_measure_3m
+
+# 수락 기준 (docs/conventions.md):
+# - 공구 분류 정확도 ≥ 95% (실험실 조명)
+# - 슬롯 반납 오차 ≤ 5mm

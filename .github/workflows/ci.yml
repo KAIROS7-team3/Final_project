@@ -1,0 +1,125 @@
+# CI 파이프라인
+#
+# 코드 구현(Phase 0 ①) 시작 후 각 단계를 활성화한다.
+# 현재는 구조 스켈레톤 — TODO 주석 위치에서 실제 명령으로 교체.
+#
+# 참조: .claude/rules/process.md P-1 (테스트 요구사항)
+
+name: CI
+
+on:
+  push:
+    branches: [ main, "feat/**", "fix/**", "safety/**" ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  # ── 1. 린트 ──────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      # TODO(Phase 0 ①): 실제 소스 경로 추가
+      - name: Run ruff
+        run: |
+          echo "TODO: ruff check <src_dirs>"
+          # ruff check db_core/ plc_core/ unit_actions/ track_c_vla.py
+
+  # ── 2. rclpy import 금지 검사 (E-2) ────────────────────────
+  check-rclpy-import:
+    name: Check rclpy import boundary
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # db_core/, plc_core/, unit_actions/, track_c_vla.py에 rclpy import 없어야 함
+      - name: Assert no rclpy in pure modules
+        run: |
+          if grep -r 'import rclpy' db_core/ plc_core/ unit_actions/ track_c_vla.py 2>/dev/null; then
+            echo "❌ rclpy import 금지 위반 (E-2)"
+            exit 1
+          fi
+          echo "✅ rclpy import boundary OK"
+
+  # ── 3. 단위 테스트 ──────────────────────────────────────────
+  unit-test:
+    name: Unit tests
+    runs-on: ubuntu-22.04
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # TODO(Phase 1+): 의존성 파일 추가 후 활성화
+      - name: Install dependencies
+        run: |
+          echo "TODO: pip install -r requirements.txt"
+
+      # TODO(Phase 1+): 테스트 경로 추가
+      - name: Run pytest
+        run: |
+          echo "TODO: python -m pytest db_core/tests/ plc_core/tests/ unit_actions/tests/ -v"
+
+  # ── 4. 안전 회귀 테스트 (P-1 안전 모듈 100% 커버) ────────────
+  safety-regression:
+    name: Safety regression
+    runs-on: ubuntu-22.04
+    needs: unit-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # TODO(Phase 5+): SafetyValidator 구현 후 활성화
+      - name: Run safety tests
+        run: |
+          echo "TODO: python -m pytest tests/safety/ -v --cov=safety --cov-fail-under=100"
+
+  # ── 5. config YAML 검증 ──────────────────────────────────────
+  validate-config:
+    name: Validate config YAML
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint YAML files
+        run: yamllint config/
+
+  # ── 6. 시크릿 스캔 (P-3) ────────────────────────────────────
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # TODO: truffleHog 또는 gitleaks 도입 검토 (Phase 0)
+      - name: Check .env not committed
+        run: |
+          if git ls-files | grep -q '^\.env$'; then
+            echo "❌ .env 파일이 git에 추가되어 있습니다 (P-3)"
+            exit 1
+          fi
+          echo "✅ .env not tracked"

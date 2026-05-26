@@ -1,0 +1,33 @@
+# CODEOWNERS
+#
+# GitHub가 PR 생성 시 자동으로 리뷰어를 지정한다.
+# 형식: <패턴>  <GitHub 사용자명 또는 팀>
+# 참고: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# TODO: 프로젝트 원격 저장소 확정 후 실제 GitHub 사용자명으로 교체.
+
+# 전체 저장소 — 팀장 필수 리뷰
+*                               @TODO_TEAM_LEAD
+
+# 안전 룰 — 팀장 + 안전 담당자 필수 리뷰
+.claude/rules/safety.md         @TODO_TEAM_LEAD @TODO_SAFETY_REVIEWER
+run.sh                          @TODO_TEAM_LEAD @TODO_SAFETY_REVIEWER
+
+# 공유 인터페이스 — interface-guardian 검토 후 팀장 최종 승인
+interfaces/                     @TODO_TEAM_LEAD @TODO_INTERFACE_OWNER
+docs/interfaces.md              @TODO_TEAM_LEAD @TODO_INTERFACE_OWNER
+docs/db-schema.md               @TODO_TEAM_LEAD @TODO_INTERFACE_OWNER
+
+# AI 에이전트 설정 — 팀 합의 필요
+.claude/rules/                  @TODO_TEAM_LEAD
+.claude/agents/                 @TODO_TEAM_LEAD
+.claude/settings.json           @TODO_TEAM_LEAD
+
+# 설정 파일 — 배포 영향권
+config/                         @TODO_TEAM_LEAD
+
+# Track C VLA (안전 경계 포함)
+track_c_vla.py                  @TODO_TEAM_LEAD @TODO_SAFETY_REVIEWER
+
+# 문서
+docs/                           @TODO_TEAM_LEAD

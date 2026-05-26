@@ -1,0 +1,53 @@
+{
+    "enabledPlugins": {
+      "oh-my-claudecode@omc": true
+    },
+    "permissions": {
+      "deny": [
+        "Bash(git push --force *)",
+        "Bash(git push -f *)", 
+        "Bash(git reset --hard *)",
+        "Bash(git rebase main *)",
+        "Bash(git rebase origin/main *)",
+        "Bash(git commit --amend *)",
+        "Bash(rm -rf *)",
+
+        "Edit(architecture.html)",
+        "Write(architecture.html)",
+
+        "Edit(.claude/settings.json)",
+        "Write(.claude/settings.json)",
+
+        "Edit(.claude/rules/*.md)",
+        "Write(.claude/rules/*.md)",
+
+        "Edit(.claude/agents/*.md)",
+        "Write(.claude/agents/*.md)",
+  
+        "Edit(.env)",
+        "Write(.env)"
+      ]
+    },
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash -c 'path=$(jq -r \".tool_input.file_path // empty\"); case \"$path\" in *interfaces/*|*db_core/*|*plc_core/*|*unit_actions/*|*config/*.yaml) echo \"⚠️   [interface-guardian] 공유 인터페이스/공유 코어/설정 스키마 변경입니다. 머지 전 interface-guardian 에이전트 검토 + interfaces/CHANGELOG.md 갱신 필수 (.claude/rules/process.md P-2, conventions.md §5).\" >&2 ;; esac; exit 0'"
+            }
+          ]
+        },
+        {
+          "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "bash -c 'path=$(jq -r \".tool_input.file_path // empty\"); case \"$path\" in *motion/*|*safety/*|*unit_actions/*|*track_c_vla.py) echo \"⚠️   [safety-reviewer] 안전 관련 코드 변경입니다. 머지 전 safety-reviewer 에이전트 검토 필수 (.claude/rules/safety.md).\" >&2 ;; esac; exit 0'"
+            }
+          ]
+        }
+      ]
+    }
+  }
