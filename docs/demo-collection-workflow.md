@@ -3,7 +3,7 @@
 > Track C VLA 모델 파인튜닝용 demonstration 데이터를 수집하는 전체 절차.
 > **본격 수집**: Phase 4 안정화 후(G4 통과 후) 시작. 옵션 A(Track A 활용)는 Phase 5a 종료 후 가능, 옵션 B/C는 Phase 4 종료 후 즉시 가능.
 > 약 **900 demo / 7.5h 순수 녹화 / 20h+ 실패 포함**.
-> 참조: `docs/adr/ai-ml.md` ADR-004, 미결 #5 (VLA 모델 선정), `.claude/skills/demo-collection.md`
+> 참조: `docs/adr/ai-ml.md` ADR-004, 미결 #5 (VLA 모델 선정), `.claude/skills/demo-collection/SKILL.md`
 
 ---
 

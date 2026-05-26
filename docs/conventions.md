@@ -104,7 +104,7 @@ tool_id 형식 및 config 키 형식 → [`.claude/rules/engineering.md` E-8](..
 | 안전 규칙 (S-1~S-9) | [`.claude/rules/safety.md`](../.claude/rules/safety.md) |
 | 엔지니어링 규칙 (E-1~E-9) | [`.claude/rules/engineering.md`](../.claude/rules/engineering.md) |
 | 프로세스 규칙 (P-1~P-7) | [`.claude/rules/process.md`](../.claude/rules/process.md) |
-| Python 패턴 | [`.claude/skills/python-patterns.md`](../.claude/skills/python-patterns.md) |
-| Git 컨벤션 | [`.claude/skills/git-conventions.md`](../.claude/skills/git-conventions.md) |
-| 에러 처리 | [`.claude/skills/error-handling-patterns.md`](../.claude/skills/error-handling-patterns.md) |
-| 설정 관리 | [`.claude/skills/config-management.md`](../.claude/skills/config-management.md) |
+| Python 패턴 | [`.claude/skills/python-patterns/SKILL.md`](../.claude/skills/python-patterns/SKILL.md) |
+| Git 컨벤션 | [`.claude/skills/git-conventions/SKILL.md`](../.claude/skills/git-conventions/SKILL.md) |
+| 에러 처리 | [`.claude/skills/error-handling-patterns/SKILL.md`](../.claude/skills/error-handling-patterns/SKILL.md) |
+| 설정 관리 | [`.claude/skills/config-management/SKILL.md`](../.claude/skills/config-management/SKILL.md) |
