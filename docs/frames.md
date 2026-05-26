@@ -1,7 +1,7 @@
 # 좌표계 및 TF Tree
 
 > REP-103 (단위·좌표 규약) 준수. 단위: 위치 **m**, 각도 **rad**, 시간 **s**.
-> 캘리브레이션 파일 위치·절차 → [`../claude/skills/hand-eye-calibration.md`](../.claude/skills/hand-eye-calibration.md)
+> 캘리브레이션 파일 위치·절차 → [`.claude/skills/hand-eye-calibration/SKILL.md`](../.claude/skills/hand-eye-calibration/SKILL.md)
 
 ---
 

@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> Codex CLI · Gemini CLI 사용자는 [`AGENTS.md`](AGENTS.md)를 참조한다 (동일 룰의 도구-비의존 미러).
+
 ---
 
 ## 이 저장소에 대해
@@ -196,6 +198,10 @@ touch .claude/settings.local.json
 ```
 
 **자동으로 사용 가능해지는 것 (별도 설치 불필요):**
-- `.claude/skills/` — robotics 스킬 10종 (ros2, robotics-testing, robotics-design-patterns 등)
-- `.claude/agents/` — robot-arm-planner, safety-reviewer, interface-guardian
-- OMC 플러그인 — 세션 메모리, 스킬 자동 트리거, 서브에이전트 오케스트레이션
+- `.claude/skills/<name>/SKILL.md` — robotics 스킬 25종 (디렉토리 포맷, 키워드 자동 트리거)
+  - 프로젝트 전용: doosan-e0509, modbus-plc, whisper-stt, vla-finetuning, demo-collection, bt-py-trees, realsense-d455f, hand-eye-calibration
+  - 공통 패턴: python-patterns, error-handling-patterns, config-management, pytest-patterns, performance-profiling, code-review-checklist, git-conventions
+  - 일반 robotics: ros2, ros1, robot-bringup, robot-perception, robotics-design-patterns, robotics-software-principles, robotics-security, robotics-testing, docker-ros2-development, ros2-web-integration
+- `.claude/agents/` — robot-arm-planner, safety-reviewer, interface-guardian (Claude Code 네이티브 자동 인식)
+- `.claude/settings.json` — PreToolUse 훅 (interface-guardian / safety-reviewer 자동 리마인더), 권한 deny 규칙
+- OMC 플러그인 — 세션 메모리, 추가 스킬, 서브에이전트 오케스트레이션 (별도 설치 필요)

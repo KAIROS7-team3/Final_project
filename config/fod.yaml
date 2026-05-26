@@ -1,3 +1,4 @@
+---
 # FOD (Foreign Object Detection) — 공구 분실 감지 운영 파라미터
 #
 # 참조: .claude/rules/safety.md S-8, docs/decisions.md ADR / 결정 #8
@@ -23,7 +24,7 @@ staging_recheck_interval_seconds: 60
 boot_reconciliation:
   enabled: true
   scan_pose: scan_toolbox              # robot_poses.yaml 키
-  detection_confidence_threshold: 0.85 # YOLOv8 confidence
+  detection_confidence_threshold: 0.85  # YOLOv8 confidence
 
 # 운영자 알림 정책 (결정 #28: v1.0은 PLC LED만 사용)
 alert:

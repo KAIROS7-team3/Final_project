@@ -92,7 +92,7 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="p
 | `config/staging_area.yaml` | Staging Area 좌표 (base_link 기준) | 거치대 물리적 이동 |
 | `config/toolbox.yaml` | 슬롯 좌표 + 공구 기하 | 공구함 레이아웃 변경 |
 
-캘리브레이션 절차 상세 → [`.claude/skills/hand-eye-calibration.md`](../.claude/skills/hand-eye-calibration.md)
+캘리브레이션 절차 상세 → [`.claude/skills/hand-eye-calibration/SKILL.md`](../.claude/skills/hand-eye-calibration/SKILL.md)
 
 ---
 
