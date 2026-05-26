@@ -1,0 +1,8 @@
+geometry_msgs/Pose target_pose
+float32 velocity_scale
+---
+bool success
+string message
+---
+string phase
+float32 progress

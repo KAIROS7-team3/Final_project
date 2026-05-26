@@ -4,6 +4,27 @@
 > 모든 변경은 `interface-guardian` 에이전트 검토 후 머지 (`.claude/rules/process.md` P-2, P-6).
 > 형식: [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 기반.
 
+## [0.1.0] — 2026-05-27
+
+> Phase 0 초기 릴리스. 코드 구현 전 설계 단계에서 확정된 모든 인터페이스를 ROS2 패키지로 동결.
+
+### Added
+- `msg/ToolStatus.msg` — 공구 상태 스냅샷 (tool_id, slot_row/col, status, timestamp)
+- `msg/PLCStatus.msg` — PLC 상태 스냅샷 (led_color, led_mode, system_state)
+- `msg/RobotStatus.msg` — 로봇 모션 상태 (is_moving — Whisper 오디오 게이팅 S-7)
+- `msg/Intent.msg` — Gemma 4 의도 분류 결과 (intent_type, tool_id, confidence, raw_utterance, timestamp)
+- `srv/CheckToolFeasibility.srv` — DB Gate fetch/return 가용성 확인
+- `srv/UpdateToolStatus.srv` — 공구 상태 + 이벤트 로그 갱신
+- `action/MoveToPose.action`, `Grasp.action`, `Release.action`, `PlaceAtStaging.action`, `PickFromStaging.action`, `ReturnToSlot.action` — 동작별 분리 액션 (UnitAction.action 단일 액션 폐기 대체)
+
+### Deprecated
+- `msg/HandoverEvent.msg` — v2.0+ 전용 (S-6: v1.0 직접 핸드오버 금지)
+
+### Removed
+- `action/UnitAction.action` — 6개 typed action으로 대체
+
+---
+
 ## [Unreleased]
 
 ### Added

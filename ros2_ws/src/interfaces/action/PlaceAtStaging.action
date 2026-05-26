@@ -1,0 +1,7 @@
+string tool_id
+---
+bool success
+string message
+---
+string phase
+float32 progress

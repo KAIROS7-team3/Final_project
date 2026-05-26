@@ -1,0 +1,5 @@
+string intent
+string tool_id
+---
+bool feasible
+string reason
