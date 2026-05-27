@@ -18,7 +18,12 @@ import rclpy
 import yaml
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
+
+_QOS_BEST_EFFORT_10 = QoSProfile(
+    depth=10,
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+)
 from sensor_msgs.msg import Image
 from vision_msgs.msg import BoundingBox2D, Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
@@ -51,7 +56,10 @@ class YoloNode(Node):
         self._model = self._load_model(yolo_cfg.get("model_path"))
         self._bridge = CvBridge()
 
-        self._det_pub = self.create_publisher(Detection2DArray, "/vision/detections", 10)
+        # interfaces.md §4: Best Effort / depth 10
+        self._det_pub = self.create_publisher(
+            Detection2DArray, "/vision/detections", _QOS_BEST_EFFORT_10
+        )
 
         if self._publish_debug:
             self._debug_pub = self.create_publisher(Image, "/vision/debug/annotated", 1)

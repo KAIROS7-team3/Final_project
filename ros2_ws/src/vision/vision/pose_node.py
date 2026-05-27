@@ -23,7 +23,16 @@ import yaml
 from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
+
+_QOS_BEST_EFFORT_10 = QoSProfile(
+    depth=10,
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+)
+_QOS_BEST_EFFORT_5 = QoSProfile(
+    depth=5,
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+)
 from sensor_msgs.msg import Image
 from vision_msgs.msg import (
     BoundingBox3D,
@@ -89,16 +98,18 @@ class PoseNode(Node):
         self._T: np.ndarray | None = self._try_load_hand_eye()
         self._bridge = CvBridge()
 
-        det_sub = Subscriber(self, Detection2DArray, "/vision/detections")
-        depth_sub = Subscriber(
-            self, Image, "/d455f/aligned_depth_to_color/image_raw", qos_profile=qos_profile_sensor_data
-        )
+        det_sub = Subscriber(self, Detection2DArray, "/vision/detections",
+                             qos_profile=_QOS_BEST_EFFORT_10)
+        depth_sub = Subscriber(self, Image, "/d455f/aligned_depth_to_color/image_raw",
+                               qos_profile=qos_profile_sensor_data)
         self._sync = ApproximateTimeSynchronizer(
             [det_sub, depth_sub], queue_size=10, slop=0.05
         )
         self._sync.registerCallback(self._on_detections_depth)
 
-        self._pose_pub = self.create_publisher(Detection3DArray, "/vision/tool_poses", 10)
+        self._pose_pub = self.create_publisher(
+            Detection3DArray, "/vision/tool_poses", _QOS_BEST_EFFORT_5
+        )
 
         self.get_logger().info(
             f"[pose_node] ready - calibrated={self._T is not None}"
@@ -127,6 +138,8 @@ class PoseNode(Node):
 
         pose_array = Detection3DArray()
         pose_array.header = det_msg.header
+        # interfaces.md §5: calibrated → base_link, 미캘리브 → camera_optical_frame
+        pose_array.header.frame_id = "base_link" if self._T is not None else "camera_optical_frame"
 
         for det2d in det_msg.detections:
             tool_id = det2d.results[0].hypothesis.class_id
