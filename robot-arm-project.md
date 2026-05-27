@@ -65,35 +65,35 @@
 > **병렬 개발 시작 조건:** ①②③ 완료 후 각 팀 독립 작업 가능.
 
 **① interfaces 정의 및 동결 (최우선)**
-- [ ] `interfaces` 패키지: 전체 msg/srv/action 정의
-- [ ] interfaces 동결 선언 — 이후 변경은 팀 합의 + `interfaces/CHANGELOG.md` 갱신 필수
+- [x] `interfaces` 패키지: 전체 msg/srv/action 정의 (4 msg · 2 srv · 6 action)
+- [x] interfaces 동결 선언 — 이후 변경은 팀 합의 + `interfaces/CHANGELOG.md` 갱신 필수 (v0.1.0 — 2026-05-27)
 
 **② HAL 인터페이스 정의**
-- [ ] HAL 스텁: `SimulatedArm`, `SimulatedGripper`, `SimulatedCamera` (F/T 센서는 v1.0 미사용 — ADR #1)
-- [ ] HAL 인터페이스 서명 동결
+- [x] HAL 스텁: `SimulatedArm`, `SimulatedGripper`, `SimulatedCamera` (F/T 센서는 v1.0 미사용 — ADR #1)
+- [x] HAL 인터페이스 서명 동결 (`hal/arm_interface.py`, `hal/gripper_interface.py`, `hal/camera_interface.py`)
 
 **③ unit_actions/ 인터페이스 정의**
-- [ ] `unit_actions/` 순수 Python 모듈 스켈레톤 (mock 구현)
-- [ ] 함수 시그니처 동결
+- [x] `unit_actions/` 순수 Python 모듈 스켈레톤 (7개 모듈: grasp, move_to_pose, place_at_staging, pick_from_staging, release, return_to_slot, scan_workspace)
+- [x] 함수 시그니처 동결 + 단위 테스트 (`unit_actions/tests/test_unit_actions.py`)
 
 **① ② ③ 완료 후 병행 작업:**
-- [ ] ROS2 Humble 워크스페이스 구성
-- [ ] Docker 개발 컨테이너 (GPU 패스스루)
-- [ ] Doosan e0509 URDF/XACRO + Gazebo 씬
-- [ ] DB 스키마 생성 + SQLite WAL 설정 (`db_core/schema.sql`)
-- [ ] CycloneDDS 단일 머신 설정
-- [ ] 공구 이미지 데이터셋 수집 시작 (YOLOv8 학습까지 시간 필요)
-- [ ] Track C: VLA demonstration 수집 환경 구성
+- [x] ROS2 Humble 워크스페이스 구성 (`ros2_ws/src/` 7패키지 디렉토리 + interfaces 패키지 빌드 가능)
+- [ ] Docker 개발 컨테이너 (GPU 패스스루) — Dockerfile/docker-compose 미작성
+- [x] Doosan e0509 URDF/XACRO + Gazebo 씬 (doosan-robot2 서브모듈, dsr_moveit_config_e0509)
+- [x] DB 스키마 생성 + SQLite WAL 설정 (`db_core/schema.py`)
+- [ ] CycloneDDS 단일 머신 설정 — 미작성
+- [ ] 공구 이미지 데이터셋 수집 시작 (YOLOv8 학습까지 시간 필요) — 진행 상황 미확인
+- [x] Track C: VLA demonstration 수집 환경 구성 (`track_c_vla.py` 골격 + `run.sh --track C`)
 
 **병렬 개발 인프라:**
-- [ ] CI 설정: 빌드 + 단위 테스트 자동화
-- [ ] `mocks/SPEC.md`: SimulatedArm/Gripper 동작 명세
-- [ ] 공용 테스트 픽스처: 샘플 음성 파일 9종, DB seed 데이터
-- [ ] `interfaces/CHANGELOG.md` 생성
-- [ ] 통합 빌드 주기 결정 (권장: 주 1회)
-- [ ] `config/` 공유 디렉토리 구성:
+- [x] CI 설정: 빌드 + 단위 테스트 자동화 (`.github/workflows/ci.yml`)
+- [x] `mocks/SPEC.md`: SimulatedArm/Gripper/Camera 동작 명세
+- [ ] 공용 테스트 픽스처: 샘플 음성 파일 9종, DB seed 데이터 — 미작성
+- [x] `interfaces/CHANGELOG.md` 생성
+- [ ] 통합 빌드 주기 결정 (권장: 주 1회) — 미결정
+- [x] `config/` 공유 디렉토리 구성:
   - `staging_area.yaml`, `toolbox.yaml`, `hand_eye.yaml`
-  - `robot_poses.yaml`, `fod.yaml` (기본값: `checkout_timeout_minutes: 10`)
+  - `robot_poses.yaml`, `fod.yaml` (기본값: `checkout_timeout_minutes: 10`), `runtime.yaml`
 
 ```bash
 ./run.sh --track A   # ROS2 full stack
