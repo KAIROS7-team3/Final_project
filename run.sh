@@ -65,6 +65,21 @@ if [[ ! -f .env ]]; then
 fi
 set -a; source .env; set +a
 
+# ─── 2.5. ROS2 미들웨어 환경 (Track A/B 전용) ─────────────────
+# Doosan 컨트롤러는 TCP(LAN)로 별도 통신 — DDS 설정과 무관.
+# 같은 LAN의 다른 ROS2 프로젝트와 토픽 충돌 방지용.
+if [[ "$TRACK" == "A" || "$TRACK" == "B" ]]; then
+    if [[ -z "${ROS_DOMAIN_ID:-}" ]]; then
+        echo "❌ ROS_DOMAIN_ID 미설정. .env에 ROS_DOMAIN_ID=<0-101> 추가하세요." >&2
+        echo "   같은 LAN 다른 ROS2 프로젝트와 토픽 충돌 방지를 위해 필수입니다." >&2
+        exit 1
+    fi
+    : "${RMW_IMPLEMENTATION:=rmw_cyclonedds_cpp}"
+    : "${ROS_LOCALHOST_ONLY:=0}"
+    export ROS_DOMAIN_ID RMW_IMPLEMENTATION ROS_LOCALHOST_ONLY
+    echo "  → ROS2 미들웨어: DOMAIN_ID=$ROS_DOMAIN_ID RMW=$RMW_IMPLEMENTATION LOCALHOST_ONLY=$ROS_LOCALHOST_ONLY"
+fi
+
 # ─── 3. Pre-flight 체크 ────────────────────────────────────────
 echo "🔍 Pre-flight 체크..."
 

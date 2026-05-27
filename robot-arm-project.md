@@ -36,7 +36,7 @@
 
 | 역할 | 담당 패키지 / 모듈 | 선행 조건 |
 |------|-------------------|-----------|
-| **인프라** | `interfaces`, `hal`, `unit_actions/`, DB 스키마, Docker | — |
+| **인프라** | `interfaces`, `hal`, `unit_actions/`, DB 스키마, CI | — |
 | **퍼셉션** | `vision` (YOLOv8, Pose, Tracker), 데이터셋 수집 | interfaces 동결 |
 | **음성/LLM** | `voice` (Whisper, Gemma 4), Track C VLA 전체 | interfaces 동결, HAL 동결 |
 | **제어 A** | `motion/dsr_controller`, `orchestrator` (BT), `plc` | interfaces, unit_actions 동결 |
@@ -51,10 +51,12 @@
 | **A** | `db`, `plc`, `voice` (Whisper + Gemma 4) | 음성과 DB/PLC를 단일 담당 |
 | **B** | `motion` (DSR + RL), Isaac Sim/Lab | Track A/B 모션 + RL 시뮬 환경 |
 | **C** | `vision` (YOLOv8, Pose, Tracker) | 데이터셋 수집·학습 포함 |
-| **D** | `orchestrator` (BT), `interfaces`, **공통 인프라** | Docker, CI, CycloneDDS, systemd, HAL 스켈레톤, unit_actions/ 시그니처 동결 책임 |
+| **D** | `orchestrator` (BT), `interfaces`, **공통 인프라** | CI, ROS_DOMAIN_ID, systemd, HAL 스켈레톤, unit_actions/ 시그니처 동결 책임 |
 | **E** | Track C VLA 전체 (`track_c_vla.py`, demo 수집, fine-tuning) | Phase 4 안정화 후 본격 수집 |
 
-> **공통 인프라 책임**: D가 단일 책임자(설계 결정). Phase 0 ① interfaces / ③ unit_actions 동결 + Docker / CI / CycloneDDS / systemd / 통합 launch 구성을 모두 D가 주관. HAL 인터페이스 서명은 D가 정의, 구현은 B가 모션 드라이버 작업과 함께 채움.
+> **공통 인프라 책임**: D가 단일 책임자(설계 결정). Phase 0 ① interfaces / ③ unit_actions 동결 + CI / ROS_DOMAIN_ID / systemd / 통합 launch 구성을 모두 D가 주관. HAL 인터페이스 서명은 D가 정의, 구현은 B가 모션 드라이버 작업과 함께 채움.
+>
+> **Docker는 v1.0 계획에서 제외** (네이티브 Ubuntu 22.04 + ROS2 Humble로 통합 운영). 추후 배포 단순화 필요 시 재검토.
 
 ---
 
@@ -65,35 +67,38 @@
 > **병렬 개발 시작 조건:** ①②③ 완료 후 각 팀 독립 작업 가능.
 
 **① interfaces 정의 및 동결 (최우선)**
-- [ ] `interfaces` 패키지: 전체 msg/srv/action 정의
-- [ ] interfaces 동결 선언 — 이후 변경은 팀 합의 + `interfaces/CHANGELOG.md` 갱신 필수
+- [x] `interfaces` 패키지: 전체 msg/srv/action 정의 (4 msg · 2 srv · 6 action)
+- [x] interfaces 동결 선언 — 이후 변경은 팀 합의 + `interfaces/CHANGELOG.md` 갱신 필수 (v0.1.0 — 2026-05-27)
 
 **② HAL 인터페이스 정의**
-- [ ] HAL 스텁: `SimulatedArm`, `SimulatedGripper`, `SimulatedCamera` (F/T 센서는 v1.0 미사용 — ADR #1)
-- [ ] HAL 인터페이스 서명 동결
+- [x] HAL 스텁: `SimulatedArm`, `SimulatedGripper`, `SimulatedCamera` (F/T 센서는 v1.0 미사용 — ADR #1)
+- [x] HAL 인터페이스 서명 동결 (`hal/arm_interface.py`, `hal/gripper_interface.py`, `hal/camera_interface.py`)
 
 **③ unit_actions/ 인터페이스 정의**
-- [ ] `unit_actions/` 순수 Python 모듈 스켈레톤 (mock 구현)
-- [ ] 함수 시그니처 동결
+- [x] `unit_actions/` 순수 Python 모듈 스켈레톤 (7개 모듈: grasp, move_to_pose, place_at_staging, pick_from_staging, release, return_to_slot, scan_workspace)
+- [x] 함수 시그니처 동결 + 단위 테스트 (`unit_actions/tests/test_unit_actions.py`)
 
 **① ② ③ 완료 후 병행 작업:**
-- [ ] ROS2 Humble 워크스페이스 구성
-- [ ] Docker 개발 컨테이너 (GPU 패스스루)
-- [ ] Doosan e0509 URDF/XACRO + Gazebo 씬
-- [ ] DB 스키마 생성 + SQLite WAL 설정 (`db_core/schema.sql`)
-- [ ] CycloneDDS 단일 머신 설정
-- [ ] 공구 이미지 데이터셋 수집 시작 (YOLOv8 학습까지 시간 필요)
-- [ ] Track C: VLA demonstration 수집 환경 구성
+- [x] ROS2 Humble 워크스페이스 구성 (`ros2_ws/src/` 7패키지 디렉토리 + interfaces 패키지 빌드 가능)
+- [x] Doosan e0509 URDF/XACRO + Gazebo 씬 (doosan-robot2 서브모듈, dsr_moveit_config_e0509)
+- [x] DB 스키마 생성 + SQLite WAL 설정 (`db_core/schema.py`)
+- [x] ROS2 미들웨어 격리: `ROS_DOMAIN_ID` + `RMW_IMPLEMENTATION` + `ROS_LOCALHOST_ONLY` (`.env.example` + `run.sh`)
+  - Doosan 컨트롤러 TCP 통신과 무관, HP ProBook rqt 모니터링 호환 (`ROS_LOCALHOST_ONLY=0`)
+  - 같은 LAN의 다른 ROS2 프로젝트와 토픽 충돌 방지
+- [ ] 공구 이미지 데이터셋 수집 시작 (YOLOv8 학습까지 시간 필요) — **담당: C**
+- [x] Track C: VLA demonstration 수집 환경 구성 (`track_c_vla.py` 골격 + `run.sh --track C`)
 
 **병렬 개발 인프라:**
-- [ ] CI 설정: 빌드 + 단위 테스트 자동화
-- [ ] `mocks/SPEC.md`: SimulatedArm/Gripper 동작 명세
-- [ ] 공용 테스트 픽스처: 샘플 음성 파일 9종, DB seed 데이터
-- [ ] `interfaces/CHANGELOG.md` 생성
-- [ ] 통합 빌드 주기 결정 (권장: 주 1회)
-- [ ] `config/` 공유 디렉토리 구성:
+- [x] CI 설정: 빌드 + 단위 테스트 자동화 (`.github/workflows/ci.yml`)
+- [x] `mocks/SPEC.md`: SimulatedArm/Gripper/Camera 동작 명세
+- [ ] 공용 테스트 픽스처: 샘플 음성 파일 9종 — **담당: A** / DB seed 데이터 — **담당: D**
+- [x] `interfaces/CHANGELOG.md` 생성
+- [x] 통합 빌드 주기 결정 — **주 1회 (확정, 2026-05-27)**
+- [x] `config/` 공유 디렉토리 구성:
   - `staging_area.yaml`, `toolbox.yaml`, `hand_eye.yaml`
-  - `robot_poses.yaml`, `fod.yaml` (기본값: `checkout_timeout_minutes: 10`)
+  - `robot_poses.yaml`, `fod.yaml` (기본값: `checkout_timeout_minutes: 10`), `runtime.yaml`
+
+> **Phase 0 미완료 항목**: ① 공구 이미지 데이터셋 수집 (담당: C) ② 음성/DB seed 픽스처 (담당: A, D). 모두 담당자에게 위임 — 작업 진행 상황은 주간 통합 회의에서 보고.
 
 ```bash
 ./run.sh --track A   # ROS2 full stack
@@ -219,7 +224,7 @@
 ### Phase 9: 배포 (14–15주)
 
 - [ ] systemd 서비스: 부팅 시 ROS2 스택 + Track C 자동 시작
-- [ ] Docker Compose: STT / 퍼셉션 / Gemma 4 / VLA / 제어 / DB / PLC
+- [ ] 의존성 lockfile + 배포 스크립트 (`requirements.txt`, `package.xml`, colcon install)
 - [ ] ROS2 bag + DB 감사 로그 전 세션 보관
 - [ ] HP ProBook: rqt 모니터링 대시보드 + DB 뷰어 + PLC 상태 패널
 
@@ -232,7 +237,7 @@
 
 | 게이트 | 진입 대상 | 조건 | 판정 책임 |
 |--------|-----------|------|-----------|
-| **G0 → 1** | Phase 1 | `interfaces` 동결 완료 + `unit_actions/` 시그니처 동결 + `interfaces/CHANGELOG.md` 생성 + Docker 빌드 통과 | D |
+| **G0 → 1** | Phase 1 | `interfaces` 동결 완료 + `unit_actions/` 시그니처 동결 + `interfaces/CHANGELOG.md` 생성 + CI 단위 테스트 통과 | D |
 | **G0.5 → 5b** | Phase 5b | 미결 #6/#23/#24/#35 모두 ADR 작성 완료 + `docs/simulation.md` Isaac Sim 트랙 항목 확정 | B + 팀 합의 |
 | **G1 → 2** | Phase 2 | 4종 드라이버(arm/gripper/camera/plc) bring-up 검증 + hand-eye 캘리브레이션 RMSE ≤ 5mm | B, C, A |
 | **G2 → 3** | Phase 3 | Whisper STT 9종 키워드 인식률 ≥ 95% + YOLOv8 9종 mAP ≥ 0.85 + 슬롯 보정 ±5mm | A, C |
