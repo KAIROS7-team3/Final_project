@@ -36,7 +36,9 @@ class UnitActionServer(Node):
             ActionServer(self, Grasp, "grasp", self._execute_grasp),
             ActionServer(self, MoveToPose, "move_to_pose", self._execute_move_to_pose),
             ActionServer(self, PlaceAtStaging, "place_at_staging", self._execute_place_at_staging),
-            ActionServer(self, PickFromStaging, "pick_from_staging", self._execute_pick_from_staging),
+            ActionServer(
+                self, PickFromStaging, "pick_from_staging", self._execute_pick_from_staging
+            ),
             ActionServer(self, Release, "release", self._execute_release),
             ActionServer(self, ReturnToSlot, "return_to_slot", self._execute_return_to_slot),
         ]

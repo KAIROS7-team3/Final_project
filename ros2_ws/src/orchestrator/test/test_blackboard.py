@@ -1,6 +1,4 @@
 """Blackboard 스키마 및 키 상수 단위 테스트 (rclpy 불필요)."""
-import pytest
-
 from orchestrator.blackboard import (
     KEY_ACTIVE_TOOL_ID,
     KEY_FEASIBILITY_REASON,
