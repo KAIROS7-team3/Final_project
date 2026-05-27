@@ -1,0 +1,30 @@
+---
+# Vision 파이프라인 설정 (Track A/B 전용)
+#
+# 참조: docs/architecture.md §4 vision/, .claude/rules/engineering.md E-4
+# 좌표·임계값·모델 경로는 여기서만 관리 — 코드 하드코딩 금지
+
+yolo:
+  # ⚠️ Phase 2 YOLOv8 파인튜닝 완료 후 모델 경로 기입
+  # 학습 완료 전: null → 노드 기동은 되나 추론 비활성화
+  model_path: null
+  confidence_threshold: 0.70   # 수락 기준: 공구 분류 정확도 ≥ 95% (docs/conventions.md)
+  iou_threshold: 0.45
+  device: "cuda"               # "cuda" | "cpu" (GPU 없을 시 cpu로 변경)
+  input_size: 640              # YOLO 입력 해상도 (px)
+
+  # 탑뷰 기준 9종 공구 클래스 — 학습 시 순서와 반드시 일치 (TBD: 나머지 6종)
+  class_names:
+    - screwdriver_phillips_small
+    - screwdriver_flat_small
+    - wrench_8mm
+    # TODO: 나머지 6종 공구 확정 후 추가 (담당: C, Phase 0 데이터셋 수집 시)
+    # - allen_key_4mm
+    # - allen_key_5mm
+    # - pliers_needle_nose
+    # - cutter_diagonal
+    # - hammer_small
+    # - tape_measure_3m
+
+debug:
+  publish_annotated_image: true   # /vision/debug/annotated 발행 여부 (운영 시 false 권장)
