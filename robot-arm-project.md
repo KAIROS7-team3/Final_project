@@ -111,11 +111,11 @@
 > **목적**: Phase 5b 진입 전에 RL 학습 미결 사항을 조기 해소. 담당: B.
 > **종료 조건**: 아래 4개 미결 사항 결정 + ADR 작성 + Phase 5b 진입 가능 판정.
 
-- [ ] **#23 결정**: Isaac Sim vs MuJoCo — Doosan e0509 URDF 임포트 PoC + 학습 throughput 비교
-- [ ] **#24 결정**: Sim-to-real 전략 — domain randomization / system identification / DR+SI 하이브리드 중 선택
-- [ ] **#6 결정**: RL 학습 전략 — 시뮬 전용 vs Demo+RL (BC 사전학습 + RL fine-tuning)
-- [ ] **#35 결정**: Omniverse Replicator 도입 여부 — #23에서 Isaac Sim 채택 시에만 평가
-- [ ] PoC 결과 → 4개 ADR 작성 (`docs/adr/ai-ml.md` 갱신) + `docs/simulation.md` Isaac Sim 트랙 항목 확정
+- [x] **#23 결정**: Isaac Sim (Isaac Lab) 채택 — GPU 병렬 환경, Doosan e0509 URDF 지원 (ADR-013, 2026-05-27)
+- [x] **#24 결정**: DR+SI 하이브리드 — SI 실측 후 ±20% DR 적용 (ADR-014, 2026-05-27)
+- [x] **#6 결정**: 시뮬 전용 (Pure RL) 우선, G5b 미달 시 Demo+RL 전환 (ADR-015, 2026-05-27)
+- [x] **#35 결정**: Omniverse Replicator — YOLOv8 합성 데이터 증강 한정 도입 (ADR-016, 2026-05-27)
+- [x] PoC 결과 → 4개 ADR 작성 (`docs/adr/ai-ml.md` 갱신) + `docs/simulation.md` Isaac Sim 트랙 항목 확정
 
 > **위험 완화**: 4개 미결 사항 중 하나라도 Phase 5b 진입 시점까지 미결정이면 Phase 5b 작업 중단 — Phase 5a (Track A)만 진행.
 

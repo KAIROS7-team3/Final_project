@@ -21,6 +21,10 @@
 | ADR-010 | Doosan 제어 인터페이스 — 트랙별 분리 | [하드웨어](hardware.md) | 확정 |
 | ADR-011 | GPU VRAM 예산 — 트랙별 전환 | [아키텍처](architecture.md) | 확정 |
 | ADR-012 | 인터페이스 명명/구조 통일 | [인터페이스](interfaces.md) | 확정 |
+| ADR-013 | Track B RL 시뮬레이션 환경 — Isaac Sim (Isaac Lab) | [AI/ML](ai-ml.md) | 확정 |
+| ADR-014 | RL Sim-to-real 전략 — DR+SI 하이브리드 | [AI/ML](ai-ml.md) | 확정 |
+| ADR-015 | Track B RL 학습 전략 — 시뮬 전용 우선 | [AI/ML](ai-ml.md) | 확정 |
+| ADR-016 | Omniverse Replicator 도입 범위 — YOLOv8 한정 | [AI/ML](ai-ml.md) | 확정 |
 
 ---
 
@@ -30,14 +34,10 @@
 |---|------|----------|---------|
 | 4 | Gemma 4 파인튜닝 필요 여부 | Phase 5a 전 | [AI/ML](ai-ml.md) |
 | 5 | Track C VLA 모델 선정 (OpenVLA / π0 / 기타) | Phase 6 전 | [AI/ML](ai-ml.md) |
-| 6 | Track B RL 학습 전략 (시뮬 전용 vs Demo+RL) | **Phase 0.5 종료** | [AI/ML](ai-ml.md) |
 | 7 | 안전 E-Stop v2.0 적용 시점 | Phase 7 이후 | [안전](safety.md) |
 | 22 | VLA 입력 형식 (단일 프레임 vs 시퀀스) | 모델 선정 후 | [AI/ML](ai-ml.md) |
-| 23 | Track B RL 시뮬레이션 환경 (Isaac Sim vs MuJoCo) | **Phase 0.5 종료** | [AI/ML](ai-ml.md) |
-| 24 | RL 학습 Sim-to-real 전략 | **Phase 0.5 종료** | [AI/ML](ai-ml.md) |
 | 33 | Wake word 감지 방식 (항상-on STT / 키워드 모델 / 물리 버튼) | Phase 4 전 | [안전](safety.md) |
 | 34 | 로그 파일 보존 기간 및 외부 집계 도구 (ELK / Loki / 없음) | Phase 7 전 | [데이터](data.md) |
-| 35 | Omniverse Replicator 합성 데이터 도입 여부 (RL·VLA·YOLOv8 학습) | **Phase 0.5 종료** (#23 Isaac Sim 채택 시) | [AI/ML](ai-ml.md) |
 
 ---
 
