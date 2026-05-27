@@ -103,7 +103,7 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="p
 | GPU | RTX 4090 Laptop (16GB VRAM) |
 | VRAM 할당 | Track A: ~5.5–7.5GB / Track B: ~6.5–8.5GB / Track C: ~5–6GB(Q4) |
 | CUDA | 확정 후 기입 |
-| Docker | GPU 패스스루 컨테이너 |
+| 컨테이너 | 미사용 (네이티브 Ubuntu 22.04 + ROS2 Humble) |
 
 VRAM 실시간 확인:
 ```bash

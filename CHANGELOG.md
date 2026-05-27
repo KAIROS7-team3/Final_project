@@ -11,7 +11,29 @@
 
 ---
 
-## [Phase 0] — 2026-05-27
+## [Phase 0 — 2차 정리] — 2026-05-27
+
+### Changed
+- **CycloneDDS 단일 머신 설정 → `ROS_DOMAIN_ID` 기반 격리로 대체**
+  - rationale: Doosan 컨트롤러는 TCP(LAN) 별도 통신이라 DDS 격리와 무관. 루프백 전용 설정은 HP ProBook의 rqt 모니터링을 차단함
+  - `.env.example`: `ROS_DOMAIN_ID=42` + `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` + `ROS_LOCALHOST_ONLY=0` 추가
+  - `run.sh`: Track A/B 시작 시 ROS_DOMAIN_ID 누락 검증 + 환경변수 export
+- **통합 빌드 주기: 주 1회 확정** (2026-05-27 결정)
+- **Docker v1.0 계획에서 제외** — 네이티브 Ubuntu 22.04 + ROS2 Humble로 통합 운영
+  - 영향: `robot-arm-project.md` 팀 구성·Phase 0·Phase 9·G0→1 게이트에서 Docker 항목 제거
+  - 영향: `docs/hardware.md` 컨테이너 행을 "미사용" 으로 변경
+  - 영향: `README.md` Phase 9 라인에서 "Docker Compose" → "의존성 lockfile"
+  - 추후 배포 단순화 필요 시 재검토 가능
+- **G0→1 게이트 조건 변경**: "Docker 빌드 통과" → "CI 단위 테스트 통과"
+
+### Remaining (담당자에게 위임)
+- 공구 이미지 데이터셋 수집 — **담당: C**
+- 샘플 음성 파일 9종 — **담당: A**
+- DB seed 데이터 — **담당: D**
+
+---
+
+## [Phase 0 — 1차 완료] — 2026-05-27
 
 ### Added
 - `interfaces/` 패키지 v0.1.0 동결: msg 4종(ToolStatus, PLCStatus, RobotStatus, Intent), srv 2종(CheckToolFeasibility, UpdateToolStatus), action 6종(MoveToPose, Grasp, Release, PlaceAtStaging, PickFromStaging, ReturnToSlot)
@@ -24,10 +46,3 @@
 - `config/` 6개 파일: staging_area.yaml, toolbox.yaml, hand_eye.yaml, robot_poses.yaml, fod.yaml, runtime.yaml
 - `ros2_ws/src/` 7패키지 디렉토리 구조 + interfaces 패키지 빌드 가능 상태
 - Doosan e0509: doosan-robot2 서브모듈 (URDF/XACRO, dsr_moveit_config_e0509, Gazebo/MuJoCo 씬)
-
-### Remaining (Phase 0 미완료)
-- Docker 개발 컨테이너 (GPU 패스스루) — Dockerfile/docker-compose 미작성
-- CycloneDDS 단일 머신 설정 파일 미작성
-- 샘플 음성 파일 9종 + DB seed 데이터 미작성
-- 통합 빌드 주기 미결정
-- 공구 이미지 데이터셋 수집 진행 상황 미확인 (물리 작업)
