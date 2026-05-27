@@ -73,9 +73,10 @@ def test_depth_has_valid_values(collected_frames):
 
 
 def test_depth_range_plausible(collected_frames):
+    # 탑뷰 고정 마운트: 공구함까지 거리 0.4–1.5m 예상
     _, depth = collected_frames[0]
     valid = depth[depth > 0]
     mean_m = float(valid.mean())
-    assert 0.3 <= mean_m <= 3.0, (
-        f"평균 depth {mean_m:.3f}m 가 작업 범위(0.3–3.0m) 밖 — 카메라 위치 확인"
+    assert 0.4 <= mean_m <= 1.5, (
+        f"평균 depth {mean_m:.3f}m 가 탑뷰 작업 범위(0.4–1.5m) 밖 — 카메라 설치 높이 확인"
     )

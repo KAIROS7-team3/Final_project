@@ -1,7 +1,8 @@
 ---
 # 카메라–로봇 Hand-Eye 캘리브레이션 결과
 #
-# 구성: eye-to-hand (D455f 고정 마운트, 로봇 베이스 근처)
+# 구성: eye-to-hand, 탑뷰 고정 마운트
+#       D455f가 작업공간 위 고정 위치에서 아래를 향해 장착
 # 변환: camera_color_optical_frame → base_link
 # 단위: m (translation), quaternion [x, y, z, w] (rotation) — E-1
 # 갱신 조건: docs/hardware.md §5 참조
