@@ -122,11 +122,16 @@
 ### Phase 1: 하드웨어 드라이버 (2–3주)
 
 - [ ] doosan-robot2 드라이버 bring-up + 관절 상태 검증
-- [ ] realsense-ros D455f 노드: RGB + depth 스트림 검증
+- [x] realsense-ros D455f 노드: RGB + depth 스트림 검증
+  - 완료: camera_node(ApproxTimeSyncer, fps/depth stats), verify_camera.py 실측(serial 342622300205, mean depth 0.955m)
+  - vision 파이프라인 노드 구현 완료: yolo_node / pose_node / tracker_node / context_builder
+  - 단위 테스트 29개 통과 (test/test_hand_eye_loader, test_context_builder, test_tracker)
 - [ ] RH-P12-RN 그리퍼 드라이버 노드
 - [ ] PLC 드라이버 노드 (XBC-DR10E, Modbus RTU): LED 쓰기 검증
 - [ ] udev 규칙: `/dev/doosan`, `/dev/gripper`, `/dev/plc`
 - [ ] Hand-eye 캘리브레이션 (`config/hand_eye.yaml`)
+  - eye-to-hand, easy_handeye2 준비 완료 (scripts/calibrate_hand_eye.sh, launch/handeye_calibration.launch.py)
+  - 실물 로봇 + CharUco 보드 준비 시 진행 (config/hand_eye.yaml.example 참조)
 
 ### Phase 2: 공유 퍼셉션 + 음성 (3–6주)
 
