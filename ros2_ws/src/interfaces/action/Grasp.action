@@ -1,0 +1,9 @@
+string tool_id
+string approach_direction
+float32 grasp_force
+---
+bool success
+string message
+---
+string phase
+float32 progress

@@ -1,0 +1,9 @@
+string tool_id
+int32 slot_row
+int32 slot_col
+---
+bool success
+string message
+---
+string phase
+float32 progress
