@@ -121,8 +121,10 @@ def main() -> None:
     else:
         print("  [WARN] 유효 depth 없음 — 조명·거리 확인")
 
-    if zero_ratio > 0.3:
-        print(f"\n[WARN] zero-depth 비율 {zero_ratio:.1%} > 30% — 금속 공구 반사 또는 조명 문제 가능")
+    if zero_ratio > 0.5:
+        print(f"\n[WARN] zero-depth 비율 {zero_ratio:.1%} > 50% — 조명 문제 또는 USB 연결 확인")
+    elif zero_ratio > 0.3:
+        print(f"\n[INFO] zero-depth 비율 {zero_ratio:.1%} — 금속 공구 IR 반사 정상 범위")
 
     if args.save:
         out_dir = Path(".")
