@@ -3,8 +3,6 @@
 Track A/B 전용. Track C는 unit_actions를 사용하지 않는다 (CLAUDE.md).
 rclpy 의존성은 이 파일에만 있고 unit_actions/ 자체에는 없다 (E-2).
 """
-import logging
-
 import rclpy
 from rclpy.action import ActionServer
 from rclpy.node import Node
@@ -17,8 +15,6 @@ from interfaces.action import (
     Release,
     ReturnToSlot,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class UnitActionServer(Node):

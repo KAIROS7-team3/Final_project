@@ -1,4 +1,6 @@
 """CheckFeasibility BT 노드 — /db/CheckToolFeasibility 서비스로 DB Gate를 확인한다 (S-2)."""
+import logging
+
 import py_trees
 
 from orchestrator.blackboard import (
@@ -20,6 +22,10 @@ class CheckFeasibility(py_trees.behaviour.Behaviour):
     response: {feasible, reason}
     """
 
+    # Phase 5a 주의: fetch/return 서브트리에 각각 CheckFeasibility를 추가할 때
+    # 반드시 고유한 name을 지정할 것 (예: "CheckFeasibility_fetch", "CheckFeasibility_return").
+    # 같은 name으로 두 인스턴스를 만들면 Blackboard 클라이언트 이름이 충돌하고
+    # KEY_FEASIBILITY_REASON WRITE 등록이 중복되어 단일-작성자 보장이 깨진다 (E-9).
     def __init__(self, name: str = "CheckFeasibility"):
         super().__init__(name=name)
         self.blackboard = self.attach_blackboard_client(name=name)
@@ -33,4 +39,7 @@ class CheckFeasibility(py_trees.behaviour.Behaviour):
 
     def update(self) -> py_trees.common.Status:
         # TODO(Phase 5a): 서비스 요청 전송 → 응답의 feasible로 SUCCESS/FAILURE 결정
-        raise NotImplementedError("Phase 5a에서 구현")
+        logging.getLogger(__name__).warning(
+            "[CheckFeasibility] not yet implemented — returning FAILURE (Phase 5a stub)"
+        )
+        return py_trees.common.Status.FAILURE
