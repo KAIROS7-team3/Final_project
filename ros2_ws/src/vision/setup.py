@@ -21,6 +21,7 @@ setup(
             "yolo_node = vision.yolo_node:main",
             "pose_node = vision.pose_node:main",
             "tracker_node = vision.tracker_node:main",
+            "context_builder = vision.context_builder:main",
         ],
     },
 )
