@@ -79,9 +79,11 @@ class UnitActionServer(Node):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = UnitActionServer()
+    node = None
     try:
+        node = UnitActionServer()
         rclpy.spin(node)
     finally:
-        node.destroy_node()
+        if node is not None:
+            node.destroy_node()
         rclpy.shutdown()

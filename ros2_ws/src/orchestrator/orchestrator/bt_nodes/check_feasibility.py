@@ -1,6 +1,4 @@
 """CheckFeasibility BT 노드 — /db/CheckToolFeasibility 서비스로 DB Gate를 확인한다 (S-2)."""
-import logging
-
 import py_trees
 
 from orchestrator.blackboard import (
@@ -39,7 +37,4 @@ class CheckFeasibility(py_trees.behaviour.Behaviour):
 
     def update(self) -> py_trees.common.Status:
         # TODO(Phase 5a): 서비스 요청 전송 → 응답의 feasible로 SUCCESS/FAILURE 결정
-        logging.getLogger(__name__).warning(
-            "[CheckFeasibility] not yet implemented — returning FAILURE (Phase 5a stub)"
-        )
         return py_trees.common.Status.FAILURE

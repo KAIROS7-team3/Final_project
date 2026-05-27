@@ -5,6 +5,7 @@ Track A/B 전용.
 """
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from interfaces.msg import Intent
 
@@ -22,11 +23,13 @@ class OrchestratorNode(Node):
         self._fetch_tree = build_fetch_subtree()
         self._return_tree = build_return_subtree()
 
+        # interfaces.md 명세: /voice/intent = Reliable / depth 1 (S-7: 최신 명령만 수신)
+        _qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
         self._intent_sub = self.create_subscription(
             Intent,
             "/voice/intent",
             self._on_intent,
-            10,
+            _qos,
         )
         self.get_logger().info("[OrchestratorNode] ready — listening on /voice/intent")
 
@@ -43,9 +46,11 @@ class OrchestratorNode(Node):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = OrchestratorNode()
+    node = None
     try:
+        node = OrchestratorNode()
         rclpy.spin(node)
     finally:
-        node.destroy_node()
+        if node is not None:
+            node.destroy_node()
         rclpy.shutdown()
