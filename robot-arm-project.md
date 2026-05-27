@@ -80,6 +80,7 @@
 
 **① ② ③ 완료 후 병행 작업:**
 - [x] ROS2 Humble 워크스페이스 구성 (`ros2_ws/src/` 7패키지 디렉토리 + interfaces 패키지 빌드 가능)
+  - [x] `orchestrator` 패키지 스켈레톤: ament_python 빌드 설정 + Blackboard 스키마 + orchestrator_node / unit_action_server / bt_nodes 스텁 (BT 서브트리 구현은 Phase 5a) — **담당: D** (2026-05-27)
 - [x] Doosan e0509 URDF/XACRO + Gazebo 씬 (doosan-robot2 서브모듈, dsr_moveit_config_e0509)
 - [x] DB 스키마 생성 + SQLite WAL 설정 (`db_core/schema.py`)
 - [x] ROS2 미들웨어 격리: `ROS_DOMAIN_ID` + `RMW_IMPLEMENTATION` + `ROS_LOCALHOST_ONLY` (`.env.example` + `run.sh`)
@@ -164,7 +165,7 @@
 **Behavior Tree (담당: D):**
 - [ ] FetchTool / ReturnTool 서브트리
 - [ ] 에러 복구 서브트리
-- [ ] Blackboard 스키마: `{active_tool_id, tool_pose, staging_state, intent}`
+- [x] Blackboard 스키마: `{active_tool_id, tool_pose, staging_state, intent}` — `orchestrator/blackboard.py`에 정의 (Phase 0 스켈레톤에서 선행, 2026-05-27)
 
 **모션 (담당: B):**
 - [ ] Track A: DSRArmDriver → unit_action_server

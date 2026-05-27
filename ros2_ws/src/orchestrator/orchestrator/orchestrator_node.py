@@ -8,14 +8,6 @@ from rclpy.node import Node
 
 from interfaces.msg import Intent
 
-from orchestrator.blackboard import (
-    KEY_ACTIVE_TOOL_ID,
-    KEY_INTENT,
-    KEY_IS_MOVING,
-    KEY_STAGING_STATE,
-    KEY_TOOL_POSE,
-    STAGING_EMPTY,
-)
 from orchestrator.bt_nodes.fetch_tool import build_fetch_subtree
 from orchestrator.bt_nodes.return_tool import build_return_subtree
 

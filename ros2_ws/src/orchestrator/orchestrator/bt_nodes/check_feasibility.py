@@ -1,9 +1,5 @@
-"""CheckFeasibility BT 노드 — /db/CheckToolFeasibility 서비스 호출."""
+"""CheckFeasibility BT 노드 — /db/CheckToolFeasibility 서비스로 DB Gate를 확인한다 (S-2)."""
 import py_trees
-import py_trees_ros
-import rclpy
-
-from interfaces.srv import CheckToolFeasibility
 
 from orchestrator.blackboard import (
     KEY_ACTIVE_TOOL_ID,
@@ -12,25 +8,22 @@ from orchestrator.blackboard import (
 )
 
 
-class CheckFeasibility(py_trees_ros.service_clients.FromBlackboard):
-    """Blackboard의 intent + active_tool_id로 DB Gate를 통과하는지 확인한다.
+class CheckFeasibility(py_trees.behaviour.Behaviour):
+    """Blackboard의 intent + active_tool_id로 /db/CheckToolFeasibility를 호출한다.
 
-    SUCCESS: feasible=True
-    FAILURE: feasible=False (feasibility_reason에 사유 기록)
+    SUCCESS: 응답 feasible=True
+    FAILURE: 응답 feasible=False — feasibility_reason에 사유 기록
+    RUNNING: 서비스 응답 대기 중
+
+    Phase 5a에서 rclpy 서비스 클라이언트를 노드로부터 주입받아 구현한다.
+    request: {intent, tool_id} (Blackboard 두 키에서 조립)
+    response: {feasible, reason}
     """
 
     def __init__(self, name: str = "CheckFeasibility"):
-        super().__init__(
-            name=name,
-            service_type=CheckToolFeasibility,
-            service_name="/db/CheckToolFeasibility",
-            key_request=KEY_ACTIVE_TOOL_ID,
-            key_response=KEY_FEASIBILITY_REASON,
-        )
+        super().__init__(name=name)
         self.blackboard = self.attach_blackboard_client(name=name)
-        self.blackboard.register_key(
-            key=KEY_INTENT, access=py_trees.common.Access.READ
-        )
+        self.blackboard.register_key(key=KEY_INTENT, access=py_trees.common.Access.READ)
         self.blackboard.register_key(
             key=KEY_ACTIVE_TOOL_ID, access=py_trees.common.Access.READ
         )
@@ -38,10 +31,6 @@ class CheckFeasibility(py_trees_ros.service_clients.FromBlackboard):
             key=KEY_FEASIBILITY_REASON, access=py_trees.common.Access.WRITE
         )
 
-    def initialise(self) -> None:
-        # TODO(Phase 5a): 서비스 요청 객체 구성 및 전송
-        raise NotImplementedError("Phase 5a에서 구현")
-
     def update(self) -> py_trees.common.Status:
-        # TODO(Phase 5a): 서비스 응답 확인 후 SUCCESS/FAILURE 반환
+        # TODO(Phase 5a): 서비스 요청 전송 → 응답의 feasible로 SUCCESS/FAILURE 결정
         raise NotImplementedError("Phase 5a에서 구현")
