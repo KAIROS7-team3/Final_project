@@ -30,7 +30,7 @@
 | RealSense 드라이버 | `realsense-ros` | TBD | D455f 지원 버전 |
 | RH-P12-RN 드라이버 | Dynamixel SDK / 전용 패키지 | TBD | RS-485 통신 |
 | PLC 라이브러리 | `pymodbus` | TBD | XBC-DR10E, Modbus RTU via RS-485 (ADR-009) |
-| DDS | CycloneDDS | Humble 기본 | 단일 머신 설정 |
+| DDS (RMW) | CycloneDDS | `rmw_cyclonedds_cpp` | `ROS_DOMAIN_ID` 격리 (`.env.example` 참조) |
 
 ---
 
