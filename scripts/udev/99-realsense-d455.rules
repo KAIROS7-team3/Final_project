@@ -1,0 +1,4 @@
+# Intel RealSense D455f — 고정 디바이스 노드
+# VID 8086 = Intel, PID 0b5c = D455/D455f
+# 설치: scripts/udev/install_udev_rules.sh
+SUBSYSTEM=="usb", ATTRS{idVendor}=="8086", ATTRS{idProduct}=="0b5c", MODE="0666", SYMLINK+="realsense"

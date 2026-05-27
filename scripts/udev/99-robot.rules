@@ -1,0 +1,12 @@
+# 로봇 시리얼 장치 — 고정 디바이스 노드
+# VID/PID는 Phase 1 bring-up 시 udevadm info 로 확인 후 기입 (담당: B, A)
+# 설치: scripts/udev/install_udev_rules.sh
+
+# Doosan e0509 컨트롤러 (TCP/IP — udev 불필요, Ethernet 직결)
+# 해당 없음
+
+# ROBOTIS RH-P12-RN 그리퍼 (USB→RS-485, Dynamixel Protocol 2.0) — 담당: B
+SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="gripper"
+
+# PLC XBC-DR10E (RS-485 Modbus RTU) — 담당: A
+SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="plc"

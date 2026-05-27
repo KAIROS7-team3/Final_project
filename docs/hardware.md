@@ -70,16 +70,28 @@
 
 ## 4. udev 규칙
 
-장치 고정 경로 (Phase 1에서 설정):
+규칙 파일 위치: `scripts/udev/` — 설치: `sudo bash scripts/udev/install_udev_rules.sh`
+
+| 파일 | 장치 | 상태 |
+|------|------|------|
+| `99-realsense-d455.rules` | Intel RealSense D455f | ✅ VID/PID 확정 (`8086:0b5c`) |
+| `99-robot.rules` | RH-P12-RN, PLC | ⏳ Phase 1 bring-up 시 VID/PID 확인 후 기입 (담당: B, A) |
 
 ```bash
-# /etc/udev/rules.d/99-robot.rules
-SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="doosan"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="gripper"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="plc"
+# scripts/udev/99-realsense-d455.rules (확정)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="8086", ATTRS{idProduct}=="0b5c", MODE="0666", SYMLINK+="realsense"
+
+# scripts/udev/99-robot.rules (VID/PID 미확정)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="gripper"  # 담당: B
+SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="plc"      # 담당: A
 ```
 
-> Vendor/Product ID는 Phase 1 bring-up 시 `udevadm info` 로 확인 후 기입.
+VID/PID 확인 방법 (Phase 1 bring-up 시):
+```bash
+udevadm info --query=all --name=/dev/ttyUSB0 | grep -E "ID_VENDOR_ID|ID_MODEL_ID"
+```
+
+> Doosan e0509는 Ethernet 직결 (TCP/IP) — udev 불필요.
 
 ---
 
