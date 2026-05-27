@@ -26,5 +26,11 @@ yolo:
     # - hammer_small
     # - tape_measure_3m
 
+tracker:
+  min_hits: 3          # 트랙 확정까지 필요한 연속 검출 프레임 수
+  max_misses: 5        # 트랙 소멸까지 허용하는 연속 미검출 프레임 수
+  max_match_dist_m: 0.05   # 동일 트랙으로 연결할 최대 거리 [m] (슬롯 간격 6cm 기준)
+  ema_alpha: 0.3       # 위치 평활화 EMA 가중치 (0=고정, 1=즉시 반응)
+
 debug:
   publish_annotated_image: true   # /vision/debug/annotated 발행 여부 (운영 시 false 권장)
