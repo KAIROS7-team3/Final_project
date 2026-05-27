@@ -18,10 +18,11 @@ intrinsics:
   distortion_model: brown_conrady   # D455f 기본값
   coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]   # 정밀 캘리브레이션 전 기본값
 
-# 탑뷰 설치 환경 측정값
+# 탑뷰 설치 환경
 mounting:
   style: top_view
-  approx_height_m: 0.955   # verify_camera.py mean depth 기준 (공구함까지 거리)
-  depth_range_m: [0.603, 1.548]   # 실측 min/max
+  height_from_base_m: 0.70        # 로봇 베이스 기준 실측 설치 높이 [m]
+  depth_scene_mean_m: 0.955       # verify_camera.py 장면 전체 평균 (바닥·주변 포함)
+  depth_range_m: [0.603, 1.548]   # verify_camera.py 실측 min/max
 
 # 재측정 기준: 렌즈 오염, 카메라 교체, firmware 업데이트
