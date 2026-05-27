@@ -21,7 +21,7 @@ intrinsics:
 # 탑뷰 설치 환경
 mounting:
   style: top_view
-  height_from_base_m: 0.70        # 로봇 베이스 기준 실측 설치 높이 [m]
+  height_from_base_m: null         # hand-eye 캘리브레이션 후 확정 (config/hand_eye.yaml 참조)
   depth_scene_mean_m: 0.955       # verify_camera.py 장면 전체 평균 (바닥·주변 포함)
   depth_range_m: [0.603, 1.548]   # verify_camera.py 실측 min/max
 
