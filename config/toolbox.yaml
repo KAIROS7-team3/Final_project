@@ -1,60 +1,55 @@
 ---
-# 공구함 슬롯 좌표 + 공구 기하 정보
+# 공구함 물리 구조 + 공구 카탈로그
 #
-# 부팅 시 YOLOv11s reconciliation (S-9), 슬롯 반납 동작에서 사용.
-# 좌표계: robot_base_link (REP-103)
-# 단위: meters, 각도 rad/quaternion — E-1 준수
+# 랜덤 배치 정책: 공구는 고정 슬롯 없이 층(layer) 안에 자유 배치.
+# 실제 위치는 부팅·작업 전 스캔(reconciliation) 시 YOLO 검출로 결정되어 DB에 기록.
+# toolbox.yaml은 물리 구조(크기·층수)와 공구 기하 정보만 관리.
+#
+# ── 스캔 흐름 (미래 UI 기반 모니터링 연계) ──────────────────────────────
+# 1. 로봇팔이 서랍(layer)을 순서대로 열기
+#    - layer 0: robot_poses.yaml scan_layer_0 포즈 이동 후 D455f 스캔
+#    - layer 1: robot_poses.yaml scan_layer_1 포즈 이동 후 D455f 스캔
+# 2. YOLOv11s 검출 결과(class_id + bbox center) → DB tool_events 기록
+# 3. DB 상태 = 스캔 완료 시점의 실제 배치 스냅샷
+# 4. 이후 fetch/return 명령 수행 시 DB 상태 실시간 갱신
+# 5. (미구현) UI가 DB를 폴링하여 공구함 현황 시각화
+#
 # 참조: docs/architecture.md, docs/frames.md, .claude/rules/safety.md S-9
+# 단위: m + quaternion (REP-103, E-1)
+# ─────────────────────────────────────────────────────────────────────────
 
 schema:
-  version: 1
+  version: 2   # v1 → v2: 고정 슬롯 제거, 랜덤 배치 + 스캔 기반으로 전환
   toolbox:
-    required:
-      - origin
-      - slot_size
-      - grid_layers
-      - grid_rows
-      - grid_cols
-      - orientation
+    required: [origin, slot_size, grid_layers, grid_rows, grid_cols, orientation]
   tools:
-    required:
-      - tool_id
-      - slot_layer
-      - slot_row
-      - slot_col
-      - dimensions
+    required: [tool_id, dimensions]
     optional: [display_name, mass_kg, grasp_approach, notes]
 
 # 공구함 자체 위치/크기 (운영자가 공구함을 옮기면 이 값만 갱신)
 toolbox:
-  origin: {x: 0.300, y: -0.200, z: 0.050}  # 슬롯 (0,0)의 좌상단 모서리
+  origin: {x: 0.300, y: -0.200, z: 0.050}  # layer 0 기준 좌상단 모서리
   orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-  slot_size: {x: 0.060, y: 0.060}  # 슬롯 한 칸의 가로/세로
-  grid_layers: 2
+  slot_size: {x: 0.060, y: 0.060}  # 슬롯 격자 한 칸 (참조용 — 공구는 격자 무관하게 놓임)
+  grid_layers: 2    # 서랍 수 (스캔 횟수와 일치)
   grid_rows: 1
   grid_cols: 3
-  layer_height_z: 0.080  # 층간 높이. Phase 0 ② 실제 측정 후 갱신
-  slot_depth_z: 0.040  # 공구가 슬롯에 들어간 깊이
+  layer_height_z: 0.080   # 층간 높이 — Phase 0 ② 실제 측정 후 갱신
+  slot_depth_z: 0.040
 
-# 6종 공구 카탈로그.
-# 슬롯 기준은 robot_arm.db의 tools.home_slot_layer/home_slot_row/home_slot_col과 일치한다.
-# ⚠️ 아래 좌표/치수/질량은 임의값이다. Phase 0 ② 캘리브레이션 + 실제 공구 측정 후 확정.
+# 6종 공구 카탈로그 — 물리 치수·그립 정보만 관리.
+# 슬롯 위치(slot_layer/row/col)는 스캔 시 DB에 기록되며 여기서 관리하지 않음.
+# ⚠️ 치수·질량은 임의값. Phase 0 ② 실측 후 확정.
 tools:
   - tool_id: screwdriver
     display_name: "십자 드라이버"
-    slot_layer: 0
-    slot_row: 0
-    slot_col: 0
-    dimensions: {length: 0.180, diameter: 0.020}  # m
+    dimensions: {length: 0.180, diameter: 0.020}
     mass_kg: 0.080
-    grasp_approach: top  # top | side | front
+    grasp_approach: top
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: utility_knife
     display_name: "커터칼"
-    slot_layer: 0
-    slot_row: 0
-    slot_col: 1
     dimensions: {length: 0.160, width: 0.030, height: 0.015}
     mass_kg: 0.070
     grasp_approach: top
@@ -62,9 +57,6 @@ tools:
 
   - tool_id: ratchet_wrench
     display_name: "라쳇 렌치"
-    slot_layer: 0
-    slot_row: 0
-    slot_col: 2
     dimensions: {length: 0.200, width: 0.040, height: 0.030}
     mass_kg: 0.250
     grasp_approach: top
@@ -72,9 +64,6 @@ tools:
 
   - tool_id: multi_tool
     display_name: "멕가이버"
-    slot_layer: 1
-    slot_row: 0
-    slot_col: 0
     dimensions: {length: 0.110, width: 0.035, height: 0.020}
     mass_kg: 0.180
     grasp_approach: top
@@ -82,9 +71,6 @@ tools:
 
   - tool_id: spanner_16mm
     display_name: "스패너 16mm"
-    slot_layer: 1
-    slot_row: 0
-    slot_col: 1
     dimensions: {length: 0.180, width: 0.040, height: 0.012}
     mass_kg: 0.120
     grasp_approach: top
@@ -92,9 +78,6 @@ tools:
 
   - tool_id: socket_19mm
     display_name: "복스 소켓 19mm"
-    slot_layer: 1
-    slot_row: 0
-    slot_col: 2
     dimensions: {length: 0.040, diameter: 0.026}
     mass_kg: 0.090
     grasp_approach: top
@@ -102,4 +85,4 @@ tools:
 
 # 수락 기준 (docs/conventions.md):
 # - 공구 분류 정확도 ≥ 95% (실험실 조명)
-# - 슬롯 반납 오차 ≤ 5mm
+# - 스캔 후 DB 갱신까지 지연 ≤ 1s
