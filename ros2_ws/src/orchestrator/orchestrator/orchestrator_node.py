@@ -34,7 +34,7 @@ class OrchestratorNode(Node):
         self.get_logger().info("[OrchestratorNode] ready — listening on /voice/intent")
 
     def _on_intent(self, msg: Intent) -> None:
-        """S-7: is_moving 중 신규 명령 무시."""
+        """TODO(Phase 5a): S-7 — is_moving=True 이면 반환 (현재 미구현)."""
         # TODO(Phase 5a): Blackboard에서 is_moving 읽기
         self.get_logger().info(
             "[OrchestratorNode] intent received - type=%s tool_id=%s",

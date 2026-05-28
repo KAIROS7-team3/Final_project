@@ -37,4 +37,5 @@ class CheckFeasibility(py_trees.behaviour.Behaviour):
 
     def update(self) -> py_trees.common.Status:
         # TODO(Phase 5a): 서비스 요청 전송 → 응답의 feasible로 SUCCESS/FAILURE 결정
+        self.blackboard.feasibility_reason = "stub: CheckToolFeasibility 미구현 (Phase 5a)"
         return py_trees.common.Status.FAILURE

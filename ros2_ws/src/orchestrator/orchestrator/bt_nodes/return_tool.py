@@ -17,7 +17,7 @@ def build_return_subtree() -> py_trees.behaviour.Behaviour:
         py_trees.behaviour.Behaviour: 서브트리 루트.
     """
     # TODO(Phase 5a): 실제 서브트리 조립
-    root = py_trees.composites.Sequence(name="ReturnTool", memory=True)
+    root = py_trees.composites.Sequence(name="ReturnTool", memory=False)
     root.add_child(
         py_trees.behaviours.Failure(name="TODO:ReturnTool(Phase5a)")
     )
