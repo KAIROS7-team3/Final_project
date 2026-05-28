@@ -11,6 +11,8 @@
 
   <depend>rclpy</depend>
   <depend>interfaces</depend>
+  <depend>std_msgs</depend>
+  <depend>vision_msgs</depend>
   <depend version_gte="2.4.0">py_trees</depend>
   <depend version_gte="2.2.0">py_trees_ros</depend>
 
