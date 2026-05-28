@@ -5,14 +5,17 @@
 # 실제 위치는 부팅·작업 전 스캔(reconciliation) 시 YOLO 검출로 결정되어 DB에 기록.
 # toolbox.yaml은 물리 구조(크기·층수)와 공구 기하 정보만 관리.
 #
-# ── 스캔 흐름 (미래 UI 기반 모니터링 연계) ──────────────────────────────
-# 1. 로봇팔이 서랍(layer)을 순서대로 열기
-#    - layer 0: robot_poses.yaml scan_layer_0 포즈 이동 후 D455f 스캔
-#    - layer 1: robot_poses.yaml scan_layer_1 포즈 이동 후 D455f 스캔
-# 2. YOLOv11s 검출 결과(class_id + bbox center) → DB tool_events 기록
-# 3. DB 상태 = 스캔 완료 시점의 실제 배치 스냅샷
-# 4. 이후 fetch/return 명령 수행 시 DB 상태 실시간 갱신
-# 5. (미구현) UI가 DB를 폴링하여 공구함 현황 시각화
+# ── 공구 현황 추적 방식 ──────────────────────────────────────────────────
+# D455f 스캔은 작업 세션당 2회만 수행한다.
+#   [스캔 ①] 작업 시작 전: 서랍(layer 0 → layer 1) 순서로 개방 후 YOLOv11s 검출
+#             → DB 초기 스냅샷 기록 (공구 존재 여부 + 대략적 위치)
+#   [스캔 ②] 작업 종료 후: 동일 방식으로 재스캔 → DB 최종 상태 확인
+#
+# 스캔 사이(작업 중간) 공구 현황 변화는 스캔 없이 이벤트로 추적한다.
+#   - fetch/return 작업 수행 시 발생하는 ROS 토픽·액션 결과를 DB에 반영
+#   - (미구현) UI는 DB를 폴링하여 공구함 현황을 실시간 시각화
+#
+# robot_poses.yaml scan_layer_0 / scan_layer_1 참조
 #
 # 참조: docs/architecture.md, docs/frames.md, .claude/rules/safety.md S-9
 # 단위: m + quaternion (REP-103, E-1)
