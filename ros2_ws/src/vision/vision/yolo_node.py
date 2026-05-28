@@ -9,25 +9,20 @@ Phase 2 파인튜닝 완료 후 model_path 기입 → 재기동으로 활성화.
 """
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
-import cv2
-import numpy as np
 import rclpy
 import yaml
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
+from sensor_msgs.msg import Image
+from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
 _QOS_BEST_EFFORT_10 = QoSProfile(
     depth=10,
     reliability=QoSReliabilityPolicy.BEST_EFFORT,
 )
-from sensor_msgs.msg import Image
-from vision_msgs.msg import BoundingBox2D, Detection2D, Detection2DArray, ObjectHypothesisWithPose
-
-logger = logging.getLogger(__name__)
 
 _CONFIG_PATH = Path("config/vision.yaml")
 

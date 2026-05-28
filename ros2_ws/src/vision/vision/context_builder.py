@@ -26,7 +26,7 @@ scene JSON 구조:
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -35,10 +35,15 @@ import numpy as np
 import rclpy
 import yaml
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import String
 from vision_msgs.msg import Detection3DArray
 
 from vision.hand_eye_loader import HandEyeNotCalibratedError, load_transform
+
+# interfaces.md §4
+_QOS_BEST_EFFORT_5 = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.BEST_EFFORT)
+_QOS_RELIABLE_1 = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
 
 _TOOLBOX_PATH = Path("config/toolbox.yaml")
 _HAND_EYE_PATH = Path("config/hand_eye.yaml")
@@ -103,8 +108,12 @@ class ContextBuilder(Node):
         self._all_slots = [[s.row, s.col] for s in self._slots]
         self._calibrated = self._check_calibration()
 
-        self.create_subscription(Detection3DArray, "/vision/tracked_poses", self._on_poses, 10)
-        self._pub = self.create_publisher(String, "/vision/scene_context", 10)
+        # interfaces.md §4: Best Effort / depth 5
+        self.create_subscription(
+            Detection3DArray, "/vision/tracked_poses", self._on_poses, _QOS_BEST_EFFORT_5
+        )
+        # interfaces.md §4: Reliable / depth 1 (orchestrator 소비)
+        self._pub = self.create_publisher(String, "/vision/scene_context", _QOS_RELIABLE_1)
 
         self.get_logger().info(
             f"[context_builder] ready - slots={len(self._slots)} "
