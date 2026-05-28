@@ -9,9 +9,20 @@
 schema:
   version: 1
   toolbox:
-    required: [origin, slot_size, grid_layers, grid_rows, grid_cols, orientation]
+    required:
+      - origin
+      - slot_size
+      - grid_layers
+      - grid_rows
+      - grid_cols
+      - orientation
   tools:
-    required: [tool_id, slot_layer, slot_row, slot_col, dimensions]
+    required:
+      - tool_id
+      - slot_layer
+      - slot_row
+      - slot_col
+      - dimensions
     optional: [display_name, mass_kg, grasp_approach, notes]
 
 # 공구함 자체 위치/크기 (운영자가 공구함을 옮기면 이 값만 갱신)
