@@ -17,14 +17,14 @@ checkout_timeout_minutes: 10
 missing_to_alert_seconds: 30
 
 # Staging Area 무단 회수 감지 (결정 #26)
-# idle 상태에서 주기적으로 YOLOv8로 staging 슬롯 확인
+# idle 상태에서 주기적으로 YOLOv11s로 staging 슬롯 확인
 staging_recheck_interval_seconds: 60
 
 # 부팅 시 reconciliation (S-9)
 boot_reconciliation:
   enabled: true
   scan_pose: scan_toolbox              # robot_poses.yaml 키
-  detection_confidence_threshold: 0.85  # YOLOv8 confidence
+  detection_confidence_threshold: 0.85  # YOLOv11s confidence
 
 # 운영자 알림 정책 (결정 #28: v1.0은 PLC LED만 사용)
 alert:

@@ -1,0 +1,18 @@
+---
+# YOLOv11s 데이터셋 설정 — 공구함 6종 그리퍼 캠 검출
+# 참조: config/vision.yaml class_names, config/toolbox.yaml
+# 인덱스 순서 변경 시 config/vision.yaml class_names도 동시 갱신 필수
+# tool_id는 robot_arm.db tools 테이블과 일치해야 함
+
+path: datasets/tools   # 프로젝트 루트 기준 상대경로
+train: images/train
+val: images/val
+
+nc: 6
+names:
+  0: screwdriver
+  1: utility_knife
+  2: ratchet_wrench
+  3: multi_tool
+  4: spanner_16mm
+  5: socket_19mm

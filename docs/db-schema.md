@@ -66,7 +66,7 @@
 | `rejected` | DB Gate에서 차단된 명령 | 불가 명령 (S-2): missing/out/fod_alert 상태 공구 fetch 등 |
 | `error` | 하드웨어/소프트웨어 실패 | 모션/그리퍼/PLC 실패 (E-5) |
 | `fod_alert` | FOD 임계 초과 → 분실 알림 | 자동 (S-8) |
-| `reconciled` | 부팅 시 YOLOv8 스캔으로 상태 동기화 | 부팅 시 1회 (S-9) |
+| `reconciled` | 부팅 시 YOLOv11s 스캔으로 상태 동기화 | 부팅 시 1회 (S-9) |
 
 ### 3.2 인덱스 권장
 
@@ -113,7 +113,7 @@ display_name = 'default operator'
 |----|------|
 | `boot` | 시스템 부팅 시작 |
 | `boot_complete` | reconciliation 완료 + 명령 수신 가능 |
-| `reconciliation_mismatch` | 부팅 시 DB vs YOLOv8 불일치 (운영자 확인 필요, S-9) |
+| `reconciliation_mismatch` | 부팅 시 DB vs YOLOv11s 불일치 (운영자 확인 필요, S-9) |
 | `estop` | E-stop 트리거 (S-3) |
 | `estop_reset` | E-stop 해제 후 정상 복귀 |
 | `db_cache_fallback` | DB 연결 실패 → 캐시 사용 (S-2, 결정 #12) |

@@ -66,3 +66,10 @@ config/hand_eye.yaml
 # verify_camera.py 출력 이미지 (로컬 검증용)
 verify_rgb.png
 verify_depth_colormap.png
+
+# 데이터셋 이미지 (용량 초과 — 별도 스토리지 관리)
+datasets/tools/images/
+datasets/tools/labels/
+
+# YOLO 학습 결과물
+runs/

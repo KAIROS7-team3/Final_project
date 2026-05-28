@@ -16,7 +16,7 @@ class WorkspaceScan:
 
 
 def scan_workspace(arm: ArmInterface, camera: CameraInterface) -> WorkspaceScan:
-    """Capture aligned RGB+depth frames and current arm pose for YOLOv8 detection.
+    """Capture aligned RGB+depth frames and current arm pose for YOLOv11s detection.
 
     Returns WorkspaceScan with frame metadata and arm pose on success.
     Returns WorkspaceScan(success=False) on camera failure; does not suppress arm errors.

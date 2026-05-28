@@ -1,4 +1,4 @@
-"""YOLOv8 공구 검출 노드 (Track A/B).
+"""YOLOv11s 공구 검출 노드 (Track A/B).
 
 Subscribe : /d455f/color/image_raw        (sensor_msgs/Image)
 Publish   : /vision/detections            (vision_msgs/Detection2DArray)
@@ -33,7 +33,7 @@ def _load_cfg() -> dict:
 
 
 class YoloNode(Node):
-    """YOLOv8 기반 9종 공구 탑뷰 검출 노드."""
+    """YOLOv11s 기반 9종 공구 탑뷰 검출 노드."""
 
     def __init__(self) -> None:
         super().__init__("yolo_node")

@@ -266,7 +266,7 @@ def check_feasibility(tool_id: str) -> Result[str]:
     return Err(code="TOOL_UNAVAILABLE", message=f"{tool_id} 상태={status}")
 
 # 사용 (match)
-match check_feasibility("screwdriver_phillips_small"):
+match check_feasibility("screwdriver"):
     case Ok(value):
         proceed_with_fetch(value)
     case Err(code="TOOL_UNAVAILABLE", message=msg):

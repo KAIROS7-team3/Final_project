@@ -1,7 +1,7 @@
 ---
 # 공구함 슬롯 좌표 + 공구 기하 정보
 #
-# 부팅 시 YOLOv8 reconciliation (S-9), 슬롯 반납 동작에서 사용.
+# 부팅 시 YOLOv11s reconciliation (S-9), 슬롯 반납 동작에서 사용.
 # 좌표계: robot_base_link (REP-103)
 # 단위: meters, 각도 rad/quaternion — E-1 준수
 # 참조: docs/architecture.md, docs/frames.md, .claude/rules/safety.md S-9

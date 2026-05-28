@@ -3,7 +3,7 @@
 <package format="3">
   <name>vision</name>
   <version>0.1.0</version>
-  <description>Vision pipeline: RealSense D455f bring-up, YOLOv8 detection, 6D pose, tracker (Track A/B)</description>
+  <description>Vision pipeline: RealSense D455f bring-up, YOLOv11s detection, 6D pose, tracker (Track A/B)</description>
   <maintainer email="yeonseop8714@gmail.com">C</maintainer>
   <license>MIT</license>
 

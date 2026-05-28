@@ -62,7 +62,7 @@ sudo apt install ros-humble-py-trees ros-humble-py-trees-ros
    └── → Fallback: DispatchByIntent
         ├── → Sequence: FetchTool                  ← intent==fetch
         │    ├── Condition: IsFetchIntent
-        │    ├── Action: LocalizeTool              ← YOLOv8 + 6D Pose
+        │    ├── Action: LocalizeTool              ← YOLOv11s + 6D Pose
         │    ├── Action: PlanGrasp                 ← grasp_planner
         │    ├── Action: MoveToPreGrasp
         │    ├── Action: CloseGripper
@@ -138,8 +138,8 @@ from dataclasses import dataclass
 @dataclass
 class BlackboardSchema:
     intent: str            # 'fetch' | 'return'
-    active_tool_id: str    # 예: 'screwdriver_phillips_small'
-    tool_pose: GraspPose | None    # YOLOv8+6D pose 결과
+    active_tool_id: str    # 예: 'screwdriver'
+    tool_pose: GraspPose | None    # YOLOv11s+6D pose 결과
     staging_state: str     # 'empty' | 'placed' | 'pickup_ready'
 ```
 
@@ -292,9 +292,9 @@ def mock_motion(mocker):
     mock.return_value.result.return_value = ActionResult(success=True)
     return mock
 
-def test_fetch_phillips_trajectory(mock_perception, mock_motion):
+def test_fetch_screwdriver_trajectory(mock_perception, mock_motion):
     bb = py_trees.blackboard.Blackboard.set("intent", "fetch")
-    bb.set("active_tool_id", "screwdriver_phillips_small")
+    bb.set("active_tool_id", "screwdriver")
 
     root = build_root()
     tree = py_trees.trees.BehaviourTree(root)

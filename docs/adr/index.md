@@ -10,7 +10,7 @@
 | 번호 | 제목 | 카테고리 | 상태 |
 |------|------|---------|------|
 | ADR-001 | 모션 제어 백엔드 — 3-트랙 비교 | [아키텍처](architecture.md) | 확정 |
-| ADR-002 | 공구 인식 — YOLOv8 + 깊이 포즈 | [AI/ML](ai-ml.md) | 확정 |
+| ADR-002 | 공구 인식 — YOLOv11s + 깊이 포즈 | [AI/ML](ai-ml.md) | 확정 |
 | ADR-003 | 행동 프레임워크 (Track A/B) — py_trees | [AI/ML](ai-ml.md) | 확정 |
 | ADR-004 | Track C VLA 전략 — 파인튜닝 | [AI/ML](ai-ml.md) | 확정 |
 | ADR-005 | VLA 안전 경계 — SafetyValidator 필수 | [안전](safety.md) | 확정 |
@@ -24,7 +24,7 @@
 | ADR-013 | Track B RL 시뮬레이션 환경 — Isaac Sim (Isaac Lab) | [AI/ML](ai-ml.md) | 확정 |
 | ADR-014 | RL Sim-to-real 전략 — DR+SI 하이브리드 | [AI/ML](ai-ml.md) | 확정 |
 | ADR-015 | Track B RL 학습 전략 — 시뮬 전용 우선 | [AI/ML](ai-ml.md) | 확정 |
-| ADR-016 | Omniverse Replicator 도입 범위 — YOLOv8 한정 | [AI/ML](ai-ml.md) | 확정 |
+| ADR-016 | Omniverse Replicator 도입 범위 — YOLOv11s 한정 | [AI/ML](ai-ml.md) | 확정 |
 
 ---
 
@@ -47,7 +47,7 @@
 
 | # | 항목 | 결정 내용 |
 |---|------|-----------|
-| 1 | F/T 센서 | v1.0 미사용. 그리퍼 파지력·YOLOv8으로 대체. v2.0+ 검토 가능 |
+| 1 | F/T 센서 | v1.0 미사용. 그리퍼 파지력·YOLOv11s으로 대체. v2.0+ 검토 가능 |
 | 2 | PLC 모델 + 프로토콜 | LS Electric XBC-DR10E, Modbus RTU via RS-485 (→ ADR-009) |
 | 3 | DB 엔진 | SQLite WAL 모드 (→ ADR-008) |
 | 8 | FOD 대출 임계 시간 | 기본값 10분, `config/fod.yaml`로 조정 가능 |
@@ -65,7 +65,7 @@
 | 20 | Operator ID | v1.0 고정값 `'operator_01'` |
 | 21 | Whisper 모델 크기 | small, 결과 불량 시 medium 업그레이드 |
 | 25 | hal/ vs Doosan SDK | Track C는 hal/ 우회, Doosan Python SDK 직접 |
-| 26 | Staging Area 무단 회수 감지 | 주기적 YOLOv8 vision 확인 (idle 시) |
+| 26 | Staging Area 무단 회수 감지 | 주기적 YOLOv11s vision 확인 (idle 시) |
 | 27 | grasp_planner 통합 위치 | 별도 PlanGrasp BT 노드 |
 | 28 | 운영자 피드백 채널 | PLC LED만 사용 (v1.0) |
 | 29 | 오디오 게이팅 방식 | 소프트웨어 게이팅 (VAD + is_moving 플래그) |

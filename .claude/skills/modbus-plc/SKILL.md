@@ -59,17 +59,14 @@ watchdog:
   timeout_s: 2.0     # PLC watchdog 타임아웃
 
 led_slots:
-  screwdriver_phillips_small: 0   # coil 주소
-  screwdriver_phillips_large: 1
-  screwdriver_flathead_small: 2
-  screwdriver_flathead_large: 3
-  wrench_8mm:   4
-  wrench_10mm:  5
-  wrench_13mm:  6
-  pliers_standard: 7
-  pliers_long:     8
-  watchdog_coil:   100   # heartbeat용
-  estop_input:     200   # 디지털 입력 (읽기 전용)
+  screwdriver:    0   # coil 주소
+  utility_knife:  1
+  ratchet_wrench: 2
+  multi_tool:     3
+  spanner_16mm:   4
+  socket_19mm:    5
+  watchdog_coil:  100   # heartbeat용
+  estop_input:    200   # 디지털 입력 (읽기 전용)
 ```
 
 ## 3. Modbus 패킷 형식
@@ -290,7 +287,7 @@ def plc_session(config_path=Path("config/plc.yaml")):
 
 # 사용
 with plc_session() as plc:
-    plc.set_led("screwdriver_phillips_small", LEDState.GREEN)
+    plc.set_led("screwdriver", LEDState.GREEN)
 ```
 
 ## 9. 흔한 함정

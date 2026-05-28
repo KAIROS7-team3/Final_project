@@ -57,7 +57,7 @@ tool_id 형식 및 config 키 형식 → [`.claude/rules/engineering.md` E-8](..
 - [ ] 모든 fetch/return/FOD 이벤트 DB에 타임스탬프와 함께 기록
 - [ ] PLC LED가 상태 변경 후 500ms 이내에 반영
 - [ ] FOD 알림이 공구 분실 후 30초 이내에 발생
-- [ ] 부팅 시 YOLOv8 reconciliation 완료 후 정상 운영 시작
+- [ ] 부팅 시 YOLOv11s reconciliation 완료 후 정상 운영 시작
 - [ ] systemd를 통해 Vector 16 HX 부팅 시 자동 시작
 
 ### Track A/B 전용
