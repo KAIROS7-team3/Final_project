@@ -138,7 +138,7 @@ from dataclasses import dataclass
 @dataclass
 class BlackboardSchema:
     intent: str            # 'fetch' | 'return'
-    active_tool_id: str    # 예: 'screwdriver_phillips_small'
+    active_tool_id: str    # 예: 'screwdriver'
     tool_pose: GraspPose | None    # YOLOv8+6D pose 결과
     staging_state: str     # 'empty' | 'placed' | 'pickup_ready'
 ```
@@ -292,9 +292,9 @@ def mock_motion(mocker):
     mock.return_value.result.return_value = ActionResult(success=True)
     return mock
 
-def test_fetch_phillips_trajectory(mock_perception, mock_motion):
+def test_fetch_screwdriver_trajectory(mock_perception, mock_motion):
     bb = py_trees.blackboard.Blackboard.set("intent", "fetch")
-    bb.set("active_tool_id", "screwdriver_phillips_small")
+    bb.set("active_tool_id", "screwdriver")
 
     root = build_root()
     tree = py_trees.trees.BehaviourTree(root)
