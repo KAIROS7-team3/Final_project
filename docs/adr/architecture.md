@@ -26,7 +26,7 @@
 | 컴포넌트 | 추정 VRAM |
 |----------|-----------|
 | Whisper small | ~1 GB |
-| YOLOv8s | ~0.5 GB |
+| YOLOv11ss | ~0.5 GB |
 | Gemma 4 7B (Q4) | ~4–6 GB |
 | **Track A 합계** | **~5.5–7.5 GB** |
 | + RL policy | ~1 GB |

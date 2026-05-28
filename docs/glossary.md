@@ -20,7 +20,7 @@
 | **HAL** | Hardware Abstraction Layer | `hal/` 모듈 — Track A/B 전용 하드웨어 추상화 |
 | **HRC** | Human-Robot Collaboration | 협동 로봇 환경 (cobot). Cartesian 속도 ≤ 250mm/s |
 | **PLC** | Programmable Logic Controller | LED 상태 표시 + I/O. LS Electric XBC-DR10E, Modbus RTU/RS-485 (ADR-009) |
-| **Reconciliation** | DB ↔ 실제 슬롯 상태 동기화 | 부팅 시 YOLOv8로 전체 스캔 (S-9) |
+| **Reconciliation** | DB ↔ 실제 슬롯 상태 동기화 | 부팅 시 YOLOv11s로 전체 스캔 (S-9) |
 | **Staging Area** | 거치 영역 | 로봇이 공구를 놓는 중간 위치 — 운영자가 가져감. v1.0 핸드오버 대체 (S-6) |
 | **TF** | Transform (ROS) | 좌표계 간 변환 트리. `tf2_ros`로 관리 |
 | **udev** | Linux 디바이스 매니저 | USB 카메라/시리얼 포트 영구 이름 규칙 (`hardware.md`) |
@@ -41,7 +41,7 @@
 | **STT** | Speech-to-Text | Whisper small (결정 #21) |
 | **VAD** | Voice Activity Detection | 음성 구간 감지. 오디오 게이팅에 사용 (결정 #29) |
 | **VLA** | Vision-Language-Action model | Track C — OpenVLA/π0 등 (미결 #5) |
-| **YOLOv8** | Object detection model | 공구 분류 + 슬롯 위치 검출 |
+| **YOLOv11s** | Object detection model | 공구 분류 + 슬롯 위치 검출 |
 
 ---
 

@@ -25,7 +25,7 @@ poses:
   scan_toolbox:
     # deg: [0, -20, 70, 0, 80, 0]
     joints: [0.0, -0.349, 1.222, 0.0, 1.396, 0.0]
-    description: "공구함 전체가 카메라 시야에 들어오는 포즈. 부팅 시 YOLOv8 스캔."
+    description: "공구함 전체가 카메라 시야에 들어오는 포즈. 부팅 시 YOLOv11s 스캔."
 
   # Staging Area 전체 스캔 포즈 — 무단 회수 감지 (결정 #26)
   scan_staging:

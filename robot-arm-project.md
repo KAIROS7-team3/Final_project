@@ -37,7 +37,7 @@
 | 역할 | 담당 패키지 / 모듈 | 선행 조건 |
 |------|-------------------|-----------|
 | **인프라** | `interfaces`, `hal`, `unit_actions/`, DB 스키마, CI | — |
-| **퍼셉션** | `vision` (YOLOv8, Pose, Tracker), 데이터셋 수집 | interfaces 동결 |
+| **퍼셉션** | `vision` (YOLOv11s, Pose, Tracker), 데이터셋 수집 | interfaces 동결 |
 | **음성/LLM** | `voice` (Whisper, Gemma 4), Track C VLA 전체 | interfaces 동결, HAL 동결 |
 | **제어 A** | `motion/dsr_controller`, `orchestrator` (BT), `plc` | interfaces, unit_actions 동결 |
 | **제어 B** | `motion/rl_policy`, RL 시뮬레이션, `db` | interfaces, unit_actions 동결 |
@@ -50,7 +50,7 @@
 |--------|---------------|------|
 | **A** | `db`, `plc`, `voice` (Whisper + Gemma 4) | 음성과 DB/PLC를 단일 담당 |
 | **B** | `motion` (DSR + RL), Isaac Sim/Lab | Track A/B 모션 + RL 시뮬 환경 |
-| **C** | `vision` (YOLOv8, Pose, Tracker) | 데이터셋 수집·학습 포함 |
+| **C** | `vision` (YOLOv11s, Pose, Tracker) | 데이터셋 수집·학습 포함 |
 | **D** | `orchestrator` (BT), `interfaces`, **공통 인프라** | CI, ROS_DOMAIN_ID, systemd, HAL 스켈레톤, unit_actions/ 시그니처 동결 책임 |
 | **E** | Track C VLA 전체 (`track_c_vla.py`, demo 수집, fine-tuning) | Phase 4 안정화 후 본격 수집 |
 
@@ -86,7 +86,7 @@
 - [x] ROS2 미들웨어 격리: `ROS_DOMAIN_ID` + `RMW_IMPLEMENTATION` + `ROS_LOCALHOST_ONLY` (`.env.example` + `run.sh`)
   - Doosan 컨트롤러 TCP 통신과 무관, HP ProBook rqt 모니터링 호환 (`ROS_LOCALHOST_ONLY=0`)
   - 같은 LAN의 다른 ROS2 프로젝트와 토픽 충돌 방지
-- [ ] 공구 이미지 데이터셋 수집 시작 (YOLOv8 학습까지 시간 필요) — **담당: C**
+- [ ] 공구 이미지 데이터셋 수집 시작 (YOLOv11s 학습까지 시간 필요) — **담당: C**
 - [x] Track C: VLA demonstration 수집 환경 구성 (`track_c_vla.py` 골격 + `run.sh --track C`)
 
 **병렬 개발 인프라:**
@@ -115,7 +115,7 @@
 - [x] **#23 결정**: Isaac Sim (Isaac Lab) 채택 — GPU 병렬 환경, Doosan e0509 URDF 지원 (ADR-013, 2026-05-27)
 - [x] **#24 결정**: DR+SI 하이브리드 — SI 실측 후 ±20% DR 적용 (ADR-014, 2026-05-27)
 - [x] **#6 결정**: 시뮬 전용 (Pure RL) 우선, G5b 미달 시 Demo+RL 전환 (ADR-015, 2026-05-27)
-- [x] **#35 결정**: Omniverse Replicator — YOLOv8 합성 데이터 증강 한정 도입 (ADR-016, 2026-05-27)
+- [x] **#35 결정**: Omniverse Replicator — YOLOv11s 합성 데이터 증강 한정 도입 (ADR-016, 2026-05-27)
 - [x] PoC 결과 → 4개 ADR 작성 (`docs/adr/ai-ml.md` 갱신) + `docs/simulation.md` Isaac Sim 트랙 항목 확정
 
 > **위험 완화**: 4개 미결 사항 중 하나라도 Phase 5b 진입 시점까지 미결정이면 Phase 5b 작업 중단 — Phase 5a (Track A)만 진행.
@@ -138,7 +138,7 @@
 
 - [ ] Whisper STT 노드 (`voice` 패키지)
 - [ ] 9종 공구 이미지 데이터셋 수집
-- [ ] YOLOv8 파인튜닝
+- [ ] YOLOv11s 파인튜닝
 - [ ] 6D 포즈 + 오브젝트 트래커 노드
 - [ ] 반고정 슬롯 오정렬 보정 로직
 - [ ] `context_builder.py`: Track A/B용 scene JSON (Track C 미사용)
@@ -155,7 +155,7 @@
 - [ ] Staging Area 거치 동작 검증 (`place_at_staging`, `pick_from_staging`)
 - [ ] Staging Area 좌표 캘리브레이션 (`config/staging_area.yaml`)
 - [ ] 예외 케이스: 파지 실패, Staging Area 장애물, 공구 낙하
-- [ ] Staging Area 주기 vision 확인 (idle 시 YOLOv8 → DB 갱신)
+- [ ] Staging Area 주기 vision 확인 (idle 시 YOLOv11s → DB 갱신)
 
 ### Phase 5a: Track A — Gemma 4 + BT + DSR (6–8주)
 
@@ -246,7 +246,7 @@
 | **G0 → 1** | Phase 1 | `interfaces` 동결 완료 + `unit_actions/` 시그니처 동결 + `interfaces/CHANGELOG.md` 생성 + CI 단위 테스트 통과 | D |
 | **G0.5 → 5b** | Phase 5b | 미결 #6/#23/#24/#35 모두 ADR 작성 완료 + `docs/simulation.md` Isaac Sim 트랙 항목 확정 | B + 팀 합의 |
 | **G1 → 2** | Phase 2 | 4종 드라이버(arm/gripper/camera/plc) bring-up 검증 + hand-eye 캘리브레이션 RMSE ≤ 5mm | B, C, A |
-| **G2 → 3** | Phase 3 | Whisper STT 9종 키워드 인식률 ≥ 95% + YOLOv8 9종 mAP ≥ 0.85 + 슬롯 보정 ±5mm | A, C |
+| **G2 → 3** | Phase 3 | Whisper STT 9종 키워드 인식률 ≥ 95% + YOLOv11s 9종 mAP ≥ 0.85 + 슬롯 보정 ±5mm | A, C |
 | **G3 → 4** | Phase 4 | `CheckToolFeasibility` 9종 정상 응답 + FOD 시뮬 타임아웃 동작 + PLC 4색 점등 검증 | A |
 | **G4 → 5a** | Phase 5a | Staging Area 거치 9종 × 3 사이클 전 통과 + 거치 오차 ±5mm + 예외 케이스 3종 복구 | D + B, C |
 | **G4 → 6** | Phase 6 본격 수집 | G4 동일 + 9종 fetch+return 단일 사이클 시뮬레이션 검증 | E |
@@ -289,7 +289,7 @@
 | Gemma 4 의도 정확도 | ≥ 97% |
 | DB 가용성 차단 정확도 | 100% |
 | FOD 알림 지연 | ≤ 30초 |
-| 공구 분류 정확도 (YOLOv8) | ≥ 95% |
+| 공구 분류 정확도 (YOLOv11s) | ≥ 95% |
 | 포즈 추정 오차 | ≤ 5mm, ≤ 3° |
 | Fetch 사이클 타임 (Track A/B) | ≤ 10초 |
 | Fetch 사이클 타임 (Track C) | ≤ 13초 |

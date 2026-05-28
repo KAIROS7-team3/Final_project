@@ -1,5 +1,5 @@
 ---
-# YOLOv8 데이터셋 설정 — 공구함 5종 탑뷰 검출
+# YOLOv11s 데이터셋 설정 — 공구함 5종 탑뷰 검출
 # 참조: config/vision.yaml class_names, config/toolbox.yaml
 # 인덱스 순서 변경 시 config/vision.yaml class_names도 동시 갱신 필수
 

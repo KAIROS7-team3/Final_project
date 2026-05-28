@@ -42,7 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Doosan e0509 협동 로봇팔**이 음성 명령으로 공구함에서 공구를 꺼내 전달하고, 반납 명령 시 제자리에 돌려놓는 시스템.
 
 - **하드웨어**: Doosan e0509 · ROBOTIS RH-P12-RN (그리퍼) · Intel RealSense D455f · PLC (LS Electric XBC-DR10E)
-- **소프트웨어**: ROS2 Humble (Track A/B) · Whisper STT · Gemma 4 (로컬 LLM) · YOLOv8 · DB (FOD 관리)
+- **소프트웨어**: ROS2 Humble (Track A/B) · Whisper STT · Gemma 4 (로컬 LLM) · YOLOv11s · DB (FOD 관리)
 - **개발 머신**: Vector 16 HX AI A2XWIG (주) · HP ProBook 450 G10 (보조)
 
 ### 세 가지 제어 트랙 (비교 목적)
@@ -85,7 +85,7 @@ Track C(VLA)에서 VLA 출력(joint trajectory + gripper command)은 반드시 `
 ```
 interfaces/    커스텀 msg/srv/action 정의 (다른 패키지가 모두 의존)
 voice/         Whisper STT + Gemma 4 의도 분류
-vision/        YOLOv8 + 6D Pose + Tracker
+vision/        YOLOv11s + 6D Pose + Tracker
 orchestrator/  Behavior Tree + unit_action_server (ROS2 래퍼)
 db/            DB 인터페이스 + FOD 모니터
 motion/        DSR/RL 제어 + Handover Detector

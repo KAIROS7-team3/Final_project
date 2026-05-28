@@ -118,7 +118,7 @@ string message
 | `rejected` | DB Gate에서 차단된 명령 (S-2) |
 | `error` | 모션/그리퍼/PLC 실패 (E-5) |
 | `fod_alert` | FOD 임계 시간 초과 → 분실 알림 (S-8) |
-| `reconciled` | 부팅 시 YOLOv8 스캔으로 상태 동기화 (S-9) |
+| `reconciled` | 부팅 시 YOLOv11s 스캔으로 상태 동기화 (S-9) |
 
 **소유 패키지:** `db/` (서비스 서버), `orchestrator/` (클라이언트)
 

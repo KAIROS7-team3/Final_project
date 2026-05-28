@@ -78,6 +78,6 @@
 예시:
 ```markdown
 - `msg/ToolStatus.msg`: `confidence` 필드 추가 (#42)
-  - rationale: YOLOv8 detection score를 다운스트림에 전달하기 위함
+  - rationale: YOLOv11s detection score를 다운스트림에 전달하기 위함
   - migration: 신규 소비자는 기본값 0.0으로 처리 가능 (additive change)
 ```

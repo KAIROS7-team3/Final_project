@@ -16,7 +16,7 @@
 | world 파일 | `simulation/worlds/toolbox_scene.world` |
 | `use_sim_time` | **true** (시뮬레이션 실행 시 항상) |
 
-> **확정 (ADR-013, 2026-05-27)**: Track B RL 학습 환경으로 **Isaac Sim (Isaac Lab)** 채택. Gazebo는 BT 골든 파일 회귀 전용 유지. Isaac Sim은 Track B RL 학습 전용 환경으로 운영. Omniverse Replicator는 YOLOv8 합성 데이터 증강에만 한정 사용 (ADR-016).
+> **확정 (ADR-013, 2026-05-27)**: Track B RL 학습 환경으로 **Isaac Sim (Isaac Lab)** 채택. Gazebo는 BT 골든 파일 회귀 전용 유지. Isaac Sim은 Track B RL 학습 전용 환경으로 운영. Omniverse Replicator는 YOLOv11s 합성 데이터 증강에만 한정 사용 (ADR-016).
 
 ---
 

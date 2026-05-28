@@ -1,4 +1,4 @@
-"""YOLOv8 공구 검출 모델 파인튜닝.
+"""YOLOv11s 공구 검출 모델 파인튜닝.
 
 사전 조건:
   - datasets/tools/images/train/, val/ 에 이미지 수집 완료
@@ -7,7 +7,7 @@
 
 사용법:
     python scripts/train_yolo.py
-    python scripts/train_yolo.py --epochs 200 --model yolov8s.pt
+    python scripts/train_yolo.py --epochs 200 --model yolo11s.pt
 """
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ RUNS_DIR = PROJECT_ROOT / "runs" / "yolo"
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="YOLOv8 공구 검출 파인튜닝")
-    p.add_argument("--model", default="yolov8n.pt",
-                   help="베이스 모델 (yolov8n.pt / yolov8s.pt / yolov8m.pt)")
+    p = argparse.ArgumentParser(description="YOLOv11s 공구 검출 파인튜닝")
+    p.add_argument("--model", default="yolo11s.pt",
+                   help="베이스 모델 (yolo11n.pt / yolo11s.pt / yolo11m.pt)")
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--batch", type=int, default=16)

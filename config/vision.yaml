@@ -5,7 +5,7 @@
 # 좌표·임계값·모델 경로는 여기서만 관리 — 코드 하드코딩 금지
 
 yolo:
-  # ⚠️ Phase 2 YOLOv8 파인튜닝 완료 후 모델 경로 기입
+  # ⚠️ Phase 2 YOLOv11s 파인튜닝 완료 후 모델 경로 기입
   # 학습 완료 전: null → 노드 기동은 되나 추론 비활성화
   model_path: null
   confidence_threshold: 0.70   # 수락 기준: 공구 분류 정확도 ≥ 95% (docs/conventions.md)

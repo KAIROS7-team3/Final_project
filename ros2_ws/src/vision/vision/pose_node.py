@@ -5,7 +5,7 @@ Subscribe : /vision/detections                      (vision_msgs/Detection2DArra
 Publish   : /vision/tool_poses                      (vision_msgs/Detection3DArray)
 
 처리 흐름:
-  1. YOLOv8 bbox 중심 + aligned depth → 3D 점 (카메라 좌표계)
+  1. YOLOv11s bbox 중심 + aligned depth → 3D 점 (카메라 좌표계)
   2. hand_eye.yaml T_cam_to_base 적용 → base_link 좌표계
   3. Detection3D로 발행 (position 확정, orientation 탑뷰 기본값)
 
@@ -88,7 +88,7 @@ def _sample_depth(depth_img: np.ndarray, cx: float, cy: float, w: float, h: floa
 
 
 class PoseNode(Node):
-    """YOLOv8 bbox + aligned depth → 3D 공구 포즈 추정 노드."""
+    """YOLOv11s bbox + aligned depth → 3D 공구 포즈 추정 노드."""
 
     def __init__(self) -> None:
         super().__init__("pose_node")

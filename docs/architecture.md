@@ -56,7 +56,7 @@
 ║  realsense-ros (ROS2 노드)        ║  pyrealsense2 직접 접근        ║
 ║  doosan-robot2 (ROS2 노드)        ║  Doosan Python SDK 직접 제어  ║
 ║  Whisper STT node (ROS2)          ║  Whisper 직접 호출             ║
-║  YOLOv8 · 6D Pose · Tracker       ║  Raw RGB-D + STT text         ║
+║  YOLOv11s · 6D Pose · Tracker       ║  Raw RGB-D + STT text         ║
 ║  Gemma 4 + DB check               ║   → VLA 모델 추론             ║
 ║  Behavior Tree (py_trees)         ║   → joint + gripper commands  ║
 ║  unit_actions/ (구조화된 액션)     ║   → Safety Validator          ║
@@ -87,7 +87,7 @@
 └── ros2_ws/src/                  Track A/B ROS2 워크스페이스
     ├── interfaces/               커스텀 msg/srv/action (모든 ROS2 패키지가 의존)
     ├── voice/                    Whisper STT + Gemma 4 의도 분류
-    ├── vision/                   YOLOv8 + 6D Pose + Tracker + Context Builder
+    ├── vision/                   YOLOv11s + 6D Pose + Tracker + Context Builder
     ├── orchestrator/             Behavior Tree + unit_action_server (ROS2 래퍼, hal/+unit_actions/ 사용)
     ├── db/                       db_core/를 ROS2 서비스로 노출
     ├── motion/                   DSR/RL 제어 + Grasp Planner
@@ -227,7 +227,7 @@ Track C는 unit_actions 미사용 — VLA 모델이 joint commands 직접 출력
    └── → Fallback: DispatchByIntent
         ├── → Sequence: FetchTool
         │    ├── Condition: IsFetchIntent
-        │    ├── Action: LocalizeTool       ← YOLOv8 + 6D Pose
+        │    ├── Action: LocalizeTool       ← YOLOv11s + 6D Pose
         │    ├── Action: PlanGrasp
         │    ├── Action: MoveToPreGrasp
         │    ├── Action: CloseGripper
@@ -358,7 +358,7 @@ VLA 출력 → SafetyValidator.check()
 
 ### Track A/B
 ```
-D455f RGB   → YOLOv8 → 공구 ID + 2D bbox
+D455f RGB   → YOLOv11s → 공구 ID + 2D bbox
 D455f Depth → 포인트 클라우드 → ICP/FoundationPose → 6D 포즈
 ```
 
@@ -375,7 +375,7 @@ VLA가 비전 이해·의도 파악·동작 계획 전부 end-to-end 처리.
 |------|-----------|---------|
 | Whisper STT | < 500ms | < 500ms |
 | Gemma 4 + DB 확인 | < 800ms | — (Python gate ~수ms) |
-| YOLOv8 + 포즈 추정 | < 150ms | 해당 없음 |
+| YOLOv11s + 포즈 추정 | < 150ms | 해당 없음 |
 | VLA 추론 | — | 모델 선정 후 확정 |
 | **음성 → 모션 시작** | **~1.5초** | **모델 선정 후 확정** |
 
@@ -391,7 +391,7 @@ VLA가 비전 이해·의도 파악·동작 계획 전부 end-to-end 처리.
 | ROS2 의존성 | 전체 | 전체 | 없음 |
 | unit_actions | O | O | X |
 | 모호한 명령 | Gemma 4 확인 요청 | Gemma 4 확인 요청 | 키워드 파서 제한 |
-| 새 공구 추가 | YAML + YOLOv8 재학습 | YAML + YOLOv8 재학습 | demo 추가 + VLA 재학습 |
+| 새 공구 추가 | YAML + YOLOv11s 재학습 | YAML + YOLOv11s 재학습 | demo 추가 + VLA 재학습 |
 | GPU VRAM | ~5.5–7.5GB | ~6.5–8.5GB | ~5–6GB(Q4) |
 | 생산 적합성 | 높음 | 중간 | 연구용 |
 | 사이클 타임 목표 | ≤ 10초 | ≤ 10초 | ≤ 13초 |

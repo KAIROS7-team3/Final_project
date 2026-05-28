@@ -1,7 +1,7 @@
 """Hand-eye 캘리브레이션 결과 로더 + 좌표 변환 유틸리티.
 
 config/hand_eye.yaml에서 T_camera_to_base를 로드해 4×4 변환 행렬로 반환.
-YOLOv8 + depth로 구한 카메라 좌표를 로봇 베이스 좌표로 변환할 때 사용.
+YOLOv11s + depth로 구한 카메라 좌표를 로봇 베이스 좌표로 변환할 때 사용.
 """
 from __future__ import annotations
 

@@ -4,9 +4,9 @@
 
 ---
 
-## ADR-002: 공구 인식 — YOLOv8 + 깊이 포즈
+## ADR-002: 공구 인식 — YOLOv11s + 깊이 포즈
 
-- **결정**: YOLOv8 + 깊이 기반 6D 포즈 추정
+- **결정**: YOLOv11s + 깊이 기반 6D 포즈 추정
 - **이유**: Vector 16 HX GPU 활용 가능, YAML 기반 공구 클래스 확장 용이
 - **Track C 예외**: VLA 모델이 raw RGB-D를 직접 입력받아 end-to-end 처리
 
@@ -69,11 +69,11 @@
 
 ---
 
-## ADR-016: Omniverse Replicator 도입 범위 — YOLOv8 한정
+## ADR-016: Omniverse Replicator 도입 범위 — YOLOv11s 한정
 
-- **결정**: Omniverse Replicator를 YOLOv8 합성 데이터 증강에만 한정 도입 (#35 결정, 2026-05-27)
+- **결정**: Omniverse Replicator를 YOLOv11s 합성 데이터 증강에만 한정 도입 (#35 결정, 2026-05-27)
 - **적용 범위**:
-  - ✅ YOLOv8 학습용 합성 데이터 생성 (조명·배경·공구 자세 랜덤화)
+  - ✅ YOLOv11s 학습용 합성 데이터 생성 (조명·배경·공구 자세 랜덤화)
   - ❌ RL 학습 도메인 랜덤화 → Isaac Lab 내장 DR 기능 사용
   - ❌ VLA fine-tuning → 실제 demonstration 데이터 사용
 - **이유**: v1.0 범위 내 파이프라인 복잡성 통제. RL과 VLA에 Replicator를 추가 적용할 경우 의존성 및 유지 비용이 과도하게 증가.
