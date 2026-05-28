@@ -1,0 +1,17 @@
+---
+# YOLOv11s 데이터셋 — 탑뷰(D455f) 시점
+# 이미지 수집: python scripts/dataset/collect_images.py --camera top_view ...
+# 학습 결과: runs/yolo/top_view_v1/weights/best.pt → config/vision.yaml top_view_model_path
+
+path: datasets/tools/top_view
+train: images/train
+val: images/val
+
+nc: 6
+names:
+  0: screwdriver
+  1: utility_knife
+  2: ratchet_wrench
+  3: multi_tool
+  4: spanner_16mm
+  5: socket_19mm
