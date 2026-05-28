@@ -1,5 +1,5 @@
 ---
-# YOLOv11s 데이터셋 설정 — 공구함 6종 그리퍼 캠 검출
+# YOLOv11s 데이터셋 설정 — 공구함 6종 (탑뷰 D455f + 그리퍼 C270 공용)
 # 참조: config/vision.yaml class_names, config/toolbox.yaml
 # 인덱스 순서 변경 시 config/vision.yaml class_names도 동시 갱신 필수
 # tool_id는 robot_arm.db tools 테이블과 일치해야 함

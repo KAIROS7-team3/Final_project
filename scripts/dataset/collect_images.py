@@ -1,6 +1,6 @@
 """그리퍼 웹캠(Logitech C270)으로 공구 이미지를 수집해 datasets/tools/images/에 저장.
 
-YOLOv11s 학습용 — 그리퍼 카메라 시점 기준으로 수집해야 추론 환경과 일치.
+YOLOv11s 학습용 — 탑뷰(D455f)와 그리퍼(C270) 각 시점에 맞춰 별도 수집 필요.
 
 사용법:
     python scripts/dataset/collect_images.py --tool screwdriver --split train

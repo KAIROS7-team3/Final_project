@@ -6,14 +6,16 @@
 
 yolo:
   # ⚠️ Phase 2 YOLOv11s 파인튜닝 완료 후 모델 경로 기입
+  # 탑뷰(D455f)와 그리퍼(C270)는 촬영 시점이 달라 별도 모델 학습 필요
   # 학습 완료 전: null → 노드 기동은 되나 추론 비활성화
-  model_path: null
+  top_view_model_path: null    # D455f 탑뷰 시점 학습 모델 (runs/yolo/top_view_v1/weights/best.pt)
+  gripper_model_path: null     # C270 그리퍼 시점 학습 모델 (runs/yolo/gripper_v1/weights/best.pt)
   confidence_threshold: 0.70   # 수락 기준: 공구 분류 정확도 ≥ 95% (docs/conventions.md)
   iou_threshold: 0.45
   device: "cuda"               # "cuda" | "cpu" (GPU 없을 시 cpu로 변경)
   input_size: 640              # YOLO 입력 해상도 (px)
 
-  # 그리퍼 캠 기준 6종 공구 클래스 — 학습 시 인덱스 순서와 반드시 일치
+  # 6종 공구 클래스 — 탑뷰/그리퍼 모델 공통 (학습 시 인덱스 순서와 반드시 일치)
   # datasets/tools/data.yaml의 names 순서와 동기화 유지
   # robot_arm.db tools 테이블 tool_id와 일치 필수
   class_names:

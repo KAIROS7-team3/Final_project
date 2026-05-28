@@ -1,11 +1,16 @@
 """YOLOv11s 공구 검출 노드 (Track A/B).
 
-Subscribe : /d455f/color/image_raw        (sensor_msgs/Image)
+탑뷰(D455f)와 그리퍼(C270) 각각 별도 인스턴스로 기동.
+  - 탑뷰 인스턴스: top_view_model_path, /d455f/color/image_raw 구독
+  - 그리퍼 인스턴스: gripper_model_path, /c270/image_raw 구독
+
+Subscribe : /d455f/color/image_raw        (sensor_msgs/Image)  ← 탑뷰 인스턴스
+            /c270/image_raw               (sensor_msgs/Image)  ← 그리퍼 인스턴스
 Publish   : /vision/detections            (vision_msgs/Detection2DArray)
             /vision/debug/annotated       (sensor_msgs/Image, debug 시에만)
 
-config/vision.yaml의 yolo.model_path가 null이면 추론 없이 대기.
-Phase 2 파인튜닝 완료 후 model_path 기입 → 재기동으로 활성화.
+config/vision.yaml의 top_view_model_path / gripper_model_path가 null이면 추론 없이 대기.
+Phase 2 파인튜닝 완료 후 각 경로 기입 → 재기동으로 활성화.
 """
 from __future__ import annotations
 
@@ -33,7 +38,7 @@ def _load_cfg() -> dict:
 
 
 class YoloNode(Node):
-    """YOLOv11s 기반 9종 공구 탑뷰 검출 노드."""
+    """YOLOv11s 기반 6종 공구 검출 노드 (탑뷰/그리퍼 공용)."""
 
     def __init__(self) -> None:
         super().__init__("yolo_node")
@@ -48,7 +53,9 @@ class YoloNode(Node):
         self._class_names: list[str] = yolo_cfg["class_names"]
         self._publish_debug: bool = debug_cfg["publish_annotated_image"]
 
-        self._model = self._load_model(yolo_cfg.get("model_path"))
+        self._model = self._load_model(
+            yolo_cfg.get("top_view_model_path") or yolo_cfg.get("gripper_model_path")
+        )
         self._bridge = CvBridge()
 
         # interfaces.md §4: Best Effort / depth 10
@@ -68,7 +75,8 @@ class YoloNode(Node):
         if self._model is None:
             self.get_logger().warn(
                 "[yolo_node] model_path not set — inference disabled. "
-                "Phase 2 파인튜닝 완료 후 config/vision.yaml model_path 기입 후 재기동."
+                "Phase 2 파인튜닝 완료 후 config/vision.yaml top_view_model_path 또는 "
+                "gripper_model_path 기입 후 재기동."
             )
         else:
             self.get_logger().info(
