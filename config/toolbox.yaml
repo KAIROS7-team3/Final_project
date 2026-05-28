@@ -23,40 +23,48 @@ toolbox:
   grid_cols: 3
   slot_depth_z: 0.040  # 공구가 슬롯에 들어간 깊이
 
-# 9종 공구 카탈로그 (수락 기준: 분류 정확도 ≥ 95%)
-# ⚠️ Phase 0 ② 캘리브레이션 + 실제 공구 측정 후 값 확정. 아래는 스키마 예시.
+# 5종 공구 카탈로그 (수락 기준: 분류 정확도 ≥ 95%)
+# ⚠️ 실제 공구 실측 후 dimensions / mass_kg 확정 필요 — 현재 추정값
 tools:
-  - tool_id: screwdriver_phillips_small
+  - tool_id: socket_19mm
     slot_row: 0
     slot_col: 0
-    dimensions: {length: 0.180, diameter: 0.020}  # m
-    mass_kg: 0.080
-    grasp_approach: top  # top | side | front
-    notes: "TBD"
+    dimensions: {length: 0.050, diameter: 0.030}  # m, TBD 실측
+    mass_kg: 0.070
+    grasp_approach: top
+    notes: "19mm 소켓"
 
-  - tool_id: screwdriver_flat_small
+  - tool_id: ratchet_handle
     slot_row: 0
     slot_col: 1
-    dimensions: {length: 0.180, diameter: 0.020}
-    mass_kg: 0.080
+    dimensions: {length: 0.250, diameter: 0.022}  # m, TBD 실측
+    mass_kg: 0.200
     grasp_approach: top
-    notes: "TBD"
+    notes: "래칫 핸들"
 
-  - tool_id: wrench_8mm
+  - tool_id: hex_key_set_folding
     slot_row: 0
     slot_col: 2
-    dimensions: {length: 0.140, diameter: 0.015}
+    dimensions: {length: 0.090, width: 0.045, height: 0.015}  # m, 접힌 상태, TBD 실측
+    mass_kg: 0.100
+    grasp_approach: top
+    notes: "접이식 육각렌치 세트"
+
+  - tool_id: screwdriver_flat_6x100
+    slot_row: 1
+    slot_col: 0
+    dimensions: {length: 0.220, diameter: 0.025}  # m, TBD 실측 (날 100mm + 손잡이)
+    mass_kg: 0.080
+    grasp_approach: top
+    notes: "일자 드라이버 6x100mm"
+
+  - tool_id: cutter_knife
+    slot_row: 1
+    slot_col: 1
+    dimensions: {length: 0.150, width: 0.018, height: 0.012}  # m, 닫힌 상태, TBD 실측
     mass_kg: 0.060
     grasp_approach: top
-    notes: "TBD"
-
-# TODO: 나머지 6종 공구 추가 (총 9종)
-# - allen_key_4mm
-# - allen_key_5mm
-# - pliers_needle_nose
-# - cutter_diagonal
-# - hammer_small
-# - tape_measure_3m
+    notes: "커터칼"
 
 # 수락 기준 (docs/conventions.md):
 # - 공구 분류 정확도 ≥ 95% (실험실 조명)

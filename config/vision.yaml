@@ -13,18 +13,14 @@ yolo:
   device: "cuda"               # "cuda" | "cpu" (GPU 없을 시 cpu로 변경)
   input_size: 640              # YOLO 입력 해상도 (px)
 
-  # 탑뷰 기준 9종 공구 클래스 — 학습 시 순서와 반드시 일치 (TBD: 나머지 6종)
+  # 탑뷰 기준 5종 공구 클래스 — 학습 시 인덱스 순서와 반드시 일치
+  # datasets/tools/data.yaml의 names 순서와 동기화 유지
   class_names:
-    - screwdriver_phillips_small
-    - screwdriver_flat_small
-    - wrench_8mm
-    # TODO: 나머지 6종 공구 확정 후 추가 (담당: C, Phase 0 데이터셋 수집 시)
-    # - allen_key_4mm
-    # - allen_key_5mm
-    # - pliers_needle_nose
-    # - cutter_diagonal
-    # - hammer_small
-    # - tape_measure_3m
+    - socket_19mm          # 0
+    - ratchet_handle       # 1
+    - hex_key_set_folding  # 2
+    - screwdriver_flat_6x100  # 3
+    - cutter_knife         # 4
 
 tracker:
   min_hits: 3          # 트랙 확정까지 필요한 연속 검출 프레임 수
