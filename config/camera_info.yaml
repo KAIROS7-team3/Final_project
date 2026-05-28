@@ -1,0 +1,30 @@
+---
+# D455f 카메라 Intrinsics (verify_camera.py 출력값 기록)
+#
+# 카메라 교체 또는 firmware 업데이트 시 재측정 필요
+# 측정일: 2026-05-27
+# 시리얼: 342622300205 / 펌웨어: 5.17.0.10
+# 해상도: 1280x720 (RGB, aligned depth 동일)
+
+schema_version: 1
+
+intrinsics:
+  width: 1280
+  height: 720
+  fx: 645.11
+  fy: 644.34
+  cx: 650.51
+  cy: 369.42
+  distortion_model: brown_conrady   # D455f 기본값
+  coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]   # 정밀 캘리브레이션 전 기본값
+
+# 탑뷰 설치 환경
+mounting:
+  style: top_view
+  # hand-eye 캘리브레이션 후 확정 (config/hand_eye.yaml 참조)
+  height_from_base_m: null
+  # verify_camera.py 장면 전체 평균 (바닥·주변 포함)
+  depth_scene_mean_m: 0.955
+  depth_range_m: [0.603, 1.548]   # verify_camera.py 실측 min/max
+
+# 재측정 기준: 렌즈 오염, 카메라 교체, firmware 업데이트

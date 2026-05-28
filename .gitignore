@@ -59,3 +59,7 @@ ros2_ws/log/
 
 # 캘리브레이션 결과 (장비별 로컬 값, git 제외)
 config/hand_eye.yaml
+
+# verify_camera.py 출력 이미지 (로컬 검증용)
+verify_rgb.png
+verify_depth_colormap.png
