@@ -19,7 +19,7 @@ yolo:
   class_names:
     - screwdriver    # 0  십자 드라이버  (layer 0, col 0)
     - utility_knife  # 1  커터칼         (layer 0, col 1)
-    - ratchet_wrench # 2  라쳇 렌치      (layer 0, col 2)
+    - ratchet_wrench  # 2  라쳇 렌치      (layer 0, col 2)
     - multi_tool     # 3  멕가이버       (layer 1, col 0)
     - spanner_16mm   # 4  스패너 16mm    (layer 1, col 1)
     - socket_19mm    # 5  복스 소켓 19mm (layer 1, col 2)
