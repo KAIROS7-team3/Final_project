@@ -5,6 +5,7 @@
 .omc/project-memory.json
 .omc/prd.json
 .omc/progress.txt
+*_codex.md
 # OMC가 어떤 작업 디렉토리에서든 만들 수 있는 런타임 폴더 (예: .claude/skills/.omc/)
 **/.omc/state/
 **/.omc/sessions/
@@ -42,6 +43,7 @@ ros2_ws/log/
 *.bag
 
 # DB 운영 데이터 (git 제외, 별도 백업)
+*.db
 *.sqlite
 *.sqlite3
 *.db-wal
