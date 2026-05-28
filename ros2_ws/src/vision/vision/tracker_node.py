@@ -20,7 +20,13 @@ import numpy as np
 import rclpy
 import yaml
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 from vision_msgs.msg import Detection3D, Detection3DArray
+
+_QOS_BEST_EFFORT_5 = QoSProfile(
+    depth=5,
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+)
 
 _CONFIG_PATH = Path("config/vision.yaml")
 
@@ -62,8 +68,13 @@ class TrackerNode(Node):
         # tool_id → 트랙 목록 (동일 공구가 여러 슬롯에 있을 수 없으나, 일반성을 위해 list)
         self._tracks: dict[str, list[_Track]] = {}
 
-        self.create_subscription(Detection3DArray, "/vision/tool_poses", self._on_poses, 10)
-        self._pub = self.create_publisher(Detection3DArray, "/vision/tracked_poses", 10)
+        # interfaces.md §4: Best Effort / depth 5
+        self.create_subscription(
+            Detection3DArray, "/vision/tool_poses", self._on_poses, _QOS_BEST_EFFORT_5
+        )
+        self._pub = self.create_publisher(
+            Detection3DArray, "/vision/tracked_poses", _QOS_BEST_EFFORT_5
+        )
 
         self.get_logger().info(
             f"[tracker_node] ready - min_hits={self._min_hits} "
@@ -99,7 +110,9 @@ class TrackerNode(Node):
                     self.get_logger().info(f"[tracker_node] track confirmed - tool_id={tool_id}")
                 matched.add((tool_id, best_idx))
             else:
-                tracks.append(_Track(tool_id=tool_id, position=pos.copy(), score=score, _last_det=det))
+                tracks.append(
+                    _Track(tool_id=tool_id, position=pos.copy(), score=score, _last_det=det)
+                )
                 matched.add((tool_id, len(tracks) - 1))
 
         # 매칭 안 된 트랙 miss 처리
