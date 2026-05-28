@@ -1,15 +1,11 @@
-import logging
 import time
 
-import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
-
-logger = logging.getLogger(__name__)
 
 _LOG_INTERVAL_FRAMES = 30
 _SYNC_SLOP_SEC = 0.05

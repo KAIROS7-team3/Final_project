@@ -24,6 +24,15 @@ from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
+from sensor_msgs.msg import Image
+from vision_msgs.msg import (
+    Detection2DArray,
+    Detection3D,
+    Detection3DArray,
+    ObjectHypothesisWithPose,
+)
+
+from vision.hand_eye_loader import HandEyeNotCalibratedError, camera_to_base, load_transform
 
 _QOS_BEST_EFFORT_10 = QoSProfile(
     depth=10,
@@ -33,16 +42,6 @@ _QOS_BEST_EFFORT_5 = QoSProfile(
     depth=5,
     reliability=QoSReliabilityPolicy.BEST_EFFORT,
 )
-from sensor_msgs.msg import Image
-from vision_msgs.msg import (
-    BoundingBox3D,
-    Detection3D,
-    Detection3DArray,
-    Detection2DArray,
-    ObjectHypothesisWithPose,
-)
-
-from vision.hand_eye_loader import HandEyeNotCalibratedError, camera_to_base, load_transform
 
 _CAMERA_INFO_PATH = Path("config/camera_info.yaml")
 _HAND_EYE_PATH = Path("config/hand_eye.yaml")
@@ -161,7 +160,9 @@ class PoseNode(Node):
             point_cam = _deproject(cx, cy, depth_m, self._K)
             point_base = camera_to_base(point_cam, self._T) if self._T is not None else point_cam
 
-            det3d = self._build_detection3d(det_msg.header, tool_id, score, point_base, bw, bh, depth_m)
+            det3d = self._build_detection3d(
+                det_msg.header, tool_id, score, point_base, bw, bh, depth_m
+            )
             pose_array.detections.append(det3d)
 
         self._pose_pub.publish(pose_array)

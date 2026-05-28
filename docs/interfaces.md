@@ -205,7 +205,7 @@ int32 slot_col
 | `/voice/raw_text` | `std_msgs/String` | `whisper_node` | `gemma_intent_node` | Reliable / depth 10 |
 | `/voice/intent` | `interfaces/Intent` | `gemma_intent_node` | `orchestrator` | Reliable / depth 1 |
 | `/vision/detections` | `vision_msgs/Detection2DArray` | `yolo_node` | `pose_node`, `tracker_node` | Best Effort / depth 10 |
-| `/vision/tool_poses` | `geometry_msgs/PoseArray` | `pose_node` | `orchestrator` | Best Effort / depth 5 |
+| `/vision/tool_poses` | `vision_msgs/Detection3DArray` | `pose_node` | `tracker_node`, `orchestrator` | Best Effort / depth 5 |
 | `/robot/status` | `interfaces/RobotStatus` | `dsr_controller` 또는 `rl_policy_node` | `whisper_node` | Reliable / depth 1 |
 | `/plc/status` | `interfaces/PLCStatus` | `plc_node` | (모니터링용) | Best Effort / depth 1 |
 
@@ -220,7 +220,7 @@ int32 slot_col
 | 토픽 | frame_id | 의미 |
 |------|----------|------|
 | `/vision/detections` | `camera_optical_frame` | 2D 이미지 좌표 기준 |
-| `/vision/tool_poses` | `base_link` | 로봇 베이스 기준 변환 후 발행 |
+| `/vision/tool_poses` | `base_link` | 로봇 베이스 기준 변환 후 발행 (hand-eye 미캘리브 시 `camera_optical_frame` — Phase 1 한정) |
 
 좌표계 상세 → [`frames.md`](frames.md)
 
