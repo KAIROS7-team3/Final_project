@@ -56,8 +56,8 @@ the decision and motion layers only, enabling direct comparison of approaches.
 ║  DB (FOD + tool inventory)  ·  PLC (LED status)             ║
 ╠══════════════════════════╦═══════════════════════════════════╣
 ║  TRACK A / B             ║  TRACK C                          ║
-║  YOLOv8                  ║  Raw RGB-D → LLM direct input     ║
-║  6D Pose Estimation      ║  (YOLOv8 not used)               ║
+║  YOLOv11s                ║  Raw RGB-D → LLM direct input     ║
+║  6D Pose Estimation      ║  (YOLOv11s not used)             ║
 ║  Object Tracker          ║                                   ║
 ║  Gemma 4 + DB check      ║  LLM Planner (full)              ║
 ║  BT                      ║  Plan Generator                  ║
@@ -74,8 +74,8 @@ the decision and motion layers only, enabling direct comparison of approaches.
 │      Microphone → Whisper STT   │   RealSense D455f → RGB-D    │
 ├──────────────────────────────────┬──────────────────────────────┤
 │  PERCEPTION — Track A/B          │  PERCEPTION — Track C        │
-│  YOLOv8 · 6D Pose · Tracker      │  Raw RGB-D → LLM direct      │
-│                                  │  (YOLOv8 not used)           │
+│  YOLOv11s · 6D Pose · Tracker    │  Raw RGB-D → LLM direct      │
+│                                  │  (YOLOv11s not used)         │
 ├──────────────────────────────────┴──────────────────────────────┤
 │                      [split below]                              │
 ├──────────────────────┬──────────────────────────────────────────┤
@@ -365,15 +365,15 @@ Approach → speed 30% → force-compliant mode
 ### Tool Recognition (Track A/B only)
 
 ```
-D455f RGB → YOLOv8 → tool ID + bbox
+D455f RGB → YOLOv11s → tool ID + bbox
 D455f Depth → point cloud → ICP / FoundationPose → 6D pose
 ```
 
-Tool classes registered in `tools.yaml`. Adding tool = YAML entry + YOLOv8 retrain.
+Tool classes registered in `tools.yaml`. Adding tool = YAML entry + YOLOv11s retrain.
 
 ### Track C Vision Input
 
-Track C does **not** use YOLOv8. Raw RGB-D frames are fed directly into the LLM planner as
+Track C does **not** use YOLOv11s. Raw RGB-D frames are fed directly into the LLM planner as
 vision-language input. The LLM handles tool localization and planning in a single pass.
 
 ```
@@ -394,7 +394,7 @@ Both true for 200ms → HandoverEvent → DB log → PLC state update
 |-------|-----------|---------|
 | Whisper STT | < 500 ms | < 500 ms |
 | Gemma 4 intent + DB check | < 800 ms | — |
-| YOLOv8 + pose | < 150 ms | N/A (not used) |
+| YOLOv11s + pose | < 150 ms | N/A (not used) |
 | Context build (raw image) | — | < 100 ms |
 | LLM inference (vision + plan) | — | 500 ms – 2 s |
 | **Voice → motion start** | **~1.5 s** | **~2.5–3.5 s** |
@@ -406,7 +406,7 @@ Both true for 200ms → HandoverEvent → DB log → PLC state update
 ### Phase 0: Environment + Shared Foundation (Week 1–2)
 - [ ] ROS2 Humble workspace: doosan-robot2 + realsense-ros
 - [ ] `interfaces` package: all custom msg/srv/action definitions
-- [ ] Docker dev container: GPU passthrough (Whisper + YOLOv8 + Gemma 4 + LLM)
+- [ ] Docker dev container: GPU passthrough (Whisper + YOLOv11s + Gemma 4 + LLM)
 - [ ] Doosan e0509 URDF/XACRO validation + Gazebo scene
 - [ ] HAL stubs: `SimulatedArm`, `SimulatedGripper`, `SimulatedFTSensor`
 - [ ] `unit_actions/` pure Python module skeleton (mock implementations)
@@ -424,7 +424,7 @@ Both true for 200ms → HandoverEvent → DB log → PLC state update
 
 ### Phase 2: Shared Perception + Voice (Week 3–6)
 - [ ] Whisper STT node (`voice` pkg)
-- [ ] YOLOv8 fine-tuning on 9-tool dataset (`vision` pkg)
+- [ ] YOLOv11s fine-tuning on 6-tool dataset (`vision` pkg)
 - [ ] 6D pose + object tracker nodes
 - [ ] Semi-fixed slot correction (misalignment detection)
 - [ ] Tool presence check (empty slot detection)
@@ -513,11 +513,11 @@ Unit → Integration → Simulation → HIL → Comparative E2E
 
 | Test | Criteria |
 |------|----------|
-| Gemma 4 intent accuracy | ≥ 97% (fetch/return/ambiguous on 9 tools) |
+| Gemma 4 intent accuracy | ≥ 97% (fetch/return/ambiguous on 6 tools) |
 | DB feasibility check correctness | 100% block when tool status = 'out' or 'fod_alert' |
 | FOD alert latency | ≤ 30 s from tool going missing to PLC orange flash |
 | PLC LED state coverage | All 9 states verified on hardware |
-| Tool classification (YOLOv8) | ≥ 95% per class |
+| Tool classification (YOLOv11s) | ≥ 95% per class |
 | Pose estimation error | ≤ 5 mm, ≤ 3° |
 | Fetch cycle time (Track A/B) | ≤ 12 s (Gemma 4 adds ~800 ms vs original) |
 | Fetch cycle time (Track C) | ≤ 15 s |
@@ -564,7 +564,7 @@ Unit → Integration → Simulation → HIL → Comparative E2E
 - **Follow-up**: Select primary after Phase 7 comparative evaluation
 
 ### ADR-002: Tool Recognition
-- **Decision**: YOLOv8 + depth-based pose refinement
+- **Decision**: YOLOv11s + depth-based pose refinement
 - **Why**: GPU on Vector 16 HX; YAML-driven extensibility
 - **Consequences**: Dataset collection required; retrain when tools added
 

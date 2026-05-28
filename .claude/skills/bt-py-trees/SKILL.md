@@ -62,7 +62,7 @@ sudo apt install ros-humble-py-trees ros-humble-py-trees-ros
    └── → Fallback: DispatchByIntent
         ├── → Sequence: FetchTool                  ← intent==fetch
         │    ├── Condition: IsFetchIntent
-        │    ├── Action: LocalizeTool              ← YOLOv8 + 6D Pose
+        │    ├── Action: LocalizeTool              ← YOLOv11s + 6D Pose
         │    ├── Action: PlanGrasp                 ← grasp_planner
         │    ├── Action: MoveToPreGrasp
         │    ├── Action: CloseGripper
@@ -139,7 +139,7 @@ from dataclasses import dataclass
 class BlackboardSchema:
     intent: str            # 'fetch' | 'return'
     active_tool_id: str    # 예: 'screwdriver'
-    tool_pose: GraspPose | None    # YOLOv8+6D pose 결과
+    tool_pose: GraspPose | None    # YOLOv11s+6D pose 결과
     staging_state: str     # 'empty' | 'placed' | 'pickup_ready'
 ```
 

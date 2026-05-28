@@ -156,7 +156,7 @@ def camera_to_base(point_camera: np.ndarray) -> np.ndarray:
     p_hom = np.append(point_camera, 1.0)
     return (T_cam_to_base @ p_hom)[:3]
 
-# 사용: YOLOv8 + depth로 구한 3D 좌표를 로봇 좌표로 변환
+# 사용: YOLOv11s + depth로 구한 3D 좌표를 로봇 좌표로 변환
 tool_pos_cam = np.array([0.12, -0.05, 0.65])   # 카메라 좌표 [m]
 tool_pos_base = camera_to_base(tool_pos_cam)    # 베이스 좌표 [m]
 ```
