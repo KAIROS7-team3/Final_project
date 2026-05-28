@@ -1,7 +1,9 @@
 """Vision pipeline 통합 런치 파일 (Track A/B).
 
-D455f 카메라 + 비전 파이프라인 전체(yolo → pose → tracker → context_builder)를
-단일 명령으로 기동한다.
+D455f(탑뷰) + C270(그리퍼) 두 카메라와 비전 파이프라인 전체를 단일 명령으로 기동한다.
+yolo_node는 camera_type 파라미터로 구분된 두 인스턴스로 각각 기동된다.
+  - yolo_node_top_view : camera_type=top_view, /d455f/color/image_raw 구독
+  - yolo_node_gripper  : camera_type=gripper,  /c270/image_raw 구독
 
 사용:
   ros2 launch vision vision_pipeline.launch.py
@@ -9,9 +11,8 @@ D455f 카메라 + 비전 파이프라인 전체(yolo → pose → tracker → co
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -41,11 +42,20 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
     )
 
-    yolo_node = Node(
+    yolo_node_top_view = Node(
         package="vision",
         executable="yolo_node",
-        name="yolo_node",
+        name="yolo_node_top_view",
         output="screen",
+        parameters=[{"camera_type": "top_view"}],
+    )
+
+    yolo_node_gripper = Node(
+        package="vision",
+        executable="yolo_node",
+        name="yolo_node_gripper",
+        output="screen",
+        parameters=[{"camera_type": "gripper"}],
     )
 
     pose_node = Node(
@@ -72,7 +82,8 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription([
         debug_arg,
         realsense_launch,
-        yolo_node,
+        yolo_node_top_view,
+        yolo_node_gripper,
         pose_node,
         tracker_node,
         context_builder,

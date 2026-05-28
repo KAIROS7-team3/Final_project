@@ -1,11 +1,16 @@
 """YOLOv11s 공구 검출 노드 (Track A/B).
 
-Subscribe : /d455f/color/image_raw        (sensor_msgs/Image)
+탑뷰(D455f)와 그리퍼(C270) 각각 별도 인스턴스로 기동.
+런치 파라미터 camera_type으로 시점을 구분한다.
+  - camera_type=top_view : top_view_model_path 로드, /d455f/color/image_raw 구독
+  - camera_type=gripper  : gripper_model_path  로드, /c270/image_raw 구독
+
+Subscribe : image_topic 파라미터 (기본 /d455f/color/image_raw)
 Publish   : /vision/detections            (vision_msgs/Detection2DArray)
             /vision/debug/annotated       (sensor_msgs/Image, debug 시에만)
 
-config/vision.yaml의 yolo.model_path가 null이면 추론 없이 대기.
-Phase 2 파인튜닝 완료 후 model_path 기입 → 재기동으로 활성화.
+config/vision.yaml의 해당 model_path가 null이면 추론 없이 대기.
+Phase 2 파인튜닝 완료 후 경로 기입 → 재기동으로 활성화.
 """
 from __future__ import annotations
 
@@ -26,6 +31,15 @@ _QOS_BEST_EFFORT_10 = QoSProfile(
 
 _CONFIG_PATH = Path("config/vision.yaml")
 
+_CAMERA_TOPICS = {
+    "top_view": "/d455f/color/image_raw",
+    "gripper":  "/c270/image_raw",
+}
+_MODEL_KEYS = {
+    "top_view": "top_view_model_path",
+    "gripper":  "gripper_model_path",
+}
+
 
 def _load_cfg() -> dict:
     with _CONFIG_PATH.open() as f:
@@ -33,10 +47,17 @@ def _load_cfg() -> dict:
 
 
 class YoloNode(Node):
-    """YOLOv11s 기반 9종 공구 탑뷰 검출 노드."""
+    """YOLOv11s 기반 6종 공구 검출 노드 (탑뷰/그리퍼 공용)."""
 
     def __init__(self) -> None:
         super().__init__("yolo_node")
+
+        camera_type: str = self.declare_parameter("camera_type", "top_view").value
+        if camera_type not in _CAMERA_TOPICS:
+            raise ValueError(
+                f"[yolo_node] 알 수 없는 camera_type='{camera_type}'. "
+                "top_view 또는 gripper 지정 필요."
+            )
 
         cfg = _load_cfg()
         yolo_cfg = cfg["yolo"]
@@ -48,8 +69,11 @@ class YoloNode(Node):
         self._class_names: list[str] = yolo_cfg["class_names"]
         self._publish_debug: bool = debug_cfg["publish_annotated_image"]
 
-        self._model = self._load_model(yolo_cfg.get("model_path"))
+        model_path = yolo_cfg.get(_MODEL_KEYS[camera_type])
+        self._model = self._load_model(model_path)
         self._bridge = CvBridge()
+
+        image_topic: str = _CAMERA_TOPICS[camera_type]
 
         # interfaces.md §4: Best Effort / depth 10
         self._det_pub = self.create_publisher(
@@ -62,18 +86,18 @@ class YoloNode(Node):
             self._debug_pub = None
 
         self.create_subscription(
-            Image, "/d455f/color/image_raw", self._on_image, qos_profile_sensor_data
+            Image, image_topic, self._on_image, qos_profile_sensor_data
         )
 
         if self._model is None:
             self.get_logger().warn(
-                "[yolo_node] model_path not set — inference disabled. "
-                "Phase 2 파인튜닝 완료 후 config/vision.yaml model_path 기입 후 재기동."
+                f"[yolo_node] camera_type={camera_type} model_path not set — inference disabled. "
+                f"Phase 2 파인튜닝 완료 후 config/vision.yaml {_MODEL_KEYS[camera_type]} 기입 후 재기동."
             )
         else:
             self.get_logger().info(
-                f"[yolo_node] ready - classes={len(self._class_names)} "
-                f"conf={self._conf} device={self._device}"
+                f"[yolo_node] ready - camera_type={camera_type} topic={image_topic} "
+                f"classes={len(self._class_names)} conf={self._conf} device={self._device}"
             )
 
     def _load_model(self, model_path: str | None):

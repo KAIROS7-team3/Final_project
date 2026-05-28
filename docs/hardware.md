@@ -11,7 +11,7 @@
 |------|------|------|------|
 | 로봇팔 | Doosan Robotics e0509 | 협동 로봇, 5kg 페이로드, 900mm reach | ✅ 확정 |
 | 그리퍼 | ROBOTIS RH-P12-RN | 이중 핑거 전기 그리퍼 | ✅ 확정 |
-| 카메라 (탑뷰) | Intel RealSense D455f | RGB-D · scene context · hand-eye 캘리브 | ✅ 확정 |
+| 카메라 (탑뷰) | Intel RealSense D455f | RGB-D · YOLOv11s 추론 · scene context · hand-eye 캘리브 | ✅ 확정 |
 | 카메라 (그리퍼) | Logitech C270 HD Webcam | RGB · YOLOv11s 추론 · 그리퍼 마운트 | ✅ 확정 |
 | F/T 센서 | 미사용 (v1.0) | — | ✅ 결정 #1 (미사용) |
 | PLC | LS Electric XBC-DR10E | LED 슬롯 상태 표시 | ✅ 결정 #2 |

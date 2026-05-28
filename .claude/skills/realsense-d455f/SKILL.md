@@ -12,7 +12,7 @@ when_to_use: >
 
 # Intel RealSense D455f 가이드
 
-> 이 프로젝트에서 D455f는 **scene context + 깊이 정보 전담** (탑뷰 고정, eye-to-hand)으로 사용. YOLO 추론은 그리퍼 마운트 C270이 담당. Track C에서는 Raw RGB-D를 VLA 입력으로 직접 사용. 룰: [`.claude/rules/engineering.md`](../rules/engineering.md) E-1 (좌표/단위), [`.claude/rules/safety.md`](../rules/safety.md).
+> 이 프로젝트에서 D455f는 탑뷰 고정(eye-to-hand)으로 **YOLOv11s 공구 추론 + scene context + 깊이 정보** 역할을 담당 (Track A/B). Track C에서는 Raw RGB-D를 VLA 입력으로 직접 사용. 룰: [`.claude/rules/engineering.md`](../rules/engineering.md) E-1 (좌표/단위), [`.claude/rules/safety.md`](../rules/safety.md).
 
 ## 1. 하드웨어 사양
 

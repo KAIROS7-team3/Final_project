@@ -21,11 +21,19 @@ poses:
     joints: [0.0, -0.524, 1.571, 0.0, 1.571, 0.0]
     description: "대기 자세. 동작 종료 후 자동 복귀 (결정 #13, S-7)."
 
-  # 공구함 전체 스캔 포즈 — 부팅 시 reconciliation (S-9)
-  scan_toolbox:
+  # 층별 스캔 포즈 — 작업 시작 전·종료 후 각 1회 수행 (세션당 총 2회)
+  # 흐름: 서랍 열기 → scan_layer_N 이동 → D455f YOLOv11s 스캔 → DB 기록 → 서랍 닫기
+  # 작업 중간 공구 현황은 fetch/return 이벤트로 DB 추적 (재스캔 없음)
+  # ⚠️ 아래 joints는 임의값. Phase 0 ② 실기 측정 후 확정.
+  scan_layer_0:
     # deg: [0, -20, 70, 0, 80, 0]
     joints: [0.0, -0.349, 1.222, 0.0, 1.396, 0.0]
-    description: "공구함 전체가 카메라 시야에 들어오는 포즈. 부팅 시 YOLOv11s 스캔."
+    description: "layer 0(상층) 서랍 개방 후 D455f 스캔 포즈."
+
+  scan_layer_1:
+    # deg: [0, -15, 65, 0, 80, 0]
+    joints: [0.0, -0.262, 1.134, 0.0, 1.396, 0.0]
+    description: "layer 1(하층) 서랍 개방 후 D455f 스캔 포즈."
 
   # Staging Area 전체 스캔 포즈 — 무단 회수 감지 (결정 #26)
   scan_staging:

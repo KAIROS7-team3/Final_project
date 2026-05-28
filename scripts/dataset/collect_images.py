@@ -1,13 +1,17 @@
-"""그리퍼 웹캠(Logitech C270)으로 공구 이미지를 수집해 datasets/tools/images/에 저장.
+"""공구 이미지 수집 — 탑뷰(D455f) 또는 그리퍼(C270) 시점별 분리 저장.
 
-YOLOv11s 학습용 — 그리퍼 카메라 시점 기준으로 수집해야 추론 환경과 일치.
+YOLOv11s 학습용. 두 카메라는 촬영 시점이 달라 별도 데이터셋·모델 필요.
+저장 경로: datasets/tools/{top_view|gripper}/images/{train|val}/{tool_id}/
 
 사용법:
-    python scripts/dataset/collect_images.py --tool screwdriver --split train
-    python scripts/dataset/collect_images.py --tool socket_19mm --split val
+    # 그리퍼 캠 (C270, 기본)
+    python scripts/dataset/collect_images.py --camera gripper --tool screwdriver --split train
+
+    # 탑뷰 캠 (D455f)
+    python scripts/dataset/collect_images.py --camera top_view --tool screwdriver --split train --device 2
 
 옵션:
-    --device  웹캠 디바이스 인덱스 (기본 0, 인식 안 될 시 1·2 시도)
+    --device  웹캠 디바이스 인덱스 (기본 0; D455f는 1·2 시도)
 
 조작:
     Space  — 현재 프레임 저장
@@ -32,16 +36,16 @@ VALID_TOOLS = [
     "socket_19mm",
 ]
 VALID_SPLITS = ["train", "val"]
+VALID_CAMERAS = ["top_view", "gripper"]
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="공구 이미지 수집 (그리퍼 웹캠)")
+    p = argparse.ArgumentParser(description="공구 이미지 수집")
+    p.add_argument("--camera", required=True, choices=VALID_CAMERAS,
+                   help="top_view (D455f) 또는 gripper (C270)")
     p.add_argument("--tool", required=True, choices=VALID_TOOLS, help="수집할 공구 tool_id")
     p.add_argument("--split", required=True, choices=VALID_SPLITS, help="train 또는 val")
     p.add_argument("--device", type=int, default=0, help="웹캠 디바이스 인덱스 (기본 0)")
-    p.add_argument("--save-dir", type=Path,
-                   default=PROJECT_ROOT / "datasets" / "tools" / "images",
-                   help="저장 루트 (기본: datasets/tools/images)")
     return p.parse_args()
 
 
@@ -54,7 +58,10 @@ def main() -> None:
         print("[ERROR] opencv-python 미설치 — pip install opencv-python")
         sys.exit(1)
 
-    save_dir = args.save_dir / args.split / args.tool
+    save_dir = (
+        PROJECT_ROOT / "datasets" / "tools" / args.camera
+        / "images" / args.split / args.tool
+    )
     save_dir.mkdir(parents=True, exist_ok=True)
 
     existing = sorted(save_dir.glob("*.jpg"))
@@ -68,16 +75,16 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-    # 자동노출 안정화 대기
     print("[collect] 카메라 워밍업 중...")
     for _ in range(20):
         cap.read()
 
-    win_name = f"collect | {args.tool} [{args.split}] — Space:저장  q:종료"
+    win_name = f"collect | {args.camera} | {args.tool} [{args.split}] — Space:저장  q:종료"
     cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(win_name, 960, 540)
 
-    print(f"[collect] tool={args.tool} split={args.split} device={args.device} save_dir={save_dir}")
+    print(f"[collect] camera={args.camera} tool={args.tool} split={args.split} "
+          f"device={args.device} save_dir={save_dir}")
     print("[collect] Space: 저장 / q: 종료")
 
     try:
@@ -88,14 +95,14 @@ def main() -> None:
                 continue
 
             overlay = frame.copy()
-            cv2.putText(overlay, f"{args.tool}  [{args.split}]  saved={counter}",
+            cv2.putText(overlay, f"[{args.camera}] {args.tool}  [{args.split}]  saved={counter}",
                         (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
             cv2.imshow(win_name, overlay)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord(" "):
                 fname = save_dir / f"{args.tool}_{counter:04d}.jpg"
-                cv2.imwrite(str(fname), frame)  # overlay 없는 원본 저장
+                cv2.imwrite(str(fname), frame)
                 print(f"  saved: {fname}")
                 counter += 1
             elif key == ord("q"):
