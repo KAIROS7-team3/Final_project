@@ -1,4 +1,4 @@
-"""그리퍼 웹캠(Logitech HD)으로 탑뷰 이미지를 수집해 datasets/tools/images/에 저장.
+"""그리퍼 웹캠(Logitech C270)으로 공구 이미지를 수집해 datasets/tools/images/에 저장.
 
 YOLOv11s 학습용 — 그리퍼 카메라 시점 기준으로 수집해야 추론 환경과 일치.
 
