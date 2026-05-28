@@ -9,62 +9,96 @@
 schema:
   version: 1
   toolbox:
-    required: [origin, slot_size, grid_rows, grid_cols, orientation]
+    required:
+      - origin
+      - slot_size
+      - grid_layers
+      - grid_rows
+      - grid_cols
+      - orientation
   tools:
-    required: [tool_id, slot_row, slot_col, dimensions]
-    optional: [mass_kg, grasp_approach, notes]
+    required:
+      - tool_id
+      - slot_layer
+      - slot_row
+      - slot_col
+      - dimensions
+    optional: [display_name, mass_kg, grasp_approach, notes]
 
 # 공구함 자체 위치/크기 (운영자가 공구함을 옮기면 이 값만 갱신)
 toolbox:
   origin: {x: 0.300, y: -0.200, z: 0.050}  # 슬롯 (0,0)의 좌상단 모서리
   orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
   slot_size: {x: 0.060, y: 0.060}  # 슬롯 한 칸의 가로/세로
-  grid_rows: 3
+  grid_layers: 2
+  grid_rows: 1
   grid_cols: 3
+  layer_height_z: 0.080  # 층간 높이. Phase 0 ② 실제 측정 후 갱신
   slot_depth_z: 0.040  # 공구가 슬롯에 들어간 깊이
 
-# 5종 공구 카탈로그 (수락 기준: 분류 정확도 ≥ 95%)
-# ⚠️ 실제 공구 실측 후 dimensions / mass_kg 확정 필요 — 현재 추정값
+# 6종 공구 카탈로그.
+# 슬롯 기준은 robot_arm.db의 tools.home_slot_layer/home_slot_row/home_slot_col과 일치한다.
+# ⚠️ 아래 좌표/치수/질량은 임의값이다. Phase 0 ② 캘리브레이션 + 실제 공구 측정 후 확정.
 tools:
-  - tool_id: socket_19mm
+  - tool_id: screwdriver
+    display_name: "십자 드라이버"
+    slot_layer: 0
     slot_row: 0
     slot_col: 0
-    dimensions: {length: 0.050, diameter: 0.030}  # m, TBD 실측
+    dimensions: {length: 0.180, diameter: 0.020}  # m
+    mass_kg: 0.080
+    grasp_approach: top  # top | side | front
+    notes: "임의값 — 실측 후 갱신"
+
+  - tool_id: utility_knife
+    display_name: "커터칼"
+    slot_layer: 0
+    slot_row: 0
+    slot_col: 1
+    dimensions: {length: 0.160, width: 0.030, height: 0.015}
     mass_kg: 0.070
     grasp_approach: top
-    notes: "19mm 소켓"
+    notes: "임의값 — 실측 후 갱신"
 
-  - tool_id: ratchet_handle
-    slot_row: 0
-    slot_col: 1
-    dimensions: {length: 0.250, diameter: 0.022}  # m, TBD 실측
-    mass_kg: 0.200
-    grasp_approach: top
-    notes: "래칫 핸들"
-
-  - tool_id: hex_key_set_folding
+  - tool_id: ratchet_wrench
+    display_name: "라쳇 렌치"
+    slot_layer: 0
     slot_row: 0
     slot_col: 2
-    dimensions: {length: 0.090, width: 0.045, height: 0.015}  # m, 접힌 상태, TBD 실측
-    mass_kg: 0.100
+    dimensions: {length: 0.200, width: 0.040, height: 0.030}
+    mass_kg: 0.250
     grasp_approach: top
-    notes: "접이식 육각렌치 세트"
+    notes: "임의값 — 실측 후 갱신"
 
-  - tool_id: screwdriver_flat_6x100
-    slot_row: 1
+  - tool_id: multi_tool
+    display_name: "멕가이버"
+    slot_layer: 1
+    slot_row: 0
     slot_col: 0
-    dimensions: {length: 0.220, diameter: 0.025}  # m, TBD 실측 (날 100mm + 손잡이)
-    mass_kg: 0.080
+    dimensions: {length: 0.110, width: 0.035, height: 0.020}
+    mass_kg: 0.180
     grasp_approach: top
-    notes: "일자 드라이버 6x100mm"
+    notes: "임의값 — 실측 후 갱신"
 
-  - tool_id: cutter_knife
-    slot_row: 1
+  - tool_id: spanner_16mm
+    display_name: "스패너 16mm"
+    slot_layer: 1
+    slot_row: 0
     slot_col: 1
-    dimensions: {length: 0.150, width: 0.018, height: 0.012}  # m, 닫힌 상태, TBD 실측
-    mass_kg: 0.060
+    dimensions: {length: 0.180, width: 0.040, height: 0.012}
+    mass_kg: 0.120
     grasp_approach: top
-    notes: "커터칼"
+    notes: "임의값 — 실측 후 갱신"
+
+  - tool_id: socket_19mm
+    display_name: "복스 소켓 19mm"
+    slot_layer: 1
+    slot_row: 0
+    slot_col: 2
+    dimensions: {length: 0.040, diameter: 0.026}
+    mass_kg: 0.090
+    grasp_approach: top
+    notes: "임의값 — 실측 후 갱신"
 
 # 수락 기준 (docs/conventions.md):
 # - 공구 분류 정확도 ≥ 95% (실험실 조명)

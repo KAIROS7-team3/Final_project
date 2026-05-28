@@ -3,8 +3,8 @@
 YOLOv11s 학습용 — 그리퍼 카메라 시점 기준으로 수집해야 추론 환경과 일치.
 
 사용법:
-    python scripts/dataset/collect_images.py --tool socket_19mm --split train
-    python scripts/dataset/collect_images.py --tool ratchet_handle --split val
+    python scripts/dataset/collect_images.py --tool screwdriver --split train
+    python scripts/dataset/collect_images.py --tool socket_19mm --split val
 
 옵션:
     --device  웹캠 디바이스 인덱스 (기본 0, 인식 안 될 시 1·2 시도)
@@ -26,11 +26,12 @@ import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VALID_TOOLS = [
+    "screwdriver",
+    "utility_knife",
+    "ratchet_wrench",
+    "multi_tool",
+    "spanner_16mm",
     "socket_19mm",
-    "ratchet_handle",
-    "hex_key_set_folding",
-    "screwdriver_flat_6x100",
-    "cutter_knife",
 ]
 VALID_SPLITS = ["train", "val"]
 
