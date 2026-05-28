@@ -57,10 +57,10 @@ fod:
 # config/staging_area.yaml
 # frame: robot_base_link (모든 좌표)
 slots:
-  screwdriver_phillips_small:
+  screwdriver:
     position_m: [0.55, 0.10, 0.08]
     quaternion: [0.0, 0.0, 0.0, 1.0]   # [x, y, z, w]
-  wrench_8mm:
+  socket_19mm:
     position_m: [0.55, 0.20, 0.08]
     quaternion: [0.0, 0.0, 0.0, 1.0]
 ```
@@ -209,7 +209,7 @@ def load_staging_config(path: Path = Path("config/staging_area.yaml")) -> Stagin
 
 # 사용
 config = load_staging_config()
-phillips_slot = config.slots["screwdriver_phillips_small"]
+slot = config.slots["screwdriver"]
 print(phillips_slot.x)
 ```
 
@@ -348,7 +348,7 @@ jobs:
 ### ❌ 검증 없는 YAML 로드
 ```python
 config = yaml.safe_load(open("config.yaml"))
-slot = config["slots"]["screwdriver_phillips_small"]  # KeyError 가능
+slot = config["slots"]["screwdriver"]  # KeyError 가능
 ```
 ✅ pydantic 검증 후 사용
 

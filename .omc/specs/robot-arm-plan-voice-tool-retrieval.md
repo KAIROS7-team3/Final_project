@@ -29,7 +29,7 @@
 semi-fixed toolbox and hands it over. On return command, the robot receives the tool and
 replaces it. All tool events are recorded in DB for FOD management. PLC drives LED status.
 
-**Tool Inventory:** 9 tools (3 screwdrivers, 3 wrenches, 3 pliers) — extensible via YAML.
+**Tool Inventory:** 6 tools (screwdriver, utility_knife, ratchet_wrench, multi_tool, spanner_16mm, socket_19mm) — DB팀 robot_arm.db seed 기준.
 
 **Track Strategy:** A/B/C share all hardware inputs and drivers. Differences are isolated to
 the decision and motion layers only, enabling direct comparison of approaches.
@@ -242,8 +242,9 @@ ros2_ws/src/
 ```sql
 -- Tool inventory
 CREATE TABLE tools (
-    tool_id     TEXT PRIMARY KEY,   -- e.g. "screwdriver_phillips_small"
-    label       TEXT,               -- "Phillips #1"
+    tool_id     TEXT PRIMARY KEY,   -- e.g. "screwdriver"
+    label       TEXT,               -- "십자 드라이버"
+    slot_layer  INT,
     slot_row    INT,
     slot_col    INT,
     grasp_axis  TEXT                -- "shaft" | "handle"

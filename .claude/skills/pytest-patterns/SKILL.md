@@ -61,7 +61,7 @@ def db_client(tmp_path):
 
 # 사용
 def test_log_event(db_client):
-    db_client.log_event(tool_id="screwdriver_phillips_small", event_type="fetch", track="A")
+    db_client.log_event(tool_id="screwdriver", event_type="fetch", track="A")
     events = db_client.get_events()
     assert len(events) == 1
 ```
@@ -142,7 +142,7 @@ def test_db_failure_triggers_plc_warning(mocker):
     mocker.patch("orchestrator.db_client.get_tool_status",
                  side_effect=DBConnectionError("timeout"))
 
-    result = handle_fetch("screwdriver_phillips_small")
+    result = handle_fetch("screwdriver")
 
     assert not result.success
     mock_plc.set_warning.assert_called_once()
@@ -169,10 +169,10 @@ from pathlib import Path
 GOLDEN_DIR = Path(__file__).parent / "fixtures" / "golden"
 
 def test_fetch_trajectory_regression(bt_runner):
-    result = bt_runner.run("FetchTool", tool_id="wrench_8mm")
+    result = bt_runner.run("FetchTool", tool_id="ratchet_wrench")
     actual = result.trajectory_summary()
 
-    golden_path = GOLDEN_DIR / "fetch_wrench_8mm.json"
+    golden_path = GOLDEN_DIR / "fetch_ratchet_wrench.json"
     if not golden_path.exists():
         pytest.skip(f"Golden missing — write with UPDATE_GOLDENS=1")
     golden = json.loads(golden_path.read_text())

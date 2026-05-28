@@ -66,10 +66,10 @@ class Step:
 
 @dataclass
 class Episode:
-    tool_id: str                   # 'screwdriver_phillips_small'
+    tool_id: str                   # 'screwdriver'
     intent: str                    # 'fetch' | 'return'
-    language: str                  # '필립스 작은 드라이버 가져와' (한국어 원문)
-    language_en: str               # 'fetch the small phillips screwdriver' (영어 — VLA 학습용)
+    language: str                  # '드라이버 가져와' (한국어 원문)
+    language_en: str               # 'fetch the screwdriver' (영어 — VLA 학습용)
     steps: list[Step]              # 일반적으로 200~500 steps @ 10Hz
     success: bool                  # True면 학습 사용, False면 회피
     variant: str                   # 'standard' | 'position_offset' | 'lighting_dark' 등
@@ -81,14 +81,14 @@ class Episode:
 ```
 data/
 ├── demos/
-│   ├── screwdriver_phillips_small/
+│   ├── screwdriver/
 │   │   ├── fetch_001.npz
 │   │   ├── fetch_002.npz
 │   │   ├── ...
 │   │   ├── return_001.npz
 │   │   └── ...
-│   ├── wrench_8mm/
-│   └── ...
+│   ├── socket_19mm/
+│   └── ...  (총 6종)
 ├── metadata.parquet              # 모든 demo의 인덱스 (tool_id, intent, variant, 등)
 └── rlds/                         # 최종 변환된 RLDS 데이터셋
 ```
@@ -188,7 +188,7 @@ def collect_episode(
 
 ### Batch 수집 UI (간단)
 ```python
-TOOLS = ["screwdriver_phillips_small", "wrench_8mm", ...]   # 9종
+TOOLS = ["screwdriver", "utility_knife", "ratchet_wrench", "multi_tool", "spanner_16mm", "socket_19mm"]  # 6종
 VARIANTS = [
     ("standard", "필립스 작은 드라이버 가져와", "standard"),
     ("position_offset_x", "필립스 작은 드라이버 가져와", "position_offset"),
@@ -287,11 +287,11 @@ for ep in samples:
 ### 명령어 다양성 (학습 일반화 ↑)
 ```python
 COMMAND_VARIATIONS = {
-    "screwdriver_phillips_small": [
-        "필립스 작은 드라이버 가져와",
-        "작은 필립스 줘",
-        "small phillips 가져와줘",
-        "십자 작은 거 줘",
+    "screwdriver": [
+        "드라이버 가져와",
+        "드라이버 줘",
+        "십자 드라이버 줘",
+        "screwdriver 가져와줘",
     ],
     # ...
 }
