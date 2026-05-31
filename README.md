@@ -204,13 +204,39 @@ classes   : multi_tool(0) ratchet_wrench(1) screwdriver(2)
 split     : train 561 / valid 160 / test 80
 ```
 
+#### top_view_v2 학습 결과 (YOLOv11s, 200 epoch)
+
+| 지표 | v1 | v2 | 변화 |
+|------|----|----|------|
+| mAP@0.5 | 0.984 | **0.973** | -0.011 (mix 데이터 추가로 더 어려운 조건) |
+| mAP@0.5:0.95 | - | **0.708** | - |
+
+**클래스별 mAP@0.5**
+
+| 클래스 | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 |
+|--------|-----------|--------|---------|--------------|
+| multi_tool | 0.976 | 0.980 | 0.981 | 0.775 |
+| ratchet_wrench | 0.977 | 0.929 | 0.947 | 0.738 |
+| screwdriver | 0.904 | 0.963 | 0.956 | 0.631 |
+| socket_19mm | 0.979 | 0.947 | 0.961 | 0.525 |
+| spanner_16mm | 0.998 | 1.000 | 0.995 | 0.787 |
+| utility_knife | 1.000 | 0.964 | 0.995 | 0.791 |
+| **전체** | **0.972** | **0.964** | **0.973** | **0.708** |
+
+> v1에서 문제였던 **ratchet_wrench background 오인식(57%)** 과 **spanner_16mm 누락**이 mix 데이터 추가 및 검수 후 크게 개선됨. ✅ 수락 기준(mAP@0.5 ≥ 0.85) 통과.
+
+**Confusion Matrix (Normalized)**
+![confusion matrix](docs/images/top_view_v2/confusion_matrix_normalized.png)
+
+**PR Curve**
+![PR curve](docs/images/top_view_v2/results_pr_curve.png)
+
 #### 현재 진행 중 / 대기 중
 
 | 항목 | 상태 |
 |------|------|
-| top_view_v2 코랩 학습 (200 epoch) | 🔄 진행 중 |
-| 학습 결과 confusion matrix 분석 | ⏳ 학습 완료 후 |
-| ratchet_wrench / spanner_16mm 추가 촬영 (훈련장, 반사 환경) | ⏳ 학습 결과 확인 후 결정 |
+| top_view_v2 코랩 학습 (200 epoch) | ✅ 완료 (mAP50=0.973) |
+| ratchet_wrench / spanner_16mm 추가 촬영 (훈련장, 반사 환경) | ⏳ 실제 환경 테스트 후 결정 |
 | ArUco marker_to_origin 실측 갱신 | ⏳ 마커 실제 부착 후 |
 | 그리퍼 캠 데이터셋 (ArUco + 소켓 사이즈) | ⏳ 탑뷰 학습 안정화 후 |
 
