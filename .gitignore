@@ -64,9 +64,13 @@ config/hand_eye.yaml
 verify_rgb.png
 verify_depth_colormap.png
 
-# 데이터셋 이미지 (용량 초과 — 별도 스토리지 관리)
-datasets/tools/images/
-datasets/tools/labels/
+# 데이터셋 이미지·라벨 (용량 초과 — Roboflow 관리)
+datasets/tools/**/images/
+datasets/tools/**/labels/
+datasets/tools/**/train/
+datasets/tools/**/valid/
+datasets/tools/**/test/
+datasets/tools/top_view/auto_labels/
 
 # YOLO 학습 결과물
 runs/
