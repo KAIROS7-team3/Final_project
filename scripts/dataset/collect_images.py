@@ -1,6 +1,9 @@
 """공구 이미지 수집 — 탑뷰(D455f) 또는 그리퍼(C270) 시점별 분리 저장.
 
-YOLOv11s 학습용. 두 카메라는 촬영 시점이 달라 별도 데이터셋·모델 필요.
+⚠️  이 스크립트는 원본 이미지 수집 전용이다.
+    수집 후 Roboflow 업로드 → 라벨링/검수 → YOLOv11 export 순서로 진행.
+    train_yolo.py는 Roboflow export 레이아웃({split}/images/, {split}/labels/)을 기대한다.
+
 저장 경로: datasets/tools/{top_view|gripper}/images/{train|val}/{tool_id}/
 
 사용법:

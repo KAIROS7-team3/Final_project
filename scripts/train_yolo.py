@@ -1,8 +1,9 @@
 """YOLOv11s 공구 검출 모델 파인튜닝 — 탑뷰(D455f) / 그리퍼(C270) 시점별 분리 학습.
 
 사전 조건:
-  - datasets/tools/{top_view|gripper}/images/train|val/ 에 이미지 수집 완료
-  - datasets/tools/{top_view|gripper}/labels/train|val/ 에 YOLO 형식 어노테이션 완료
+  - Roboflow에서 YOLOv11 포맷으로 export한 데이터셋을
+    datasets/tools/{top_view|gripper}/ 에 배치 완료
+    (레이아웃: {train|valid}/images/, {train|valid}/labels/)
   - pip install ultralytics
 
 사용법:
@@ -79,7 +80,9 @@ def _parse_args() -> argparse.Namespace:
 
 def _check_dataset(view: str) -> None:
     base = PROJECT_ROOT / "datasets" / "tools" / view
-    split_map = {"train": "train", "val": "valid" if view == "top_view" else "valid"}
+    # Roboflow export 레이아웃: {split}/images/, {split}/labels/
+    # split 이름: train → train, val → valid (Roboflow 기본값)
+    split_map = {"train": "train", "val": "valid"}
     for split, dirname in split_map.items():
         img_dir = base / dirname / "images"
         lbl_dir = base / dirname / "labels"
@@ -88,12 +91,12 @@ def _check_dataset(view: str) -> None:
         if not imgs:
             raise FileNotFoundError(
                 f"[{view}/{split}] 이미지 없음: {img_dir}\n"
-                f"  → python scripts/dataset/collect_images.py --camera {view} --split {split} ..."
+                f"  → Roboflow에서 YOLOv11 포맷으로 export 후 datasets/tools/{view}/ 에 배치"
             )
         if not lbls:
             raise FileNotFoundError(
                 f"[{view}/{split}] 라벨 없음: {lbl_dir}\n"
-                "  → YOLO 형식(.txt) 어노테이션 완료 후 재실행"
+                f"  → Roboflow 검수 완료 후 YOLOv11 포맷으로 export 후 datasets/tools/{view}/ 에 배치"
             )
         logger.info("[%s/%s] images=%d  labels=%d", view, split, len(imgs), len(lbls))
 

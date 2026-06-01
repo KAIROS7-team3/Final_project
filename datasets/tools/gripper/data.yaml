@@ -1,17 +1,31 @@
 ---
 # YOLOv11s 데이터셋 — 그리퍼(C270) 시점
-# 이미지 수집: python scripts/dataset/collect_images.py --camera gripper ...
-# 학습 결과: runs/yolo/gripper_v1/weights/best.pt → config/vision.yaml gripper_model_path
+#
+# ⚠️  이 파일은 Roboflow export 레이아웃 기준 플레이스홀더다.
+#     실제 학습 전 Roboflow에서 YOLOv11 포맷으로 export한 data.yaml로 교체할 것.
+#
+# 워크플로:
+#   1. collect_images.py로 원본 이미지 수집
+#   2. Roboflow 업로드 → 라벨링/검수
+#   3. YOLOv11 포맷 export → datasets/tools/gripper/ 에 배치
+#   4. python scripts/train_yolo.py --view gripper
+#
+# Roboflow export 레이아웃:
+#   datasets/tools/gripper/
+#     train/images/  train/labels/
+#     valid/images/  valid/labels/
 
 path: datasets/tools/gripper
-train: images/train
-val: images/val
+train: train/images
+val: valid/images
 
 nc: 6
+# 클래스 순서: 알파벳순 — v2(top_view)와 동일하게 유지
+# ⚠️  top_view 모델과 혼용 시 인덱스 일치 확인 필수
 names:
-  0: screwdriver
-  1: utility_knife
-  2: ratchet_wrench
-  3: multi_tool
+  0: multi_tool
+  1: ratchet_wrench
+  2: screwdriver
+  3: socket_19mm
   4: spanner_16mm
-  5: socket_19mm
+  5: utility_knife
