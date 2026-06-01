@@ -79,7 +79,7 @@ def _parse_args() -> argparse.Namespace:
 
 def _check_dataset(view: str) -> None:
     base = PROJECT_ROOT / "datasets" / "tools" / view
-    split_map = {"train": "train", "val": "valid" if view == "top_view" else "valid"}
+    split_map = {"train": "train", "val": "valid"}
     for split, dirname in split_map.items():
         img_dir = base / dirname / "images"
         lbl_dir = base / dirname / "labels"
