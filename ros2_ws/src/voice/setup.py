@@ -20,7 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "whisper_node = voice.whisper_node:main",
-            "gemma_intent_node = voice.gemma_intent_node:main",
+            "rule_intent_node = voice.rule_intent_node:main",
         ],
     },
 )

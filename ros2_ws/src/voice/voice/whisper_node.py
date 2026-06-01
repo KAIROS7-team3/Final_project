@@ -10,7 +10,7 @@ S-7 규칙에 따라 로봇 이동 중에는 음성 입력을 막는다.
     -> std_msgs/String `/voice/raw_text`
 
 이 노드는 intent를 직접 판단하지 않는다. 명령 해석과 DB Gate는
-`gemma_intent_node`가 담당한다.
+`rule_intent_node`가 담당한다.
 """
 
 from __future__ import annotations
