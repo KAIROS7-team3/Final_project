@@ -1,0 +1,47 @@
+version: v2
+description: "탑뷰 D455f 기준 공구 6종 탐지 모델 (현재 운용 버전)"
+active: true
+
+model:
+  file: weights/best.pt
+  base: yolo11s.pt
+  image_size: 640
+
+dataset:
+  name: top_view_v2
+  size: 801
+  split: "train 561 / valid 160 / test 80"
+  source: "Roboflow — workspace: yeonseop9999-gmail-com / project: final-project-kir4p / version: 1"
+
+training:
+  epochs: 200
+  trained_at: "2026-05-29"
+  platform: Google Colab
+
+results:
+  map50: 0.973
+  map50_95: 0.708
+  results_dir: results/
+  images: "docs/images/top_view_v2/ (git 추적)"
+  per_class:
+    multi_tool:     { precision: 0.976, recall: 0.980, map50: 0.981, map50_95: 0.775 }
+    ratchet_wrench: { precision: 0.977, recall: 0.929, map50: 0.947, map50_95: 0.738 }
+    screwdriver:    { precision: 0.904, recall: 0.963, map50: 0.956, map50_95: 0.631 }
+    socket_19mm:    { precision: 0.979, recall: 0.947, map50: 0.961, map50_95: 0.525 }
+    spanner_16mm:   { precision: 0.998, recall: 1.000, map50: 0.995, map50_95: 0.787 }
+    utility_knife:  { precision: 1.000, recall: 0.964, map50: 0.995, map50_95: 0.791 }
+
+drive_url: ""  # TODO: Google Drive 공유 링크 기입 후 권한 '링크 있는 모든 사용자' 설정
+
+classes:
+  0: multi_tool
+  1: ratchet_wrench
+  2: screwdriver
+  3: socket_19mm
+  4: spanner_16mm
+  5: utility_knife
+
+notes:
+  - "클래스 순서 알파벳순으로 변경됨 (v1과 다름) — 혼용 절대 금지"
+  - "mix 200장 추가로 ratchet_wrench 오인식 문제 개선"
+  - "수락 기준 mAP@0.5 ≥ 0.85 통과"

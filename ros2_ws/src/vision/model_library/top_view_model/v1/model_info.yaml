@@ -1,0 +1,38 @@
+version: v1
+description: "탑뷰 D455f 기준 공구 6종 탐지 모델 (구버전, 참조용)"
+active: false
+
+model:
+  file: weights/best.pt
+  base: yolo11s.pt
+  image_size: 640
+
+dataset:
+  name: top_view_v1
+  size: 614
+  split: "train 430 / valid 123 / test 61"
+  source: Roboflow
+
+training:
+  epochs: 100
+  trained_at: "2026-05-28"
+  platform: Google Colab
+
+results:
+  map50: 0.984
+  map50_95: null
+  results_dir: results/
+
+drive_url: ""  # TODO: Google Drive 공유 링크 기입
+
+classes:
+  0: screwdriver
+  1: utility_knife
+  2: ratchet_wrench
+  3: multi_tool
+  4: spanner_16mm
+  5: socket_19mm
+
+known_issues:
+  - "ratchet_wrench background 오인식 57%"
+  - "클래스 순서가 v2와 다름 — 혼용 절대 금지"
