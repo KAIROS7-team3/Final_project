@@ -18,7 +18,7 @@ VALID_STATUSES = frozenset({"in_slot", "out", "staged", "missing", "fod_alert"})
 VALID_EVENT_TYPES = frozenset(
     {"fetch", "return", "rejected", "error", "fod_alert", "reconciled"}
 )
-VALID_TRACKS = frozenset({"A", "B", "C", "system"})
+VALID_TRACKS = frozenset({"A", "B", "C"})
 DEFAULT_OPERATOR_ID = "operator_01"
 DB_CACHE_TTL_SECONDS = 300.0
 
@@ -252,7 +252,7 @@ class ToolRepository:
                     conn=conn,
                     tool_id=tool_id,
                     event_type="fod_alert",
-                    track="system",
+                    track=None,
                     status_before=current_status,
                     status_after=new_status,
                     notes="FOD timeout transition",
@@ -309,7 +309,7 @@ class ToolRepository:
                     conn=conn,
                     tool_id=tool_id,
                     event_type="rejected",
-                    track="system",
+                    track=None,
                     status_before=current_status,
                     status_after=current_status,
                     notes=reason,
@@ -346,7 +346,7 @@ class ToolRepository:
         conn: sqlite3.Connection,
         tool_id: str,
         event_type: str,
-        track: str,
+        track: str | None,
         status_before: str,
         status_after: str,
         notes: str,

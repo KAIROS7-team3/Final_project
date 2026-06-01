@@ -149,12 +149,12 @@ def test_rejected_feasibility_writes_rejected_event(tmp_path) -> None:
     conn = sqlite3.connect(db_path)
     event = conn.execute(
         """
-        SELECT event_type, status_before, status_after, notes
+        SELECT event_type, track, status_before, status_after, notes
         FROM tool_events
         """
     ).fetchone()
     conn.close()
-    assert event == ("rejected", "out", "out", "tool is out")
+    assert event == ("rejected", None, "out", "out", "tool is out")
 
 
 def test_update_tool_status_writes_event_and_tool_snapshot(tmp_path) -> None:
@@ -263,6 +263,22 @@ def test_update_rejects_invalid_status(tmp_path) -> None:
     assert "unsupported status" in result.message
 
 
+def test_update_rejects_system_as_external_track(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+
+    result = ToolRepository(db_path).update_tool_status(
+        tool_id="spanner_16mm",
+        new_status="out",
+        event_type="fetch",
+        track="system",
+        notes="invalid track",
+    )
+
+    assert result.success is False
+    assert result.message == "unsupported track: system"
+
+
 def test_fod_monitor_marks_overdue_out_tool_missing(tmp_path) -> None:
     db_path = tmp_path / "robot_arm.db"
     _create_db(str(db_path))
@@ -287,4 +303,4 @@ def test_fod_monitor_marks_overdue_out_tool_missing(tmp_path) -> None:
     conn = sqlite3.connect(db_path)
     track = conn.execute("SELECT track FROM tool_events WHERE event_type = 'fod_alert'").fetchone()[0]
     conn.close()
-    assert track == "system"
+    assert track is None
