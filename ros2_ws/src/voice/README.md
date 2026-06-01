@@ -92,7 +92,7 @@ colcon test-result --verbose
 로컬 오디오 샘플이 없을 때 정상 결과:
 
 ```text
-14 passed, 1 skipped
+20 passed, 1 skipped
 ```
 
 skip되는 테스트는 선택형 Whisper 샘플 회귀 테스트다. 실행하려면

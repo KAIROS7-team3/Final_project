@@ -21,6 +21,24 @@ from dataclasses import dataclass
 FETCH_KEYWORDS = ("가져", "꺼내", "fetch", "bring")
 RETURN_KEYWORDS = ("반납", "돌려", "넣어", "return")
 CANCEL_KEYWORDS = ("취소", "중지", "cancel", "stop")
+SPANNER_SIZE_KEYWORDS = (
+    "16mm",
+    "16 mm",
+    "16미리",
+    "16 밀리",
+    "십육미리",
+    "십육 밀리",
+)
+SOCKET_SIZE_KEYWORDS = (
+    "19mm",
+    "19 mm",
+    "19미리",
+    "19 밀리",
+    "십구미리",
+    "십구 밀리",
+)
+SPANNER_NAME_KEYWORDS = ("스패너", "spanner")
+SOCKET_NAME_KEYWORDS = ("복스", "소켓", "socket")
 
 # DB의 tool_id와 사용자가 실제로 말할 가능성이 높은 별칭을 연결한다.
 TOOL_ALIASES = {
@@ -61,10 +79,13 @@ def parse_command(text: str) -> ParsedCommand:
     elif _contains_any(normalized, FETCH_KEYWORDS):
         intent_type = "fetch"
 
+    if _has_size_conflict(normalized):
+        return ParsedCommand("unknown", "", 0.0)
+
     tool_id = _match_tool(normalized)
     if intent_type in {"fetch", "return"} and tool_id:
         return ParsedCommand(intent_type, tool_id, 0.65)
-    if intent_type == "unknown" and not tool_id:
+    if not tool_id:
         return ParsedCommand("unknown", "", 0.0)
     # intent 또는 tool_id 중 하나만 잡힌 경우다. downstream에서 낮은 confidence로
     # 취급할 수 있게 0.3을 반환한다.
@@ -84,3 +105,13 @@ def _match_tool(text: str) -> str:
         if any(alias in text for alias in aliases):
             return tool_id
     return ""
+
+
+def _has_size_conflict(text: str) -> bool:
+    """공구명과 치수 힌트가 서로 다른 공구를 가리키면 확정하지 않는다."""
+
+    spanner_name = _contains_any(text, SPANNER_NAME_KEYWORDS)
+    socket_name = _contains_any(text, SOCKET_NAME_KEYWORDS)
+    spanner_size = _contains_any(text, SPANNER_SIZE_KEYWORDS)
+    socket_size = _contains_any(text, SOCKET_SIZE_KEYWORDS)
+    return (socket_name and spanner_size) or (spanner_name and socket_size)

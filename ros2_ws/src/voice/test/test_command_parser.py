@@ -45,3 +45,27 @@ def test_parse_unknown_command() -> None:
     assert parsed.intent_type == "unknown"
     assert parsed.tool_id == ""
     assert parsed.confidence == 0.0
+
+
+def test_parse_generic_fetch_command_does_not_reach_db_gate() -> None:
+    parsed = parse_command("공구 가져와")
+
+    assert parsed.intent_type == "unknown"
+    assert parsed.tool_id == ""
+    assert parsed.confidence == 0.0
+
+
+def test_parse_socket_16mm_conflict_does_not_select_socket() -> None:
+    parsed = parse_command("소켓 16미리 가져와")
+
+    assert parsed.intent_type == "unknown"
+    assert parsed.tool_id == ""
+    assert parsed.confidence == 0.0
+
+
+def test_parse_spanner_19mm_conflict_does_not_select_spanner() -> None:
+    parsed = parse_command("스패너 19미리 가져와")
+
+    assert parsed.intent_type == "unknown"
+    assert parsed.tool_id == ""
+    assert parsed.confidence == 0.0
