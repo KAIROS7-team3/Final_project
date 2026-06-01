@@ -8,7 +8,8 @@ yolo:
   # ⚠️ Phase 2 YOLOv11s 파인튜닝 완료 후 모델 경로 기입
   # 탑뷰(D455f)와 그리퍼(C270)는 촬영 시점이 달라 별도 모델 학습 필요
   # 학습 완료 전: null → 노드 기동은 되나 추론 비활성화
-  top_view_model_path: ros2_ws/src/vision/model_library/top_view_model/v2/weights/best.pt    # v2: 단일객체+mix 801장, mAP50=0.973 (model_library active 버전)
+  # v2: 단일객체+mix 801장, mAP50=0.973 — model_library의 active 버전
+  top_view_model_path: ros2_ws/src/vision/model_library/top_view_model/v2/weights/best.pt
   gripper_model_path: null     # C270 그리퍼 시점 학습 모델 (runs/yolo/gripper_v1/weights/best.pt)
   confidence_threshold: 0.70   # 수락 기준: 공구 분류 정확도 ≥ 95% (docs/conventions.md)
   iou_threshold: 0.45
