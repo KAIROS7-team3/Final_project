@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class SimulatedStatusUpdate:
-    """시뮬레이터가 /update_tool_status에 넘길 상태 전이."""
+    """시뮬레이터가 /db/UpdateToolStatus에 넘길 상태 전이."""
 
     new_status: str
     event_type: str

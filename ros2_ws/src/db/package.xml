@@ -4,7 +4,7 @@
   <name>db</name>
   <version>0.1.0</version>
   <description>ROS2 DB service package for tool feasibility, status updates, and FOD monitoring.</description>
-  <maintainer email="team@example.com">KAIROS7-team3</maintainer>
+  <maintainer email="gold73201-collab@users.noreply.github.com">KAIROS7-team3</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

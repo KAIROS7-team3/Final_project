@@ -7,6 +7,7 @@ ROS2 node는 이 repository를 통해서만 feasibility 확인과 상태 갱신�
 from __future__ import annotations
 
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -17,8 +18,37 @@ VALID_STATUSES = frozenset({"in_slot", "out", "staged", "missing", "fod_alert"})
 VALID_EVENT_TYPES = frozenset(
     {"fetch", "return", "rejected", "error", "fod_alert", "reconciled"}
 )
-VALID_TRACKS = frozenset({"A", "B", "C"})
+VALID_TRACKS = frozenset({"A", "B", "C", "system"})
 DEFAULT_OPERATOR_ID = "operator_01"
+DB_CACHE_TTL_SECONDS = 300.0
+
+REQUIRED_TABLE_COLUMNS = {
+    "operators": frozenset({"operator_id", "display_name", "created_at"}),
+    "tools": frozenset(
+        {
+            "tool_id",
+            "display_name",
+            "current_status",
+            "home_slot_row",
+            "home_slot_col",
+            "last_event_id",
+            "last_updated",
+        }
+    ),
+    "tool_events": frozenset(
+        {
+            "event_id",
+            "tool_id",
+            "event_type",
+            "track",
+            "operator_id",
+            "status_before",
+            "status_after",
+            "notes",
+            "timestamp",
+        }
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -46,12 +76,23 @@ class FodUpdate:
     new_status: str
 
 
+@dataclass(frozen=True)
+class _CachedStatus:
+    current_status: str
+    loaded_at: float
+
+
+class SchemaValidationError(sqlite3.DatabaseError):
+    """Raised when the DB file does not match the required safety schema."""
+
+
 class ToolRepository:
     """SQLite adapter for DB Gate, status updates, and event logging."""
 
     def __init__(self, db_path: str | Path, operator_id: str = DEFAULT_OPERATOR_ID) -> None:
         self.db_path = Path(db_path)
         self.operator_id = operator_id
+        self._status_cache: dict[str, _CachedStatus] = {}
 
     def check_feasibility(self, intent: str, tool_id: str) -> FeasibilityResult:
         """Return whether intent can run for the current tool status."""
@@ -63,28 +104,58 @@ class ToolRepository:
         if not tool_id:
             return FeasibilityResult(False, "tool_id is required")
 
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT current_status FROM tools WHERE tool_id = ?",
-                (tool_id,),
-            ).fetchone()
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT current_status FROM tools WHERE tool_id = ?",
+                    (tool_id,),
+                ).fetchone()
+        except SchemaValidationError as exc:
+            return FeasibilityResult(False, f"database schema error: {exc}")
+        except sqlite3.Error as exc:
+            cached_status = self._cached_status(tool_id)
+            if cached_status is None:
+                return FeasibilityResult(
+                    False,
+                    f"database unavailable and cache expired: {exc}",
+                )
+            current_status = cached_status
+            return self._check_status(intent, tool_id, current_status)
 
         if row is None:
             return FeasibilityResult(False, "unknown tool")
 
         current_status = str(row["current_status"])
+        self._status_cache[tool_id] = _CachedStatus(
+            current_status=current_status,
+            loaded_at=time.monotonic(),
+        )
+        return self._check_status(intent, tool_id, current_status)
+
+    def _check_status(
+        self,
+        intent: str,
+        tool_id: str,
+        current_status: str,
+    ) -> FeasibilityResult:
+        """Apply DB Gate rules to a known current status."""
+
         if intent == "fetch":
             # Fetch는 공구가 슬롯 안에 있을 때만 허용한다.
             if current_status == "in_slot":
                 return FeasibilityResult(True, "ok")
             return self._reject(tool_id, current_status, f"tool is {current_status}")
 
-        # Return은 사람이 들고 있거나 staging에 놓인 상태에서만 허용한다.
-        if current_status in {"out", "staged"}:
+        # Return은 staging에 놓인 상태에서만 허용한다. out은 직접 반납 우회라 차단한다.
+        if current_status == "staged":
             return FeasibilityResult(True, "ok")
         if current_status == "in_slot":
             return self._reject(tool_id, current_status, "tool is already in slot")
-        return self._reject(tool_id, current_status, f"tool is {current_status}")
+        return self._reject(
+            tool_id,
+            current_status,
+            f"tool is {current_status}, expected staged",
+        )
 
     def update_tool_status(
         self,
@@ -132,6 +203,10 @@ class ToolRepository:
                 )
                 self._update_tool_row(conn, tool_id, new_status, event_id, now)
                 conn.commit()
+                self._status_cache[tool_id] = _CachedStatus(
+                    current_status=new_status,
+                    loaded_at=time.monotonic(),
+                )
         except sqlite3.Error as exc:
             return UpdateResult(False, f"database error: {exc}")
 
@@ -177,7 +252,7 @@ class ToolRepository:
                     conn=conn,
                     tool_id=tool_id,
                     event_type="fod_alert",
-                    track="A",
+                    track="system",
                     status_before=current_status,
                     status_after=new_status,
                     notes="FOD timeout transition",
@@ -196,7 +271,19 @@ class ToolRepository:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
+        _validate_schema(conn)
         return conn
+
+    def _cached_status(self, tool_id: str) -> str | None:
+        """Return cached status only while it is within the S-2 TTL window."""
+
+        cached = self._status_cache.get(tool_id)
+        if cached is None:
+            return None
+        age_s = time.monotonic() - cached.loaded_at
+        if age_s > DB_CACHE_TTL_SECONDS:
+            return None
+        return cached.current_status
 
     def _reject(
         self,
@@ -222,7 +309,7 @@ class ToolRepository:
                     conn=conn,
                     tool_id=tool_id,
                     event_type="rejected",
-                    track="A",
+                    track="system",
                     status_before=current_status,
                     status_after=current_status,
                     notes=reason,
@@ -265,9 +352,8 @@ class ToolRepository:
         notes: str,
         timestamp: str,
     ) -> int | None:
-        """Insert a tool_events row, tolerating schema columns not present yet."""
+        """Insert a tool_events row using the required schema."""
 
-        columns = _table_columns(conn, "tool_events")
         values: dict[str, object] = {
             "tool_id": tool_id,
             "event_type": event_type,
@@ -278,7 +364,7 @@ class ToolRepository:
             "notes": notes,
             "timestamp": timestamp,
         }
-        insert_columns = [column for column in values if column in columns]
+        insert_columns = list(values)
         placeholders = ", ".join("?" for _ in insert_columns)
         column_sql = ", ".join(insert_columns)
         cursor = conn.execute(
@@ -297,12 +383,8 @@ class ToolRepository:
     ) -> None:
         """Update the tools snapshot row after an event has been inserted."""
 
-        columns = _table_columns(conn, "tools")
-        assignments = ["current_status = ?", "last_updated = ?"]
-        values: list[object] = [new_status, timestamp]
-        if "last_event_id" in columns and event_id is not None:
-            assignments.append("last_event_id = ?")
-            values.append(event_id)
+        assignments = ["current_status = ?", "last_updated = ?", "last_event_id = ?"]
+        values: list[object] = [new_status, timestamp, event_id]
         values.append(tool_id)
         conn.execute(
             f"UPDATE tools SET {', '.join(assignments)} WHERE tool_id = ?",
@@ -315,11 +397,8 @@ class ToolRepository:
         tool_id: str,
         event_id: int,
     ) -> None:
-        """Update last_event_id only when the current schema has that column."""
+        """Update last_event_id after a rejected DB Gate event."""
 
-        columns = _table_columns(conn, "tools")
-        if "last_event_id" not in columns:
-            return
         conn.execute(
             "UPDATE tools SET last_event_id = ? WHERE tool_id = ?",
             (event_id, tool_id),
@@ -330,6 +409,35 @@ def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
     """Return the column names for compatibility with evolving DB schemas."""
 
     return {str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table_name})")}
+
+
+def _validate_schema(conn: sqlite3.Connection) -> None:
+    """Fail fast when a DB file does not match the required schema."""
+
+    for table_name, required_columns in REQUIRED_TABLE_COLUMNS.items():
+        columns = _table_columns(conn, table_name)
+        missing = sorted(required_columns - columns)
+        if missing:
+            raise SchemaValidationError(
+                f"{table_name} missing required columns: {', '.join(missing)}"
+            )
+
+    _require_foreign_keys(conn, "tools", {"last_event_id"})
+    _require_foreign_keys(conn, "tool_events", {"tool_id", "operator_id"})
+
+
+def _require_foreign_keys(
+    conn: sqlite3.Connection,
+    table_name: str,
+    constrained_columns: set[str],
+) -> None:
+    rows = conn.execute(f"PRAGMA foreign_key_list({table_name})").fetchall()
+    actual = {str(row["from"]) for row in rows}
+    missing = sorted(constrained_columns - actual)
+    if missing:
+        raise SchemaValidationError(
+            f"{table_name} missing foreign keys: {', '.join(missing)}"
+        )
 
 
 def _parse_utc(value: str) -> datetime:

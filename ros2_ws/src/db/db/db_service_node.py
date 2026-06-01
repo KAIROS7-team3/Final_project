@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import rclpy
+from db_core.repository import ToolRepository
 from interfaces.srv import CheckToolFeasibility, UpdateToolStatus
 from rclpy.node import Node
-
-from db.repository import ToolRepository
 
 
 class DbServiceNode(Node):
@@ -23,12 +22,12 @@ class DbServiceNode(Node):
         )
         self.create_service(
             CheckToolFeasibility,
-            "check_tool_feasibility",
+            "/db/CheckToolFeasibility",
             self._handle_check_tool_feasibility,
         )
         self.create_service(
             UpdateToolStatus,
-            "update_tool_status",
+            "/db/UpdateToolStatus",
             self._handle_update_tool_status,
         )
 

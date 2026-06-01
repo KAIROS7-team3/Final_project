@@ -27,7 +27,7 @@ Python 의존성:
 - SQLite DB 파일
 - 기본값은 실행 위치 기준 `robot_arm.db`
 - 현장/로컬 테스트에서는 보통
-  `/home/thomas/Final_Project/robot_arm.db`를 지정한다.
+  `~/Final_Project/robot_arm.db`를 지정한다.
 
 ## 빌드 방법
 
@@ -35,7 +35,7 @@ Python 의존성:
 빌드해야 한다.
 
 ```bash
-cd /home/thomas/Final_Project/ros2_ws
+cd ~/Final_Project/ros2_ws
 source /opt/ros/humble/setup.bash
 colcon build --packages-select interfaces db
 source install/setup.bash
@@ -44,7 +44,7 @@ source install/setup.bash
 ## 테스트 방법
 
 ```bash
-cd /home/thomas/Final_Project/ros2_ws
+cd ~/Final_Project/ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 colcon test --packages-select db --event-handlers console_direct+
@@ -60,33 +60,33 @@ colcon test-result --verbose
 ## DB 서비스 실행
 
 ```bash
-cd /home/thomas/Final_Project/ros2_ws
+cd ~/Final_Project/ros2_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
 ros2 run db db_service_node --ros-args \
-  -p db_path:=/home/thomas/Final_Project/robot_arm.db \
+  -p db_path:=$HOME/Final_Project/robot_arm.db \
   -p operator_id:=operator_01
 ```
 
 제공 서비스:
 
-- `check_tool_feasibility`
-- `update_tool_status`
+- `/db/CheckToolFeasibility`
+- `/db/UpdateToolStatus`
 
 ## 서비스 수동 테스트
 
 공구를 가져올 수 있는지 확인:
 
 ```bash
-ros2 service call /check_tool_feasibility interfaces/srv/CheckToolFeasibility \
+ros2 service call /db/CheckToolFeasibility interfaces/srv/CheckToolFeasibility \
   "{intent: fetch, tool_id: spanner_16mm}"
 ```
 
 motion 완료를 가정하고 공구 상태를 `out`으로 갱신:
 
 ```bash
-ros2 service call /update_tool_status interfaces/srv/UpdateToolStatus \
+ros2 service call /db/UpdateToolStatus interfaces/srv/UpdateToolStatus \
   "{tool_id: spanner_16mm, new_status: out, event_type: fetch, track: A, notes: manual test}"
 ```
 
@@ -100,7 +100,7 @@ DB에 기록한다.
 
 ```bash
 ros2 run db fod_monitor_node --ros-args \
-  -p db_path:=/home/thomas/Final_Project/robot_arm.db \
+  -p db_path:=$HOME/Final_Project/robot_arm.db \
   -p checkout_timeout_minutes:=10.0 \
   -p missing_to_alert_seconds:=30.0 \
   -p poll_interval_seconds:=5.0
@@ -118,13 +118,14 @@ Terminal 1 - DB 서비스 실행:
 
 ```bash
 ros2 run db db_service_node --ros-args \
-  -p db_path:=/home/thomas/Final_Project/robot_arm.db
+  -p db_path:=$HOME/Final_Project/robot_arm.db
 ```
 
 Terminal 2 - 시뮬레이터 실행:
 
 ```bash
-ros2 run db intent_status_simulator_node --ros-args \
+cd ~/Final_Project/ros2_ws/src/db
+python3 -m db.intent_status_simulator_node --ros-args \
   -p track:=A
 ```
 
@@ -135,5 +136,6 @@ ros2 topic pub --once /voice/intent interfaces/msg/Intent \
   "{intent_type: fetch, tool_id: spanner_16mm, confidence: 0.9, raw_utterance: '스패너 가져와'}"
 ```
 
-시뮬레이터도 `check_tool_feasibility`를 다시 호출한다. 따라서 DB Gate를
+시뮬레이터는 production `ros2 run db ...` entry point로 설치하지 않는다.
+시뮬레이터도 `/db/CheckToolFeasibility`를 다시 호출한다. 따라서 DB Gate를
 우회하는 경로로 사용하면 안 된다.

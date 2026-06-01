@@ -5,9 +5,8 @@ from __future__ import annotations
 from datetime import timedelta
 
 import rclpy
+from db_core.repository import ToolRepository
 from rclpy.node import Node
-
-from db.repository import ToolRepository
 
 
 class FodMonitorNode(Node):
@@ -34,18 +33,22 @@ class FodMonitorNode(Node):
     def _poll(self) -> None:
         """Apply S-8 timeout transitions and log every changed tool."""
 
-        updates = self._repository.mark_checkout_timeouts(
-            checkout_timeout=timedelta(
-                minutes=self.get_parameter("checkout_timeout_minutes")
-                .get_parameter_value()
-                .double_value
-            ),
-            alert_grace=timedelta(
-                seconds=self.get_parameter("missing_to_alert_seconds")
-                .get_parameter_value()
-                .double_value
-            ),
-        )
+        try:
+            updates = self._repository.mark_checkout_timeouts(
+                checkout_timeout=timedelta(
+                    minutes=self.get_parameter("checkout_timeout_minutes")
+                    .get_parameter_value()
+                    .double_value
+                ),
+                alert_grace=timedelta(
+                    seconds=self.get_parameter("missing_to_alert_seconds")
+                    .get_parameter_value()
+                    .double_value
+                ),
+            )
+        except Exception as exc:
+            self.get_logger().error(f"FOD monitor poll failed: {exc}")
+            return
         for update in updates:
             self.get_logger().warning(
                 f"FOD transition tool_id={update.tool_id}: "

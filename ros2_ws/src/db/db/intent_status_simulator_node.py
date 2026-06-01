@@ -24,11 +24,11 @@ class IntentStatusSimulatorNode(Node):
         # 테스트 노드지만 DB Gate를 다시 통과시켜 S-2 우회를 만들지 않는다.
         self._feasibility_client = self.create_client(
             CheckToolFeasibility,
-            "check_tool_feasibility",
+            "/db/CheckToolFeasibility",
         )
         self._update_client = self.create_client(
             UpdateToolStatus,
-            "update_tool_status",
+            "/db/UpdateToolStatus",
         )
         self.create_subscription(Intent, "/voice/intent", self._handle_intent, 1)
         self.get_logger().warning(
@@ -47,7 +47,7 @@ class IntentStatusSimulatorNode(Node):
             return
 
         if not self._feasibility_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().error("check_tool_feasibility service is not available")
+            self.get_logger().error("/db/CheckToolFeasibility service is not available")
             return
 
         request = CheckToolFeasibility.Request()
@@ -64,7 +64,7 @@ class IntentStatusSimulatorNode(Node):
         message: Intent,
         new_status: str,
     ) -> None:
-        """Call update_tool_status only after DB Gate approval."""
+        """Call /db/UpdateToolStatus only after DB Gate approval."""
 
         try:
             response = future.result()
@@ -79,7 +79,7 @@ class IntentStatusSimulatorNode(Node):
             return
 
         if not self._update_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().error("update_tool_status service is not available")
+            self.get_logger().error("/db/UpdateToolStatus service is not available")
             return
 
         request = UpdateToolStatus.Request()
