@@ -22,10 +22,11 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = PROJECT_ROOT / "runs" / "yolo"
 
-# 시점별 data.yaml 경로
+# 시점별 data.yaml 경로 (버전별)
 _DATA_YAML = {
-    "top_view": PROJECT_ROOT / "datasets" / "tools" / "top_view" / "data.yaml",
-    "gripper":  PROJECT_ROOT / "datasets" / "tools" / "gripper"  / "data.yaml",
+    "top_view":    PROJECT_ROOT / "datasets" / "tools" / "top_view"    / "data.yaml",
+    "top_view_v2": PROJECT_ROOT / "datasets" / "tools" / "top_view_v2" / "data.yaml",
+    "gripper":     PROJECT_ROOT / "datasets" / "tools" / "gripper"     / "data.yaml",
 }
 
 # 시점별 augmentation — 탑뷰는 수직 고정(원근 왜곡 없음), 그리퍼는 각도 변화 있음
@@ -33,12 +34,16 @@ _AUG = {
     "top_view": dict(
         degrees=180.0,   # 탑뷰이므로 전 방향 회전 허용
         translate=0.1,
-        scale=0.3,
+        scale=0.5,       # 서랍 열린 높이 변화 대응 (0.3 → 0.5)
         fliplr=0.5,
         flipud=0.5,
         perspective=0.0, # 고정 마운트, 원근 왜곡 없음
         mosaic=1.0,
         mixup=0.1,
+        hsv_h=0.015,     # 조명 색온도 변화 대응
+        hsv_s=0.5,       # 금속 반사 채도 변동 대응
+        hsv_v=0.3,       # 서랍 개방 시 조도 차 대응
+        erasing=0.3,     # 부분 가림(occluded) 케이스 시뮬레이션
     ),
     "gripper": dict(
         degrees=30.0,    # 그리퍼 접근 방향이 대략 일정해 큰 회전은 불필요
@@ -61,11 +66,11 @@ _MODEL_KEY = {
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="YOLOv11s 공구 검출 파인튜닝")
-    p.add_argument("--view", required=True, choices=["top_view", "gripper"],
+    p.add_argument("--view", required=True, choices=["top_view", "top_view_v2", "gripper"],
                    help="학습할 카메라 시점 (top_view: D455f / gripper: C270)")
     p.add_argument("--model", default="yolo11s.pt",
                    help="베이스 모델 (yolo11n.pt / yolo11s.pt / yolo11m.pt)")
-    p.add_argument("--epochs", type=int, default=100)
+    p.add_argument("--epochs", type=int, default=200)
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--batch", type=int, default=16)
     p.add_argument("--device", default="cuda", help="cuda / cpu")
@@ -74,9 +79,10 @@ def _parse_args() -> argparse.Namespace:
 
 def _check_dataset(view: str) -> None:
     base = PROJECT_ROOT / "datasets" / "tools" / view
-    for split in ("train", "val"):
-        img_dir = base / "images" / split
-        lbl_dir = base / "labels" / split
+    split_map = {"train": "train", "val": "valid"}
+    for split, dirname in split_map.items():
+        img_dir = base / dirname / "images"
+        lbl_dir = base / dirname / "labels"
         imgs = list(img_dir.glob("**/*.jpg")) + list(img_dir.glob("**/*.png"))
         lbls = list(lbl_dir.glob("**/*.txt"))
         if not imgs:
@@ -95,7 +101,7 @@ def _check_dataset(view: str) -> None:
 def main() -> None:
     args = _parse_args()
     view = args.view
-    run_name = f"{view}_v1"
+    run_name = view if "_v" in view else f"{view}_v1"
 
     try:
         from ultralytics import YOLO
@@ -120,7 +126,7 @@ def main() -> None:
         device=args.device,
         project=str(RUNS_DIR),
         name=run_name,
-        patience=30,
+        patience=50,
         save=True,
         plots=True,
         verbose=True,

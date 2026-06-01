@@ -7,7 +7,7 @@ names: ['multi_tool', 'ratchet_wrench', 'screwdriver', 'socket_19mm', 'spanner_1
 
 roboflow:
   workspace: yeonseop9999-gmail-com
-  project: yeonseop9999-gmail-com
-  version: dataset
-  license: Private
-  url: https://app.roboflow.com/yeonseop9999-gmail-com/yeonseop9999-gmail-com/dataset
+  project: final-project-kir4p
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/yeonseop9999-gmail-com/final-project-kir4p/dataset/1
