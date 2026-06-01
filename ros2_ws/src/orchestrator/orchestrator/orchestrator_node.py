@@ -6,11 +6,11 @@ Track A/B 전용.
 import py_trees
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, ReliabilityPolicy
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import String
 from vision_msgs.msg import Detection3DArray
 
-from interfaces.msg import Intent
+from interfaces.msg import Intent, RobotStatus
 
 from orchestrator.blackboard import (
     KEY_ACTIVE_TOOL_ID,
@@ -21,9 +21,10 @@ from orchestrator.bt_nodes.fetch_tool import build_fetch_subtree
 from orchestrator.bt_nodes.return_tool import build_return_subtree
 
 # interfaces.md §4 QoS
-_QOS_INTENT = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
+_QOS_INTENT = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
 _QOS_TRACKED_POSES = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.BEST_EFFORT)
-_QOS_SCENE_CONTEXT = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
+_QOS_SCENE_CONTEXT = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
+_QOS_ROBOT_STATUS = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
 
 
 class OrchestratorNode(Node):
@@ -45,7 +46,11 @@ class OrchestratorNode(Node):
         # 노드 로컬 캐시 — blackboard READ 클라이언트 없이 tracked_poses 콜백에서 사용
         self._active_tool_id: str = ""
         self._latest_scene_context: str | None = None
+        self._is_moving: bool = False  # S-7: /robot/status에서 갱신
 
+        self._robot_status_sub = self.create_subscription(
+            RobotStatus, "/robot/status", self._on_robot_status, _QOS_ROBOT_STATUS
+        )
         self._intent_sub = self.create_subscription(
             Intent, "/voice/intent", self._on_intent, _QOS_INTENT
         )
@@ -64,8 +69,20 @@ class OrchestratorNode(Node):
             "/vision/tracked_poses, /vision/scene_context"
         )
 
+    def _on_robot_status(self, msg: RobotStatus) -> None:
+        """S-7: is_moving 플래그 갱신 — True 동안 신규 명령 차단."""
+        self._is_moving = msg.is_moving
+
     def _on_intent(self, msg: Intent) -> None:
-        """TODO(Phase 5a): S-7 — is_moving=True 이면 반환 (현재 미구현)."""
+        """S-7: is_moving=True 이면 즉시 반환 (이동 중 신규 명령 차단)."""
+        if self._is_moving:
+            self.get_logger().warn(
+                "[OrchestratorNode] intent ignored — robot is moving (S-7): "
+                "type=%s tool_id=%s",
+                msg.intent_type,
+                msg.tool_id,
+            )
+            return
         self.get_logger().info(
             "[OrchestratorNode] intent received - type=%s tool_id=%s",
             msg.intent_type,
@@ -98,7 +115,7 @@ class OrchestratorNode(Node):
                     pose.orientation.z,
                     pose.orientation.w,
                 ],
-                "frame": msg.header.frame_id or "base_link",
+                "frame": msg.header.frame_id or "robot_base_link",
             }
             self.get_logger().debug(
                 "[OrchestratorNode] tool_pose updated - tool_id=%s frame=%s",
