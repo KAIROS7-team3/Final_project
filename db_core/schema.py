@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS tool_events (
     tool_id       TEXT NOT NULL REFERENCES tools(tool_id),
     event_type    TEXT NOT NULL
         CHECK(event_type IN ('fetch','return','rejected','error','fod_alert','reconciled')),
-    track         TEXT NOT NULL CHECK(track IN ('A','B','C')),
+    track         TEXT CHECK(track IN ('A','B','C')),
     operator_id   TEXT NOT NULL REFERENCES operators(operator_id),
     status_before TEXT CHECK(status_before IN ('in_slot','out','staged','missing','fod_alert')),
     status_after  TEXT NOT NULL
