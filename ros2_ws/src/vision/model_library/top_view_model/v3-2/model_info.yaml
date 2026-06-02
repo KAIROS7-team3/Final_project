@@ -1,22 +1,20 @@
 # =============================================================================
-# top_view_model / v3 — 모델 정보
+# top_view_model / v3-2 — 모델 정보
 # =============================================================================
 # 카메라: Intel RealSense D455f (탑뷰 고정 마운트)
 # 역할: 공구함 전체를 위에서 내려다보며 어느 층·위치에 어떤 공구가 있는지 탐지
-# 상태: 백업 버전 (active: false) — v3-2로 교체 완료 (2026-06-02)
+# 상태: 현재 운용 버전 (active: true)
 #
-# [v2 → v3 변경 요약]
-#   - 데이터셋: 801장 → 1574장 (augmentation 포함)
-#     수집 보강: multi_tool 오탐/미탐 + ratchet_wrench·screwdriver 혼합 상황 125장 추가
-#     Augmentation 추가: Flip(H), 90°Rotate, Rotation±15°, Brightness±25%, Blur 1px
-#   - 학습: 195/200 epoch (런타임 중단으로 미완료) — best.pt는 정상 저장됨
-#   - ArUco 마커 3장 포함: 천장(ROI 정의) + 서랍 손잡이 2개(층 식별)
+# [v3 → v3-2 변경 요약]
+#   - v3(195/200ep 미완료)를 동일 데이터셋으로 처음부터 재학습
+#   - EarlyStopping 발동: epoch 145에서 best 기록 후 50ep 개선 없어 195ep에서 종료
+#   - mAP@0.5: 0.946 → 0.952 소폭 향상
 # =============================================================================
 
-version: v3
-description: "탑뷰 D455f 기준 공구 6종 탐지 모델 (v3 백업 — v3-2 완료 후 교체 예정)"
+version: v3-2
+description: "탑뷰 D455f 기준 공구 6종 탐지 모델 (현재 운용 버전)"
 
-active: false
+active: true
 
 # -----------------------------------------------------------------------------
 # 모델 파일
@@ -39,23 +37,30 @@ dataset:
 # 학습 설정
 # -----------------------------------------------------------------------------
 training:
-  epochs: 195         # 200 목표 중 런타임 중단으로 195에서 종료
-  trained_at: "2026-06-01"
+  epochs: 195         # EarlyStopping 발동 — best는 epoch 145
+  best_epoch: 145
+  trained_at: "2026-06-02"
   platform: Google Colab  # 런타임: T4 GPU
 
 # -----------------------------------------------------------------------------
 # 학습 결과
 # -----------------------------------------------------------------------------
 results:
-  map50: 0.946
-  map50_95: 0.764
+  map50: 0.952
+  map50_95: 0.768
 
   results_dir: results/
-  images: "docs/images/top_view_v3/ (git 추적 예정)"
+  images: "docs/images/top_view_v3-2/ (git 추적 예정)"
 
-  per_class: {}  # TODO: v3-2 완료 후 갱신
+  per_class:
+    multi_tool:     { precision: 1.000, recall: 0.976, map50: 0.994, map50_95: 0.798 }
+    ratchet_wrench: { precision: 0.910, recall: 0.894, map50: 0.915, map50_95: 0.779 }
+    screwdriver:    { precision: 0.966, recall: 0.885, map50: 0.958, map50_95: 0.731 }
+    socket_19mm:    { precision: 0.931, recall: 0.918, map50: 0.905, map50_95: 0.617 }
+    spanner_16mm:   { precision: 1.000, recall: 0.935, map50: 0.965, map50_95: 0.866 }
+    utility_knife:  { precision: 1.000, recall: 0.863, map50: 0.974, map50_95: 0.815 }
 
-drive_url: "https://colab.research.google.com/drive/1axbv7vYvHfU-frv4DvkFtjYGddmncNhE?usp=sharing"
+drive_url: ""  # TODO: Drive 업로드 후 링크 기입
 
 # -----------------------------------------------------------------------------
 # 클래스 인덱스 (v2와 동일 — 알파벳순)
@@ -73,6 +78,7 @@ classes:
 # 비고
 # -----------------------------------------------------------------------------
 notes:
-  - "195/200 epoch 완료 — 런타임 중단으로 미완료. best.pt는 정상 저장됨"
-  - "v3-2 (동일 데이터셋, 처음부터 재학습 중)로 교체 예정"
+  - "v3 재학습 버전 — 동일 데이터셋, EarlyStopping epoch 145에서 best 달성"
+  - "v3(mAP50=0.946) 대비 소폭 향상 (0.952)"
+  - "socket_19mm mAP50=0.905 — 수락 기준 통과했으나 추가 수집 검토 여지 있음"
   - "클래스 순서 v2와 동일 (알파벳순) — v1 best.pt와 혼용 절대 금지"
