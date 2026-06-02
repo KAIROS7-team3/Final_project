@@ -18,16 +18,19 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 
 import cv2
 import numpy as np
 
+logging.basicConfig(format="[%(levelname)s] %(message)s", level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ArUco 딕셔너리 — 4x4, 50개 패턴 (scripts/aruco_markers/ 와 동일 규격)
-ARUCO_DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-ARUCO_PARAMS = cv2.aruco.DetectorParameters()
-DETECTOR = cv2.aruco.ArucoDetector(ARUCO_DICT, ARUCO_PARAMS)
+_ARUCO_DICT   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+_ARUCO_PARAMS = cv2.aruco.DetectorParameters()
+_DETECTOR     = cv2.aruco.ArucoDetector(_ARUCO_DICT, _ARUCO_PARAMS)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -42,16 +45,15 @@ def _parse_args() -> argparse.Namespace:
 def _detect_and_draw(frame: np.ndarray) -> tuple[np.ndarray, list[int]]:
     """ArUco 마커 탐지 후 ID 목록과 annotated 이미지 반환."""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    corners, ids, _ = DETECTOR.detectMarkers(gray)
+    corners, ids, _ = _DETECTOR.detectMarkers(gray)
 
-    annotated = frame.copy()
+    annotated: np.ndarray = frame.copy()
     detected_ids: list[int] = []
 
     if ids is not None:
         cv2.aruco.drawDetectedMarkers(annotated, corners, ids)
         for i, marker_id in enumerate(ids.flatten()):
             detected_ids.append(int(marker_id))
-            # 마커 중심 좌표 계산
             cx = int(corners[i][0][:, 0].mean())
             cy = int(corners[i][0][:, 1].mean())
             cv2.putText(
@@ -67,15 +69,15 @@ def _run_realsense() -> None:
     try:
         import pyrealsense2 as rs
     except ImportError:
-        print("[ERROR] pyrealsense2 미설치 — pip install pyrealsense2")
+        logger.error("pyrealsense2 미설치 — pip install pyrealsense2")
         sys.exit(1)
 
     pipeline = rs.pipeline()
     cfg = rs.config()
     cfg.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
     pipeline.start(cfg)
+    logger.info("D455f 스트림 시작 | q: 종료")
 
-    print("[INFO] D455f 스트림 시작 | q: 종료")
     try:
         while True:
             frames = pipeline.wait_for_frames(timeout_ms=5000)
@@ -86,10 +88,12 @@ def _run_realsense() -> None:
             frame = np.asanyarray(color_frame.get_data())
             annotated, ids = _detect_and_draw(frame)
 
+            # \r 실시간 업데이트는 sys.stdout.write 사용 (logging은 \r 미지원)
             if ids:
-                print(f"\r[DETECT] 마커 ID: {ids}          ", end="")
+                sys.stdout.write(f"\r[DETECT] 마커 ID: {ids}          ")
             else:
-                print(f"\r[DETECT] 마커 없음               ", end="")
+                sys.stdout.write("\r[DETECT] 마커 없음               ")
+            sys.stdout.flush()
 
             cv2.imshow("ArUco detection (D455f)", annotated)
             if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -97,16 +101,18 @@ def _run_realsense() -> None:
     finally:
         pipeline.stop()
         cv2.destroyAllWindows()
-        print("\n[INFO] 종료")
+        sys.stdout.write("\n")
+        logger.info("종료")
 
 
 def _run_webcam(device: int) -> None:
     cap = cv2.VideoCapture(device)
     if not cap.isOpened():
-        print(f"[ERROR] 웹캠 device={device} 열기 실패")
+        logger.error("웹캠 device=%d 열기 실패", device)
         sys.exit(1)
 
-    print(f"[INFO] 웹캠 device={device} 스트림 시작 | q: 종료")
+    logger.info("웹캠 device=%d 스트림 시작 | q: 종료", device)
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -115,9 +121,10 @@ def _run_webcam(device: int) -> None:
         annotated, ids = _detect_and_draw(frame)
 
         if ids:
-            print(f"\r[DETECT] 마커 ID: {ids}          ", end="")
+            sys.stdout.write(f"\r[DETECT] 마커 ID: {ids}          ")
         else:
-            print(f"\r[DETECT] 마커 없음               ", end="")
+            sys.stdout.write("\r[DETECT] 마커 없음               ")
+        sys.stdout.flush()
 
         cv2.imshow("ArUco detection (webcam)", annotated)
         if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -125,7 +132,8 @@ def _run_webcam(device: int) -> None:
 
     cap.release()
     cv2.destroyAllWindows()
-    print("\n[INFO] 종료")
+    sys.stdout.write("\n")
+    logger.info("종료")
 
 
 def main() -> None:

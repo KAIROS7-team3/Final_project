@@ -17,10 +17,8 @@ regexes = [
   "TRSBojryEBlxSSsZyv3f",
 ]
 
-# Publishable API Key는 공개용 (클라이언트 사이드 전용, 시크릿 아님)
 # robotics-security 스킬 문서는 "이렇게 하지 마라"용 가짜 키 예시를 포함 (교육용)
 #   — 히스토리상 경로(.md)와 현재 경로(/SKILL.md)를 모두 커버
 paths = [
-  "scripts/train/train_top_view_v3.py",
   '''\.claude/skills/robotics-security(\.md|/SKILL\.md)''',
 ]

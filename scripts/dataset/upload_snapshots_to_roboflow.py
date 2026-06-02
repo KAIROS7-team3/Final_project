@@ -40,7 +40,7 @@ def main() -> None:
     images = sorted(IMAGE_DIR.glob("*.jpg"))
     print(f"업로드 대상: {len(images)}장")
 
-    success, fail, skipped = 0, 0, 0
+    success, fail = 0, 0
     for img_path in images:
         label_path = LABEL_DIR / (img_path.stem + ".txt")
         # 빈 라벨 파일(미검출)은 이미지만 업로드
@@ -69,7 +69,7 @@ def main() -> None:
             print(f"  [FAIL] {img_path.name}: {e}")
             fail += 1
 
-    print(f"\n완료 — 성공: {success}, 실패: {fail}, 라벨없음 스킵: {skipped}")
+    print(f"\n완료 — 성공: {success}, 실패: {fail}")
 
 
 if __name__ == "__main__":
