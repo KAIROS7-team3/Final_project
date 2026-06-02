@@ -23,15 +23,22 @@ DEFAULT_OPERATOR_ID = "operator_01"
 DB_CACHE_TTL_SECONDS = 300.0
 
 # update_tool_status가 허용하는 외부(Track A/B/C, 정상 motion 완료) 상태 전이.
-# v1.0 상태 모델: fetch는 2단계(in_slot -> out -> staged, S-6 Staging 경유),
-# return은 staged -> in_slot. (status_before, new_status) -> 허용 event_type.
+# v1.0 상태 모델: fetch/return 모두 pick -> place 2단계 (S-6 Staging 경유).
+#   out    = 로봇 그리퍼에 들려 이동 중(in-transit, 짧음)
+#   staged = Staging Area 거치 / operator 사용 중(길음, S-8 timeout 주 대상)
+#   fetch:  in_slot --pick--> out --place--> staged
+#   return: staged  --pick--> out --place--> in_slot
+# 직행 전이(in_slot<->staged)는 pick/place 한 단계를 건너뛰므로 허용하지 않는다.
+# out에서의 목적지(staged=fetch place / in_slot=return place)로 방향을 구분한다.
+# (status_before, new_status) -> 허용 event_type.
 # missing/fod_alert 진입(out|staged -> missing, missing -> fod_alert)은
 # FOD monitor가 mark_checkout_timeouts에서 track=None으로 직접 기록하므로
 # 외부 호출 화이트리스트에는 포함하지 않는다 (S-8).
 _ALLOWED_TRANSITIONS: dict[tuple[str, str], frozenset[str]] = {
-    ("in_slot", "out"): frozenset({"fetch"}),      # 슬롯에서 집어듦 (pick)
-    ("out", "staged"): frozenset({"fetch"}),       # Staging Area에 거치 (place)
-    ("staged", "in_slot"): frozenset({"return"}),  # 반납
+    ("in_slot", "out"): frozenset({"fetch"}),   # fetch pick: 슬롯에서 집어듦
+    ("out", "staged"): frozenset({"fetch"}),    # fetch place: Staging Area에 거치
+    ("staged", "out"): frozenset({"return"}),   # return pick: Staging에서 집어듦
+    ("out", "in_slot"): frozenset({"return"}),  # return place: 슬롯에 되돌림
 }
 
 REQUIRED_TABLE_COLUMNS = {

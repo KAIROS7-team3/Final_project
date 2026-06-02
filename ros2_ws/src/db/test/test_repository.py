@@ -225,6 +225,78 @@ def test_update_rejects_illegal_in_slot_to_staged(tmp_path) -> None:
     assert events == 0
 
 
+def test_update_allows_staged_to_out_return_pick(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE tools SET current_status = 'staged' WHERE tool_id = 'socket_19mm'")
+    conn.commit()
+    conn.close()
+
+    # 2단계 return의 1단계: staged -> out (pick from staging).
+    result = ToolRepository(db_path).update_tool_status(
+        tool_id="socket_19mm",
+        new_status="out",
+        event_type="return",
+        track="A",
+        notes="picked from staging",
+    )
+
+    assert result.success is True
+    conn = sqlite3.connect(db_path)
+    event = conn.execute(
+        "SELECT event_type, status_before, status_after FROM tool_events"
+    ).fetchone()
+    conn.close()
+    assert event == ("return", "staged", "out")
+
+
+def test_update_allows_out_to_in_slot_return_place(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))  # socket_19mm 은 'out' 상태로 시작.
+
+    # 2단계 return의 2단계: out -> in_slot (place into slot).
+    result = ToolRepository(db_path).update_tool_status(
+        tool_id="socket_19mm",
+        new_status="in_slot",
+        event_type="return",
+        track="A",
+        notes="placed back in slot",
+    )
+
+    assert result.success is True
+
+
+def test_update_rejects_illegal_staged_to_in_slot(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE tools SET current_status = 'staged' WHERE tool_id = 'socket_19mm'")
+    conn.commit()
+    conn.close()
+
+    # 직접 staged -> in_slot 는 2단계 모델에서 불법 (out 경유 필수).
+    result = ToolRepository(db_path).update_tool_status(
+        tool_id="socket_19mm",
+        new_status="in_slot",
+        event_type="return",
+        track="A",
+        notes="skip the out step",
+    )
+
+    assert result.success is False
+    assert "illegal transition: staged -> in_slot" in result.message
+    conn = sqlite3.connect(db_path)
+    status = conn.execute(
+        "SELECT current_status FROM tools WHERE tool_id = 'socket_19mm'"
+    ).fetchone()[0]
+    events = conn.execute("SELECT COUNT(*) FROM tool_events").fetchone()[0]
+    conn.close()
+    # 거부 시 상태·이벤트 모두 변경되지 않아야 한다 (rollback).
+    assert status == "staged"
+    assert events == 0
+
+
 def test_update_rejects_external_missing_write(tmp_path) -> None:
     db_path = tmp_path / "robot_arm.db"
     _create_db(str(db_path))  # socket_19mm 은 'out'.
