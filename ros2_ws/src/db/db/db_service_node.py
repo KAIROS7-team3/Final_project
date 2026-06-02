@@ -15,10 +15,15 @@ class DbServiceNode(Node):
         super().__init__("db_service_node")
         self.declare_parameter("db_path", "robot_arm.db")
         self.declare_parameter("operator_id", "operator_01")
+        # 동시 쓰기(fod_monitor_node)와의 WAL 락 경합 대기 시간 (config/runtime.yaml).
+        self.declare_parameter("busy_timeout_ms", 5000)
         # DB 접근 로직은 repository에 모아 ROS2와 순수 DB 코드를 분리한다.
         self._repository = ToolRepository(
             self.get_parameter("db_path").get_parameter_value().string_value,
             self.get_parameter("operator_id").get_parameter_value().string_value,
+            busy_timeout_ms=self.get_parameter("busy_timeout_ms")
+            .get_parameter_value()
+            .integer_value,
         )
         self.create_service(
             CheckToolFeasibility,
