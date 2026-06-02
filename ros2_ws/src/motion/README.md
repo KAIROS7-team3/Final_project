@@ -100,3 +100,9 @@ ros2 topic echo /dsr01/joint_states_rviz
 - **DRL 모드**: 명령은 정상 동작. 상태는 실제 피드백 없이 명령값으로 업데이트 (optimistic).
 - **TCP 모드**: DRL 서버 코드를 로봇에 배포해 TCP 소켓으로 양방향 통신. 실제 state feedback 가능하나 로봇 환경에 따라 소켓 서버 실행 여부 확인 필요.
 - **초기 상태**: 노드 시작 시 실제 그리퍼 위치를 읽지 않아 pulse=0으로 초기화됨.
+
+## TODO
+
+- [ ] **초기 상태 읽기**: 노드 시작 시 DRL로 현재 그리퍼 위치(present_position)를 읽어 `_current_hz_pos` 초기화
+  - `_init_drl_server` 완료 후 `_fc03(slave_id, REG_PRESENT_POSITION, 2)` 호출해 실제 pulse 값 반영
+  - RViz에서 시작부터 실제 그리퍼 상태 표시 가능

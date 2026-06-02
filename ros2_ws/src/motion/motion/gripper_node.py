@@ -966,11 +966,11 @@ class GripperNode(Node):
                     ok = self._call_drl(build_drl_write_packets(pkts), timeout_sec=5.0)
                     if ok:
                         self._current_hz_pos = pulse
-                        self.get_logger().info("[gripper] direct cmd(drl) ok pulse=%d", pulse)
+                        self.get_logger().info(f"[gripper] direct cmd(drl) ok pulse={pulse}")
                     else:
                         self.get_logger().warn("[gripper] direct cmd(drl) 실패")
                 except Exception as e:
-                    self.get_logger().error("[gripper] direct cmd(drl) 예외: %s", e)
+                    self.get_logger().error(f"[gripper] direct cmd(drl) 예외: {e}")
             threading.Thread(target=_run, args=(t_pulse, t_cur), daemon=True).start()
             return
 
