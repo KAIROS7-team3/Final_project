@@ -60,7 +60,7 @@ results:
     spanner_16mm:   { precision: 1.000, recall: 0.935, map50: 0.965, map50_95: 0.866 }
     utility_knife:  { precision: 1.000, recall: 0.863, map50: 0.974, map50_95: 0.815 }
 
-drive_url: ""  # TODO: Drive 업로드 후 링크 기입
+drive_url: "https://drive.google.com/file/d/1Izf4GyKsa437_EuZExzhxfcCKBVv-jCo/view?usp=sharing"
 
 # -----------------------------------------------------------------------------
 # 클래스 인덱스 (v2와 동일 — 알파벳순)
