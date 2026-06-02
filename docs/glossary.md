@@ -19,7 +19,7 @@
 | **FOD** | Foreign Object Detection | 공구 분실/방치 감지. 임계 시간 초과 시 알림 (S-8) |
 | **HAL** | Hardware Abstraction Layer | `hal/` 모듈 — Track A/B 전용 하드웨어 추상화 |
 | **HRC** | Human-Robot Collaboration | 협동 로봇 환경 (cobot). Cartesian 속도 ≤ 250mm/s |
-| **PLC** | Programmable Logic Controller | LED 상태 표시 + I/O. LS Electric XBC-DR10E, Modbus RTU/RS-485 (ADR-009) |
+| **PLC** | Programmable Logic Controller | LED 상태 표시 + I/O. LS Electric XBC-DR14E, Modbus RTU/RS-485 (ADR-009) |
 | **Reconciliation** | DB ↔ 실제 슬롯 상태 동기화 | 부팅 시 YOLOv8로 전체 스캔 (S-9) |
 | **Staging Area** | 거치 영역 | 로봇이 공구를 놓는 중간 위치 — 운영자가 가져감. v1.0 핸드오버 대체 (S-6) |
 | **TF** | Transform (ROS) | 좌표계 간 변환 트리. `tf2_ros`로 관리 |

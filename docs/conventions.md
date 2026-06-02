@@ -15,7 +15,7 @@
 | 의도 LLM | Gemma 4 (로컬, Track A/B) |
 | VLA | 미정 (Track C, 미결 #5) |
 | DB | SQLite WAL (ADR-008) |
-| PLC 프로토콜 | Modbus RTU via RS-485, LS Electric XBC-DR10E (ADR-009) |
+| PLC 프로토콜 | Modbus RTU via RS-485, LS Electric XBC-DR14E (ADR-009) |
 
 ---
 

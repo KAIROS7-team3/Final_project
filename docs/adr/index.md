@@ -48,7 +48,7 @@
 | # | 항목 | 결정 내용 |
 |---|------|-----------|
 | 1 | F/T 센서 | v1.0 미사용. 그리퍼 파지력·YOLOv8으로 대체. v2.0+ 검토 가능 |
-| 2 | PLC 모델 + 프로토콜 | LS Electric XBC-DR10E, Modbus RTU via RS-485 (→ ADR-009) |
+| 2 | PLC 모델 + 프로토콜 | LS Electric XBC-DR14E, Modbus RTU via RS-485 (→ ADR-009) |
 | 3 | DB 엔진 | SQLite WAL 모드 (→ ADR-008) |
 | 8 | FOD 대출 임계 시간 | 기본값 10분, `config/fod.yaml`로 조정 가능 |
 | 9 | Track C 핸드오버 비전 감지 | v2.0+로 이동 |

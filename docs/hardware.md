@@ -13,7 +13,7 @@
 | 그리퍼 | ROBOTIS RH-P12-RN | 이중 핑거 전기 그리퍼 | ✅ 확정 |
 | 카메라 | Intel RealSense D455f | RGB-D, 스테레오 깊이, IMU | ✅ 확정 |
 | F/T 센서 | 미사용 (v1.0) | — | ✅ 결정 #1 (미사용) |
-| PLC | LS Electric XBC-DR10E | LED 슬롯 상태 표시 | ✅ 결정 #2 |
+| PLC | LS Electric XBC-DR14E | LED 슬롯 상태 표시 | ✅ 결정 #2 |
 | 개발 머신 (주) | Vector 16 HX AI A2XWIG | GPU 추론, ROS2 실행 | ✅ 확정 |
 | 개발 머신 (보조) | HP ProBook 450 G10 | 모니터링 대시보드 | ✅ 확정 |
 
@@ -29,7 +29,7 @@
 | Doosan 드라이버 | `doosan-robot2` | TBD | ROS2 Humble 브랜치 |
 | RealSense 드라이버 | `realsense-ros` | TBD | D455f 지원 버전 |
 | RH-P12-RN 드라이버 | Dynamixel SDK / 전용 패키지 | TBD | RS-485 통신 |
-| PLC 라이브러리 | `pymodbus` | TBD | XBC-DR10E, Modbus RTU via RS-485 (ADR-009) |
+| PLC 라이브러리 | `pymodbus` | TBD | XBC-DR14E, Modbus RTU via RS-485 (ADR-009) |
 | DDS (RMW) | CycloneDDS | `rmw_cyclonedds_cpp` | `ROS_DOMAIN_ID` 격리 (`.env.example` 참조) |
 
 ---
@@ -133,7 +133,7 @@ Vector 16 HX (메인 PC)
 ├── [Ethernet] ──────── Doosan e0509 컨트롤러  (192.168.1.x 예정, TCP/IP)
 ├── [USB 3.x] ──────── RealSense D455f         (/dev/video*, eye-in-hand, 케이블 체인)
 ├── [USB-RS485] ─────── ROBOTIS RH-P12-RN      (/dev/gripper, Dynamixel Protocol 2.0)
-├── [RS-485 Modbus RTU] ─ PLC XBC-DR10E        (/dev/plc, pymodbus)
+├── [RS-485 Modbus RTU] ─ PLC XBC-DR14E        (/dev/plc, pymodbus)
 └── [LAN / WiFi] ────── HP ProBook 450 G10     (모니터링 대시보드)
 ```
 
@@ -144,7 +144,7 @@ Vector 16 HX (메인 PC)
 | Doosan e0509 | Ethernet (RJ45) | TCP/IP (Doosan SDK/ROS2) | `192.168.1.100` (예정) | — | Phase 0 ② 확정 |
 | RealSense D455f | USB 3.x | UVC / libusb | `/dev/video*` | — | eye-in-hand, 케이블 체인 필요 |
 | RH-P12-RN | USB → RS-485 | Dynamixel Protocol 2.0 | `/dev/gripper` | `SYMLINK+="gripper"` | Phase 1 bring-up 시 VID/PID 확인 |
-| PLC (XBC-DR10E) | RS-485 | Modbus RTU | `/dev/plc` | `SYMLINK+="plc"` | Phase 1 bring-up 시 VID/PID + baud rate 확인 |
+| PLC (XBC-DR14E) | RS-485 | Modbus RTU | `/dev/plc` | `SYMLINK+="plc"` | Phase 1 bring-up 시 VID/PID + baud rate 확인 |
 | HP ProBook | LAN / WiFi | HTTP (대시보드) | DHCP 또는 정적 | — | 모니터링 전용, 제어 없음 |
 
 ### IP 주소 정책
@@ -166,4 +166,4 @@ Vector 16 HX (메인 PC)
 |---------|------|------|
 | USB 3.x #1 | RealSense D455f | 대역폭 우선 (RGB-D 스트림) |
 | USB 2.0 #1 | RH-P12-RN (USB-RS485) | 저속 시리얼 충분 |
-| USB 2.0 #2 | PLC XBC-DR10E (RS-485 경우) | 저속 시리얼 충분. Ethernet 선택 시 불필요 |
+| USB 2.0 #2 | PLC XBC-DR14E (RS-485 경우) | 저속 시리얼 충분. Ethernet 선택 시 불필요 |

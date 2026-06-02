@@ -1,0 +1,28 @@
+whisper_node:
+  ros__parameters:
+    enable_microphone: true
+    whisper_model_size: small
+    whisper_device: cuda
+    whisper_beam_size: 10
+    whisper_best_of: 5
+    whisper_initial_prompt: >-
+      코봇, 공구함, 두산 로봇, 스테이징, 십자 드라이버, 커터칼, 라쳇 렌치,
+      멕가이버, 스패너 16mm, 복스 소켓 19mm, 가져와, 꺼내줘, 반납,
+      돌려놔, 취소
+    input_device_index: -1
+    input_device_name: ""
+    max_utterance_seconds: 4.0
+    silence_threshold: 0.035
+    min_speech_chunks: 4
+    enable_vad: true
+    vad_threshold: 0.5
+    vad_min_speech_ms: 250
+    vad_min_silence_ms: 100
+    vad_speech_pad_ms: 100
+
+rule_intent_node:
+  ros__parameters:
+    require_wake_word: true
+    wake_words:
+      - 코봇
+    allow_uncertain_tool_intent: false
