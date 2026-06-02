@@ -1,0 +1,24 @@
+# gitleaks 설정
+# 참조: .claude/rules/process.md P-3
+
+title = "Final Project Gitleaks Config"
+
+# CLI(`gitleaks detect --config`)는 기본 룰셋을 자동 로드하지 않으므로
+# 내장 기본 룰을 가져온 뒤 아래 allowlist를 그 위에 적용한다.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "알려진 무효화된 키 및 예외 처리"
+
+# 이미 revoke된 구 Roboflow API 키 (히스토리에 잔존 — 무효화 완료)
+# 발견: PR #17 / 수정: 커밋 80e2cd6 / revoke: 2026-06-02
+regexes = [
+  "TRSBojryEBlxSSsZyv3f",
+]
+
+# robotics-security 스킬 문서는 "이렇게 하지 마라"용 가짜 키 예시를 포함 (교육용)
+#   — 히스토리상 경로(.md)와 현재 경로(/SKILL.md)를 모두 커버
+paths = [
+  '''\.claude/skills/robotics-security(\.md|/SKILL\.md)''',
+]

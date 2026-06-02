@@ -1,7 +1,12 @@
 """공구 이미지 수집 — 탑뷰(D455f) 또는 그리퍼(C270) 시점별 분리 저장.
 
-YOLOv11s 학습용. 두 카메라는 촬영 시점이 달라 별도 데이터셋·모델 필요.
-저장 경로: datasets/tools/{top_view|gripper}/images/{train|val}/{tool_id}/
+⚠️  이 스크립트는 원본 이미지 수집 전용이다.
+    수집 후 Roboflow 업로드 → 라벨링/검수 → YOLOv11 export 순서로 진행.
+    train_yolo.py는 Roboflow export 레이아웃({split}/images/, {split}/labels/)을 기대한다.
+
+저장 경로: datasets/tools/{top_view|gripper}/{train|valid|test_jig}/images/{tool_id}/
+  - train / valid : Roboflow 업로드 → 학습 파이프라인 진입
+  - test_jig      : 지그 기반 정밀도 평가 전용 (학습 파이프라인 미포함)
 
 사용법:
     # 탑뷰 캠 (D455f — pyrealsense2 사용)
@@ -34,7 +39,7 @@ VALID_TOOLS = [
     "socket_19mm",
     "mix",
 ]
-VALID_SPLITS = ["train", "val", "test_jig"]
+VALID_SPLITS = ["train", "valid", "test_jig"]
 VALID_CAMERAS = ["top_view", "gripper"]
 
 
@@ -167,7 +172,7 @@ def main() -> None:
 
     save_dir = (
         PROJECT_ROOT / "datasets" / "tools" / args.camera
-        / "images" / args.split / args.tool
+        / args.split / "images" / args.tool
     )
     save_dir.mkdir(parents=True, exist_ok=True)
 

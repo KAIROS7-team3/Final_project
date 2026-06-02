@@ -81,3 +81,11 @@ runs/
 # model_library — weights·results는 로컬 전용 (model_info.yaml·README.md는 추적)
 ros2_ws/src/vision/model_library/**/weights/
 ros2_ws/src/vision/model_library/**/results/
+
+# model_registry — 바이너리/결과물 로컬 전용 (models.yaml·README.md는 추적)
+ros2_ws/src/vision/model_registry/weights/
+ros2_ws/src/vision/model_registry/results/
+
+# 스냅샷 수집 raw 데이터 (Roboflow 업로드 완료 — 로컬 전용)
+scripts/infer_snapshots/*.jpg
+scripts/infer_snapshots/auto_labels/

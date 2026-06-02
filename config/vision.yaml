@@ -5,11 +5,10 @@
 # 좌표·임계값·모델 경로는 여기서만 관리 — 코드 하드코딩 금지
 
 yolo:
-  # ⚠️ Phase 2 YOLOv11s 파인튜닝 완료 후 모델 경로 기입
   # 탑뷰(D455f)와 그리퍼(C270)는 촬영 시점이 달라 별도 모델 학습 필요
-  # 학습 완료 전: null → 노드 기동은 되나 추론 비활성화
-  # v2: 단일객체+mix 801장, mAP50=0.973 — model_library의 active 버전
-  top_view_model_path: ros2_ws/src/vision/model_library/top_view_model/v2/weights/best.pt
+  # 그리퍼 모델 학습 완료 전: null → 노드 기동은 되나 추론 비활성화
+  # v3-2: 1574장, mAP50=0.952, EarlyStopping ep145 — 현재 운용 버전
+  top_view_model_path: ros2_ws/src/vision/model_library/top_view_model/v3-2/weights/best.pt
   gripper_model_path: null     # C270 그리퍼 시점 학습 모델 (runs/yolo/gripper_v1/weights/best.pt)
   confidence_threshold: 0.70   # 수락 기준: 공구 분류 정확도 ≥ 95% (docs/conventions.md)
   iou_threshold: 0.45
@@ -33,6 +32,25 @@ tracker:
   max_misses: 5        # 트랙 소멸까지 허용하는 연속 미검출 프레임 수
   max_match_dist_m: 0.05   # 동일 트랙으로 연결할 최대 거리 [m] (슬롯 간격 6cm 기준)
   ema_alpha: 0.3       # 위치 평활화 EMA 가중치 (0=고정, 1=즉시 반응)
+
+aruco:
+  # ArUco 마커 스캔 설정 — MarkerScanNode 전용
+  # scripts/aruco_markers/ 에서 생성한 마커와 동일 딕셔너리 사용 필수
+  dictionary: "DICT_4X4_50"
+
+  # 실제 인쇄된 마커 한 변 길이 [m] — 오차 ±1mm 이내로 측정
+  # 현재 출력본: 5×5 cm (scripts/aruco_markers/ ID 0·1·2)
+  marker_size_m: 0.05
+
+  # 마커 중심 기준 공구 place 허용 반경 [mm]
+  # 탑뷰 좌표 오차 + 작업자 여유 공간 고려 (기본 150mm)
+  place_zone_radius_mm: 150.0
+
+  # 마커 미감지 상태가 이 시간[s] 이상 지속되면 스캔 결과 초기화
+  stale_timeout_sec: 2.0
+
+  # debug 이미지 발행 여부 (/vision/marker/debug/image)
+  publish_debug_image: true
 
 debug:
   # /vision/debug/annotated 발행 여부 (운영 시 false 권장)
