@@ -22,6 +22,18 @@ VALID_TRACKS = frozenset({"A", "B", "C"})
 DEFAULT_OPERATOR_ID = "operator_01"
 DB_CACHE_TTL_SECONDS = 300.0
 
+# update_tool_status가 허용하는 외부(Track A/B/C, 정상 motion 완료) 상태 전이.
+# v1.0 상태 모델: fetch는 2단계(in_slot -> out -> staged, S-6 Staging 경유),
+# return은 staged -> in_slot. (status_before, new_status) -> 허용 event_type.
+# missing/fod_alert 진입(out|staged -> missing, missing -> fod_alert)은
+# FOD monitor가 mark_checkout_timeouts에서 track=None으로 직접 기록하므로
+# 외부 호출 화이트리스트에는 포함하지 않는다 (S-8).
+_ALLOWED_TRANSITIONS: dict[tuple[str, str], frozenset[str]] = {
+    ("in_slot", "out"): frozenset({"fetch"}),      # 슬롯에서 집어듦 (pick)
+    ("out", "staged"): frozenset({"fetch"}),       # Staging Area에 거치 (place)
+    ("staged", "in_slot"): frozenset({"return"}),  # 반납
+}
+
 REQUIRED_TABLE_COLUMNS = {
     "operators": frozenset({"operator_id", "display_name", "created_at"}),
     "tools": frozenset(
@@ -190,6 +202,13 @@ class ToolRepository:
                     return UpdateResult(False, "unknown tool")
 
                 status_before = str(row["current_status"])
+                # S-8/S-9: 불법 전이(예: missing -> in_slot 자동 수정)를 차단한다.
+                transition_error = self._validate_transition(
+                    status_before, new_status, event_type, notes
+                )
+                if transition_error:
+                    conn.rollback()
+                    return UpdateResult(False, transition_error)
                 # tools snapshot과 tool_events는 같은 transaction에서 갱신한다.
                 event_id = self._insert_tool_event(
                     conn=conn,
@@ -339,6 +358,40 @@ class ToolRepository:
             return f"unsupported event_type: {event_type}"
         if track not in VALID_TRACKS:
             return f"unsupported track: {track}"
+        return ""
+
+    @staticmethod
+    def _validate_transition(
+        status_before: str,
+        new_status: str,
+        event_type: str,
+        notes: str,
+    ) -> str:
+        """Reject status transitions that would bypass S-8/S-9.
+
+        값 자체는 _validate_update가 검증했다. 여기서는 (현재 상태 -> 새 상태)
+        조합의 합법성을 본다.
+        """
+
+        # S-9: missing/fod_alert 해제는 운영자 확인(notes)을 동반한 reconciled로만.
+        # 자동(무인) 수정 금지 — 부팅 reconciliation도 이 경로를 쓴다.
+        if event_type == "reconciled":
+            if not notes.strip():
+                return "reconciled transition requires operator confirmation notes (S-9)"
+            return ""
+        # E-5: error는 상태를 바꾸지 않는 기록만 허용한다.
+        if event_type == "error":
+            if new_status != status_before:
+                return f"error event must not change status ({status_before} -> {new_status})"
+            return ""
+        # S-8: missing/fod_alert 진입은 FOD monitor 전용. 외부 트랙은 설정 금지.
+        if new_status in {"missing", "fod_alert"}:
+            return f"{new_status} is set only by the FOD monitor (S-8)"
+        allowed_events = _ALLOWED_TRANSITIONS.get((status_before, new_status))
+        if allowed_events is None:
+            return f"illegal transition: {status_before} -> {new_status}"
+        if event_type not in allowed_events:
+            return f"event_type {event_type} not allowed for {status_before} -> {new_status}"
         return ""
 
     def _insert_tool_event(

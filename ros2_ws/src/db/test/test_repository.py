@@ -161,12 +161,13 @@ def test_update_tool_status_writes_event_and_tool_snapshot(tmp_path) -> None:
     db_path = tmp_path / "robot_arm.db"
     _create_db(str(db_path))
 
+    # 2단계 fetch의 1단계: in_slot -> out (pick).
     result = ToolRepository(db_path).update_tool_status(
         tool_id="spanner_16mm",
-        new_status="staged",
+        new_status="out",
         event_type="fetch",
         track="A",
-        notes="placed at staging",
+        notes="picked from slot",
     )
 
     assert result.success is True
@@ -178,8 +179,123 @@ def test_update_tool_status_writes_event_and_tool_snapshot(tmp_path) -> None:
         "SELECT event_type, status_before, status_after FROM tool_events"
     ).fetchone()
     conn.close()
-    assert status == "staged"
-    assert event == ("fetch", "in_slot", "staged")
+    assert status == "out"
+    assert event == ("fetch", "in_slot", "out")
+
+
+def test_update_allows_out_to_staged_place_step(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))  # socket_19mm 은 'out' 상태로 시작.
+
+    # 2단계 fetch의 2단계: out -> staged (place at staging).
+    result = ToolRepository(db_path).update_tool_status(
+        tool_id="socket_19mm",
+        new_status="staged",
+        event_type="fetch",
+        track="A",
+        notes="placed at staging",
+    )
+
+    assert result.success is True
+
+
+def test_update_rejects_illegal_in_slot_to_staged(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))  # spanner_16mm 은 'in_slot'.
+
+    # 직접 in_slot -> staged 는 2단계 모델에서 불법 (out 경유 필수).
+    result = ToolRepository(db_path).update_tool_status(
+        tool_id="spanner_16mm",
+        new_status="staged",
+        event_type="fetch",
+        track="A",
+        notes="skip the out step",
+    )
+
+    assert result.success is False
+    assert "illegal transition: in_slot -> staged" in result.message
+    conn = sqlite3.connect(db_path)
+    status = conn.execute(
+        "SELECT current_status FROM tools WHERE tool_id = 'spanner_16mm'"
+    ).fetchone()[0]
+    events = conn.execute("SELECT COUNT(*) FROM tool_events").fetchone()[0]
+    conn.close()
+    # 거부 시 상태·이벤트 모두 변경되지 않아야 한다 (rollback).
+    assert status == "in_slot"
+    assert events == 0
+
+
+def test_update_rejects_external_missing_write(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))  # socket_19mm 은 'out'.
+
+    # missing 진입은 FOD monitor 전용 — 외부 트랙이 직접 설정 금지 (S-8).
+    result = ToolRepository(db_path).update_tool_status(
+        tool_id="socket_19mm",
+        new_status="missing",
+        event_type="fod_alert",
+        track="A",
+        notes="should be blocked",
+    )
+
+    assert result.success is False
+    assert "FOD monitor" in result.message
+
+
+def test_reconciled_clears_missing_only_with_notes(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE tools SET current_status = 'missing' WHERE tool_id = 'socket_19mm'")
+    conn.commit()
+    conn.close()
+
+    # S-9: notes 없이 missing 해제 금지.
+    blocked = ToolRepository(db_path).update_tool_status(
+        tool_id="socket_19mm",
+        new_status="in_slot",
+        event_type="reconciled",
+        track="A",
+        notes="",
+    )
+    assert blocked.success is False
+    assert "operator confirmation" in blocked.message
+
+    # 운영자 확인 notes 가 있으면 허용.
+    allowed = ToolRepository(db_path).update_tool_status(
+        tool_id="socket_19mm",
+        new_status="in_slot",
+        event_type="reconciled",
+        track="A",
+        notes="operator confirmed tool back in slot",
+    )
+    assert allowed.success is True
+
+
+def test_error_event_must_not_change_status(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))  # spanner_16mm 은 'in_slot'.
+
+    # error 가 상태를 바꾸려 하면 거부.
+    changed = ToolRepository(db_path).update_tool_status(
+        tool_id="spanner_16mm",
+        new_status="out",
+        event_type="error",
+        track="A",
+        notes="motion failed mid-pick",
+    )
+    assert changed.success is False
+    assert "error event must not change status" in changed.message
+
+    # 같은 상태로의 error 기록은 허용 (E-5 실패 로깅).
+    logged = ToolRepository(db_path).update_tool_status(
+        tool_id="spanner_16mm",
+        new_status="in_slot",
+        event_type="error",
+        track="A",
+        notes="gripper fault, no motion",
+    )
+    assert logged.success is True
 
 
 def test_schema_validation_rejects_missing_foreign_keys(tmp_path) -> None:
