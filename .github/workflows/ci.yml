@@ -123,7 +123,12 @@ jobs:
           fi
           echo "✅ .env not tracked"
 
+      # gitleaks-action@v2는 org 저장소에서 GITLEAKS_LICENSE를 요구하므로
+      # 라이선스가 필요 없는 CLI 바이너리를 직접 실행한다 (.gitleaks.toml 사용).
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          GITLEAKS_VERSION=8.21.2
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks detect --source . --config .gitleaks.toml --redact --verbose --no-banner
