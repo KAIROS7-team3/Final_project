@@ -1,0 +1,21 @@
+# RH-P12-RN gripper node config (DRL 모드 — TCP 서버 없이 직접 DRL 명령)
+gripper_node:
+  ros__parameters:
+    robot_ns: dsr01
+    command_transport: drl
+    tcp_external_server: false
+    robot_port: 9105
+    tcp_protocol: json
+    gripper_command_action_enabled: true
+    direct_cmd_topic_enabled: true
+    direct_cmd_topic: "/gripper/cmd_direct"
+    tcp_state_stream_enabled: false
+    tcp_state_hz: 10.0
+    state_hz: 10.0
+    drl_snap_enabled: false
+    plc_feedback_enabled: false
+    pulse_open: 0
+    pulse_closed_preset: 700
+    init_current: 400
+    grip_current: 300
+    grip_current_threshold: 50
