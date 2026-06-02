@@ -9,8 +9,9 @@
 # ── Cell 2: 데이터셋 다운로드 (Roboflow v2) ──────────────────
 # !pip install roboflow
 #
+# import os
 # from roboflow import Roboflow
-# rf = Roboflow(api_key="TRSBojryEBlxSSsZyv3f")
+# rf = Roboflow(api_key=os.environ["ROBOFLOW_API_KEY"])  # Colab Secrets에서 설정
 # project = rf.workspace("yeonseop9999-gmail-com").project("final-project-kir4p")
 # version = project.version(2)
 # dataset = version.download("yolov11")

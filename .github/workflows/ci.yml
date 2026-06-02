@@ -115,7 +115,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # TODO: truffleHog 또는 gitleaks 도입 검토 (Phase 0)
       - name: Check .env not committed
         run: |
           if git ls-files | grep -q '^\.env$'; then
@@ -123,3 +122,8 @@ jobs:
             exit 1
           fi
           echo "✅ .env not tracked"
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

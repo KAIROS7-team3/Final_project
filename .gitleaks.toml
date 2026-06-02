@@ -1,0 +1,18 @@
+# gitleaks 설정
+# 참조: .claude/rules/process.md P-3
+
+title = "Final Project Gitleaks Config"
+
+[allowlist]
+description = "알려진 무효화된 키 및 예외 처리"
+
+# 이미 revoke된 구 Roboflow API 키 (히스토리에 잔존 — 무효화 완료)
+# 발견: PR #17 / 수정: 커밋 80e2cd6 / revoke: 2026-06-02
+regexes = [
+  "TRSBojryEBlxSSsZyv3f",
+]
+
+# Publishable API Key는 공개용 (클라이언트 사이드 전용, 시크릿 아님)
+paths = [
+  "scripts/train/train_top_view_v3.py",
+]
