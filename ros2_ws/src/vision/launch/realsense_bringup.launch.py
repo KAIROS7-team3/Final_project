@@ -19,7 +19,7 @@ def generate_launch_description() -> LaunchDescription:
             "align_depth.enable": "true",
             "rgb_camera.color_profile": "1280x720x30",
             "depth_module.depth_profile": "848x480x30",
-            "pointcloud.enable": "false",
+            "pointcloud.enable": "true",
         }.items(),
     )
 
