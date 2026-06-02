@@ -22,7 +22,7 @@
 
 **음성 명령 공구 전달 로봇팔 시스템** — Doosan e0509 협동 로봇팔이 음성 명령으로 공구함에서 공구를 꺼내 Staging Area에 전달하고, 반납 명령 시 제자리에 돌려놓는다.
 
-- **하드웨어**: Doosan e0509 · ROBOTIS RH-P12-RN (그리퍼) · Intel RealSense D455f (탑뷰) · Logitech C270 (그리퍼 캠) · PLC (LS Electric XBC-DR10E)
+- **하드웨어**: Doosan e0509 · ROBOTIS RH-P12-RN (그리퍼) · Intel RealSense D455f (탑뷰) · Logitech C270 (그리퍼 캠) · PLC (LS Electric XBC-DR14E)
 - **소프트웨어**: ROS2 Humble · Whisper STT · Gemma 4 (로컬 LLM) · YOLOv11s · SQLite/PostgreSQL (FOD 관리)
 - **개발 머신**: Vector 16 HX AI A2XWIG (주) · HP ProBook 450 G10 (보조)
 
