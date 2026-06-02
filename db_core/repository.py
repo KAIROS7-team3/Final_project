@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from db_core.schema import SCHEMA_SQL
+
 # DB Gate가 공식적으로 받아들이는 값만 상수로 고정한다.
 VALID_INTENTS = frozenset({"fetch", "return"})
 VALID_STATUSES = frozenset({"in_slot", "out", "staged", "missing", "fod_alert"})
@@ -21,6 +23,9 @@ VALID_EVENT_TYPES = frozenset(
 VALID_TRACKS = frozenset({"A", "B", "C"})
 DEFAULT_OPERATOR_ID = "operator_01"
 DB_CACHE_TTL_SECONDS = 300.0
+# db_service_node·fod_monitor_node가 같은 WAL 파일에 동시 쓰기를 시도할 때
+# 즉시 SQLITE_BUSY로 실패하지 않고 대기할 시간(ms). 운영 값은 config/runtime.yaml.
+DEFAULT_BUSY_TIMEOUT_MS = 5000
 
 # update_tool_status가 허용하는 외부(Track A/B/C, 정상 motion 완료) 상태 전이.
 # v1.0 상태 모델: fetch/return 모두 pick -> place 2단계 (S-6 Staging 경유).
@@ -108,9 +113,15 @@ class SchemaValidationError(sqlite3.DatabaseError):
 class ToolRepository:
     """SQLite adapter for DB Gate, status updates, and event logging."""
 
-    def __init__(self, db_path: str | Path, operator_id: str = DEFAULT_OPERATOR_ID) -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        operator_id: str = DEFAULT_OPERATOR_ID,
+        busy_timeout_ms: int = DEFAULT_BUSY_TIMEOUT_MS,
+    ) -> None:
         self.db_path = Path(db_path)
         self.operator_id = operator_id
+        self._busy_timeout_ms = busy_timeout_ms
         self._status_cache: dict[str, _CachedStatus] = {}
 
     def check_feasibility(self, intent: str, tool_id: str) -> FeasibilityResult:
@@ -291,12 +302,21 @@ class ToolRepository:
         return updates
 
     def _connect(self) -> sqlite3.Connection:
-        """Open SQLite with row access by column name and FK enforcement."""
+        """Open SQLite with row access by column name and FK enforcement.
+
+        스키마가 없으면 SCHEMA_SQL로 부트스트랩한다. SCHEMA_SQL은 모두
+        `CREATE TABLE IF NOT EXISTS`라 기존 DB에 대해 멱등하며, 기존 테이블의
+        컬럼·FK 누락은 그대로 _validate_schema가 잡아낸다. DBClient.connect()와
+        동일한 SCHEMA_SQL을 공유해 두 트랙 간 스키마 drift를 방지한다.
+        """
 
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
+        # 다중 프로세스 동시 쓰기 시 즉시 SQLITE_BUSY로 실패하지 않도록 대기시킨다.
+        conn.execute(f"PRAGMA busy_timeout = {self._busy_timeout_ms}")
+        conn.executescript(SCHEMA_SQL)
         _validate_schema(conn)
         return conn
 

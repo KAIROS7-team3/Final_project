@@ -467,6 +467,26 @@ def test_update_rejects_system_as_external_track(tmp_path) -> None:
     assert result.message == "unsupported track: system"
 
 
+def test_connect_bootstraps_schema_on_fresh_db(tmp_path) -> None:
+    # 존재하지 않는 DB 파일 — 어떤 노드도 스키마를 미리 만들지 않은 상태.
+    db_path = tmp_path / "fresh.db"
+
+    result = ToolRepository(db_path).check_feasibility("fetch", "spanner_16mm")
+
+    # 스키마가 부트스트랩되어 SchemaValidationError 대신 정상 판정 경로를 탄다.
+    assert result.feasible is False
+    assert result.reason == "unknown tool"
+
+
+def test_connect_applies_busy_timeout(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+
+    with ToolRepository(db_path, busy_timeout_ms=1234)._connect() as conn:
+        timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+
+    assert timeout == 1234
+
+
 def test_fod_monitor_marks_overdue_out_tool_missing(tmp_path) -> None:
     db_path = tmp_path / "robot_arm.db"
     _create_db(str(db_path))
