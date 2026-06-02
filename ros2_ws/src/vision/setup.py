@@ -22,6 +22,7 @@ setup(
             "pose_node = vision.pose_node:main",
             "tracker_node = vision.tracker_node:main",
             "context_builder = vision.context_builder:main",
+            "marker_scan_node = vision.marker_scan_node:main",
         ],
     },
 )

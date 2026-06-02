@@ -13,6 +13,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PLCStatus.msg"
   "msg/RobotStatus.msg"
   "msg/Intent.msg"
+  "msg/MarkerMap.msg"
   # Services
   "srv/CheckToolFeasibility.srv"
   "srv/UpdateToolStatus.srv"

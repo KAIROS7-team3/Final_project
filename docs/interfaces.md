@@ -76,6 +76,19 @@
 
 > **이전 설계:** `std_msgs/String`(JSON 직렬화)로 발행. 스키마 미강제·rosbag 분석 불가 문제로 폐기.
 
+### `MarkerMap.msg`
+
+| 필드 | 타입 | 의미 |
+|------|------|------|
+| `header` | `std_msgs/Header` | stamp: RGB 프레임 타임스탬프 / frame_id: `base_link`(캘리브 완료) 또는 `camera_color_optical_frame` |
+| `marker_ids` | `int32[]` | 감지된 ArUco 마커 ID 목록 (DICT_4X4_50, ID 0·1·2 = 작업장 1·2·3) |
+| `poses_robot` | `geometry_msgs/Pose[]` | marker_ids[i]의 3D 포즈 — position: base_link 기준 [m], orientation: quaternion [x,y,z,w] |
+| `place_zone_radius` | `float32` | 마커 중심 기준 공구 place 허용 반경 [m] |
+| `calibrated` | `bool` | hand-eye 캘리브레이션 적용 여부 — false 시 poses_robot은 카메라 좌표계 기준 |
+
+**발행자:** `vision/marker_scan_node` → **구독자:** `orchestrator` BT ScanMarkers 노드
+**QoS:** Reliable / depth 1 (트리거성 스캔, 최신값만 필요)
+
 ---
 
 ## 2. 서비스 (srv/)
@@ -210,6 +223,8 @@ int32 slot_col
 | `/vision/scene_context` | `std_msgs/String` (JSON) | `context_builder` | `voice/gemma_intent_node`, `orchestrator` (Phase 5a) | Reliable / depth 1 |
 | `/robot/status` | `interfaces/RobotStatus` | `dsr_controller` 또는 `rl_policy_node` | `whisper_node` | Reliable / depth 1 |
 | `/plc/status` | `interfaces/PLCStatus` | `plc_node` | (모니터링용) | Best Effort / depth 1 |
+| `/vision/marker/map` | `interfaces/MarkerMap` | `marker_scan_node` | `orchestrator` BT ScanMarkers | Reliable / depth 1 |
+| `/vision/marker/debug/image` | `sensor_msgs/Image` | `marker_scan_node` | (디버그용) | Best Effort / depth 1 |
 
 > **QoS 선택 기준:** 센서 데이터(비전, STT)는 Best Effort — 최신 프레임이 중요. 상태/의도 토픽은 Reliable — 손실 허용 불가.
 
