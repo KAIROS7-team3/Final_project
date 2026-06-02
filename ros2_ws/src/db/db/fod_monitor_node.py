@@ -19,11 +19,16 @@ class FodMonitorNode(Node):
         self.declare_parameter("checkout_timeout_minutes", 10.0)
         self.declare_parameter("missing_to_alert_seconds", 30.0)
         self.declare_parameter("poll_interval_seconds", 5.0)
+        # 동시 쓰기(db_service_node)와의 WAL 락 경합 대기 시간 (config/runtime.yaml).
+        self.declare_parameter("busy_timeout_ms", 5000)
 
         # FOD 정책 시간은 parameter로 열어 두어 현장 테스트 중 조정할 수 있게 한다.
         self._repository = ToolRepository(
             self.get_parameter("db_path").get_parameter_value().string_value,
             self.get_parameter("operator_id").get_parameter_value().string_value,
+            busy_timeout_ms=self.get_parameter("busy_timeout_ms")
+            .get_parameter_value()
+            .integer_value,
         )
         poll_interval = (
             self.get_parameter("poll_interval_seconds").get_parameter_value().double_value

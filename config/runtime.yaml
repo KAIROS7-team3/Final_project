@@ -13,3 +13,9 @@ voice:
 operator:
   # v1.0 고정값 — 결정 #20
   default_id: operator_01
+
+db:
+  # SQLite busy_timeout (ms) — db_service_node·fod_monitor_node가 같은 WAL
+  # 파일에 동시 쓰기를 시도할 때 즉시 SQLITE_BUSY로 실패하지 않고 대기하는 시간.
+  # 두 노드의 busy_timeout_ms 파라미터 기본값과 동일하게 유지한다.
+  busy_timeout_ms: 5000
