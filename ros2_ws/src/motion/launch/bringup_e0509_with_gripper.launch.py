@@ -11,7 +11,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, GroupAction, RegisterEventHandler, TimerAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
@@ -174,10 +174,25 @@ def generate_launch_description() -> LaunchDescription:
         )],
     )
 
+    home_on_start_node = Node(
+        package="motion",
+        executable="home_on_start",
+        name="home_on_start",
+        output="screen",
+        parameters=[{"robot_ns": LaunchConfiguration("name")}],
+        condition=IfCondition(PythonExpression(["'", mode, "' == 'virtual'"])),
+    )
+
     delay_after_controller = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=robot_controller_spawner,
-            on_exit=[gripper_service_node, joint_state_merger_node, rviz_node],
+            on_exit=[
+                gripper_service_node,
+                joint_state_merger_node,
+                rviz_node,
+                # virtual 모드에서만: controller 준비 후 3초 대기 → 홈 자세 이동
+                TimerAction(period=3.0, actions=[home_on_start_node]),
+            ],
         )
     )
 
