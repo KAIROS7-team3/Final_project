@@ -149,6 +149,7 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             gripper_config,
             {"robot_ip": LaunchConfiguration("robot_ip")},
+            {"mode": LaunchConfiguration("mode")},
         ],
         condition=IfCondition(LaunchConfiguration("launch_gripper")),
     )

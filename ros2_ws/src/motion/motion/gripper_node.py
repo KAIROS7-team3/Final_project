@@ -491,6 +491,7 @@ class GripperNode(Node):
         self.declare_parameter("gripper_command_action_enabled", False)
         self.declare_parameter("direct_cmd_topic_enabled", False)
         self.declare_parameter("direct_cmd_topic", "/gripper/cmd_direct")
+        self.declare_parameter("mode", "real")
 
         ns = str(self.get_parameter("robot_ns").value).strip()
         self._prefix = f"/{ns}" if ns else ""
@@ -541,6 +542,7 @@ class GripperNode(Node):
         self._action_enabled = bool(self.get_parameter("gripper_command_action_enabled").value)
         self._direct_cmd_enabled = bool(self.get_parameter("direct_cmd_topic_enabled").value)
         self._direct_cmd_topic = str(self.get_parameter("direct_cmd_topic").value)
+        self._mode = str(self.get_parameter("mode").value).lower()
 
         # 상태 변수
         self._current_hz_pos: int = 0
@@ -846,6 +848,10 @@ class GripperNode(Node):
     def _init_drl_server(self) -> None:
         self._init_timer.cancel()
 
+        if self._mode == "virtual":
+            self.get_logger().info("[gripper] virtual 모드 — DRL/flange 초기화 생략")
+            return
+
         if self._cmd_transport == "tcp" and self._tcp_external:
             self.get_logger().info("[gripper] tcp_external_server=true: DRL 주입 생략")
             for attempt in range(15):
@@ -957,6 +963,12 @@ class GripperNode(Node):
             return
 
         if self._cmd_transport == "drl":
+            if self._mode == "virtual":
+                # virtual 모드: flange serial DRL을 에뮬레이터에 보내면 컨트롤러 상태가 리셋됨
+                self._current_hz_pos = t_pulse
+                self.get_logger().info(f"[gripper] virtual cmd(mock) pulse={t_pulse}")
+                return
+
             def _run(pulse: int, cur: int) -> None:
                 try:
                     pkts = [
@@ -1000,6 +1012,14 @@ class GripperNode(Node):
             t_cur = int(min(max(force, 10.0), 1000.0))
 
             if self._cmd_transport == "drl":
+                if self._mode == "virtual":
+                    self._current_hz_pos = t_pulse
+                    result = GripperCommand.Result()  # type: ignore[union-attr]
+                    result.success = True
+                    result.message = "virtual mock"
+                    goal_handle.succeed()  # type: ignore[union-attr]
+                    return result
+
                 drl_code = build_drl_move_and_poll(
                     slave_id=self._slave_id,
                     target_pulse=t_pulse,

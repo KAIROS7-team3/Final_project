@@ -103,6 +103,9 @@ ros2 topic echo /dsr01/joint_states_rviz
 
 ## TODO
 
+- [x] **virtual 모드 대응**: `mode` 파라미터로 virtual 감지 → DRL/flange 초기화 생략 (에뮬레이터 블로킹 버그 수정)
+  - launch 파일이 `mode:=virtual` 시 gripper_node에 `mode` 파라미터 전달
+  - `_init_drl_server()` 진입 시 virtual이면 즉시 반환
 - [ ] **초기 상태 읽기**: 노드 시작 시 DRL로 현재 그리퍼 위치(present_position)를 읽어 `_current_hz_pos` 초기화
   - `_init_drl_server` 완료 후 `_fc03(slave_id, REG_PRESENT_POSITION, 2)` 호출해 실제 pulse 값 반영
   - RViz에서 시작부터 실제 그리퍼 상태 표시 가능
