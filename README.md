@@ -437,113 +437,71 @@ split     : train 561 / valid 160 / test 80
 
 ---
 
-## unit_actions/ 구현 계획 (역할 B — Phase 4 선행 뼈대)
+## unit_actions/ + hal/ 구현 현황 (역할 B)
 
-> virtual 모드 검증 완료 후, 실물 bring-up 전에 미리 잡아두는 뼈대.
-> 참고: `/home/kimsungyeoun/chamjo/cube-solver-with-DoosanE0509-ver2/src/cube_robot_action/cube_robot_action/motion_library.py`
+### 구현 완료 현황
 
-### 규칙 (CONTRIBUTING.md 기준)
+> chamjo `motion_library.py`의 Step/StepKind 패턴 대신 **HAL 인터페이스 패턴**으로 구현됨.
+> `unit_actions/`는 `ArmInterface` / `GripperInterface`를 주입받아 동작 — rclpy 완전 분리.
+> 테스트: `python3 -m pytest unit_actions/tests/ -v` → 16개 모두 통과
 
-- `unit_actions/` 내부에 `rclpy` import 절대 금지 — 순수 Python 모듈
-- 좌표·속도·임계값은 `config/*.yaml` 로드, 코드 하드코딩 금지 (E-4)
-- 모든 public 함수 타입 힌트 필수 (E-7)
-- 함수마다 happy path + failure path 테스트 최소 1개 (P-1)
-- 시그니처 변경 시 `unit_actions/CHANGELOG.md` 갱신 + `interface-guardian` 검토 (P-2)
-
-### 디렉토리 구조
+#### 실제 디렉토리 구조
 
 ```
 unit_actions/
 ├── __init__.py
-├── step.py              # StepKind + Step dataclass (ROS2 무관)
-├── waypoints.py         # config/*.yaml 로더 + 웨이포인트 접근자
-├── fetch.py             # fetch_tool() Step 시퀀스
-├── return_tool.py       # return_tool() Step 시퀀스
-├── home.py              # go_home() Step 시퀀스
-├── tests/
-│   ├── test_step.py
-│   ├── test_waypoints.py
-│   ├── test_fetch.py
-│   └── test_return_tool.py
-└── CHANGELOG.md
+├── grasp.py             # ✅ 그리퍼 파지 (GripperInterface)
+├── release.py           # ✅ 그리퍼 개방 (GripperInterface)
+├── move_to_pose.py      # ✅ 팔 포즈 이동 (ArmInterface)
+├── pick_from_staging.py # ✅ Staging Area에서 공구 픽업
+├── place_at_staging.py  # ✅ Staging Area에 공구 거치
+├── return_to_slot.py    # ✅ 툴박스 슬롯으로 공구 반납
+├── scan_workspace.py    # ✅ RGB+Depth 캡처 + 팔 포즈 반환 (WorkspaceScan)
+└── tests/
+    └── test_unit_actions.py  # ✅ 16개 테스트 통과
+
+hal/
+├── arm_interface.py          # ✅ ArmInterface 추상 클래스 (Pose, JointStates)
+├── gripper_interface.py      # ✅ GripperInterface 추상 클래스
+├── camera_interface.py       # ✅ CameraInterface 추상 클래스
+├── simulated/
+│   ├── simulated_arm.py      # ✅ 테스트용 가짜 팔 (joint limit 검증 포함)
+│   ├── simulated_gripper.py  # ✅ 테스트용 가짜 그리퍼
+│   └── simulated_camera.py   # ✅ 테스트용 가짜 카메라
+└── doosan/
+    ├── gripper_driver.py     # ✅ RH-P12-RN TCP/Modbus 실물 드라이버
+    └── arm_driver.py         # ❌ 비어있음 — 실물 팔 드라이버 미구현
 ```
 
-### step.py — chamjo motion_library.py에서 직접 이식
+#### chamjo와의 구조 비교
 
-```python
-class StepKind(Enum):
-    MOVE_L_ABS = auto()   # movel 절대
-    MOVE_L_REL = auto()   # movel 상대
-    MOVE_J_ABS = auto()   # movej 절대
-    MOVE_J_REL = auto()   # movej 상대
-    GRIP       = auto()   # 그리퍼 pulse 지정
-    WAIT       = auto()   # 대기
+| 항목 | chamjo (cube-solver) | 우리 프로젝트 |
+|------|----------------------|--------------|
+| 모션 표현 | `StepKind` + `Step` dataclass | 함수 직접 호출 (`move_to_pose`, `grasp` 등) |
+| 하드웨어 추상화 | 없음 (ROS2 서비스 직접 호출) | `ArmInterface` / `GripperInterface` |
+| ROS2 의존 | `robot_action_server_node.py`에서 처리 | `unit_actions/`는 rclpy 완전 없음 |
+| 테스트 | 없음 | `SimulatedArm/Gripper`로 16개 단위 테스트 |
+| 속도/좌표 단위 | mm/s, deg (DSR 네이티브) | m, rad (REP-103, E-1) |
 
-@dataclass
-class Step:
-    kind:  StepKind
-    pose:  Optional[list[float]] = None
-    vel:   Optional[float]       = None
-    acc:   Optional[float]       = None
-    pulse: Optional[int]         = None
-    sec:   Optional[float]       = None
-```
-
-### waypoints.py — config/*.yaml 로더
-
-| 함수 | 읽는 파일 | 반환 |
-|------|-----------|------|
-| `load_home_pose()` | `config/robot_poses.yaml` | `list[float]` (6DOF) |
-| `load_slot_pose(layer, col)` | `config/toolbox.yaml` | `list[float]` (6DOF) |
-| `load_staging_pose(tool_id)` | `config/staging_area.yaml` | `list[float]` (6DOF) |
-| `load_motion_params()` | `config/runtime.yaml` | `dict` (vel/acc 기본값) |
-
-### fetch.py / return_tool.py — 핵심 시퀀스
-
-**fetch_tool (공구 꺼내기: 툴박스 → Staging Area)**
+#### chamjo 참고 경로
 
 ```
-JOINT_HOME
-→ MOVE_L_ABS  슬롯 상공 (approach_z)
-→ MOVE_L_REL  Z 하강 (슬롯 높이)
-→ GRIP_CLOSE
-→ MOVE_L_REL  Z 상승
-→ JOINT_HOME  (안전 경유)
-→ MOVE_L_ABS  Staging Area
-→ MOVE_L_REL  Z 하강
-→ GRIP_OPEN
-→ MOVE_L_REL  Z 상승
-→ JOINT_HOME
+/home/kimsungyeoun/chamjo/cube-solver-with-DoosanE0509-ver2/src/cube_robot_action/cube_robot_action/
+├── motion_library.py          # StepKind/Step/시퀀스 함수 — 모션 패턴 참고용
+└── robot_action_server_node.py  # _run_sequence/_movel/_movej 패턴 — arm_driver.py 구현 시 참고
 ```
 
-**return_tool (반납: Staging Area → 툴박스)**
+### 미완성 항목 (실물 bring-up 후 작업)
 
-```
-fetch_tool 역순
-```
+| 순번 | 파일 | 내용 | 선행 조건 |
+|------|------|------|-----------|
+| 1 | `hal/doosan/arm_driver.py` | `DoosanArmDriver` 구현 — `move_line`/`move_joint`/`move_stop` ROS2 서비스 래핑 | 실물 로봇 bring-up |
+| 2 | `hal/realsense/camera_driver.py` | `RealsenseCameraDriver` 구현 | 역할 C 담당 |
+| 3 | `unit_action_server.py` | ROS2 액션 서버 래퍼 — `orchestrator/` 패키지 내 작성 | arm_driver + interfaces 확정 |
 
-**공개 API**
-
-```python
-def fetch_tool(tool_id: str, layer: int, col: int) -> list[Step]: ...
-def return_tool(tool_id: str, layer: int, col: int) -> list[Step]: ...
-def go_home() -> list[Step]: ...
-```
-
-### unit_action_server.py — Phase 5에서 추가 (ROS2 래퍼)
-
-> 실물 bring-up + interfaces 확정 후 `orchestrator/` 패키지 내에 작성.
-> chamjo `robot_action_server_node.py` 구조 참고 (`_run_sequence` 패턴 재사용).
-
-### 작업 순서
-
-| 순번 | 파일 | 선행 조건 | 상태 |
-|------|------|-----------|------|
-| 1 | `step.py` | 없음 | ⏳ 대기 |
-| 2 | `waypoints.py` | `config/*.yaml` 현재 값 확인 | ⏳ 대기 |
-| 3 | `fetch.py` / `return_tool.py` / `home.py` | waypoints 완성 | ⏳ 대기 |
-| 4 | `tests/` | 각 모듈 완성 직후 | ⏳ 대기 |
-| 5 | `unit_action_server.py` | 실물 bring-up + interfaces 확정 | ⏳ Phase 5 |
+> `arm_driver.py` 구현 시 chamjo `robot_action_server_node.py`의 `_movel()` / `_movej()` 패턴 재사용 가능.
+> 단, 좌표 단위 주의: chamjo는 **mm/deg**, 우리는 **m/rad** (E-1).
+> `DoosanArmDriver(node: rclpy.Node)`처럼 Node를 주입받으면 `unit_actions/`에서 rclpy 없이 사용 가능.
 
 ### 역할 A (voice / Gemma 4) — 연계 대기
 
