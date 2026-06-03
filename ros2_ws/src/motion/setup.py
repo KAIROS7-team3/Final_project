@@ -28,6 +28,7 @@ setup(
         'console_scripts': [
             'gripper_node = motion.gripper_node:main',
             'rviz_joint_state_merger = motion.rviz_joint_state_merger_node:main',
+            'toolbox_seq_runner = motion.toolbox_seq_runner:main',
         ],
     },
 )
