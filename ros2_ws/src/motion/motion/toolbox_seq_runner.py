@@ -22,6 +22,8 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import String
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
 
@@ -49,10 +51,12 @@ class ToolboxSeqRunner(Node):
         ns = self.get_parameter('robot_ns').get_parameter_value().string_value
         seq_name = self.get_parameter('sequence').get_parameter_value().string_value
 
+        self._cb_group = ReentrantCallbackGroup()
+
         p = f'/{ns}'
-        self._movel_cli = self.create_client(MoveLine,  f'{p}/motion/move_line')
-        self._movej_cli = self.create_client(MoveJoint, f'{p}/motion/move_joint')
-        self._stop_cli  = self.create_client(MoveStop,  f'{p}/motion/move_stop')
+        self._movel_cli = self.create_client(MoveLine,  f'{p}/motion/move_line',  callback_group=self._cb_group)
+        self._movej_cli = self.create_client(MoveJoint, f'{p}/motion/move_joint', callback_group=self._cb_group)
+        self._stop_cli  = self.create_client(MoveStop,  f'{p}/motion/move_stop',  callback_group=self._cb_group)
         self._gripper_pub = self.create_publisher(String, '/gripper/cmd_direct', 10)
 
         self.get_logger().info(f'[runner] 서비스 대기 중...')
@@ -66,7 +70,7 @@ class ToolboxSeqRunner(Node):
             self.get_logger().info(f'[runner] {name} 연결됨')
 
         self._seq_name = seq_name
-        self._timer = self.create_timer(0.5, self._run_once)
+        self._timer = self.create_timer(0.5, self._run_once, callback_group=self._cb_group)
         self._done = False
 
     def _run_once(self) -> None:
@@ -179,7 +183,9 @@ def main(args=None) -> None:
     rclpy.init(args=args)
     try:
         node = ToolboxSeqRunner()
-        rclpy.spin(node)
+        executor = MultiThreadedExecutor()
+        executor.add_node(node)
+        executor.spin()
     except RuntimeError as e:
         print(f'[runner] 초기화 실패: {e}')
     except KeyboardInterrupt:

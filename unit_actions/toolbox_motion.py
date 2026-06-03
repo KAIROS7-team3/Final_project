@@ -59,6 +59,9 @@ PULSE_GRIP_BOX:   int = 400   # 서랍 손잡이 파지 전류(mA) — gripper_g
 # ── 웨이포인트 상수 (TaskWriter 실측값, DSR BASE 좌표계, mm/deg) ───────────
 # 형식: [x, y, z, rx, ry, rz]  (MoveL) 또는 [j1..j6] deg (MoveJ)
 
+# 실물 로봇 홈 자세 (deg) — chamjo JOINT_HOME_POS 동일
+JOINT_HOME_DEG:    list = [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]
+
 # ── layer 0 (1층 서랍) ────────────────────────────────────────────────────
 # 출처: toolboxapproach_box1.tw
 
@@ -141,6 +144,7 @@ def wait_step(sec: float) -> Step:
 
 GRIP_OPEN    = lambda: grip(PULSE_OPEN)
 GRIP_BOX     = lambda: grip(PULSE_GRIP_BOX)
+JOINT_HOME   = lambda: mj_abs(JOINT_HOME_DEG)
 
 
 # ── 시퀀스 함수 ───────────────────────────────────────────────────────────
@@ -152,12 +156,13 @@ def _wp(layer: int, key: str) -> list:
 
 
 def drawer_open_seq(layer: int) -> list[Step]:
-    """서랍 열기 시퀀스 (MoveJ 안전 자세 → 손잡이 파지 → 당기기 → 내부 진입).
+    """서랍 열기 시퀀스 (홈 복귀 → MoveJ 안전 자세 → 손잡이 파지 → 당기기 → 내부 진입).
 
     layer: 0 = 1층, 1 = 2층
     종료 후 팔은 LAYER{n}_INNER 위치에 있음.
     """
     return [
+        JOINT_HOME(),
         GRIP_OPEN(),
         mj_abs(_wp(layer, "setup_j")),
         ml_abs(_wp(layer, "approach")),
