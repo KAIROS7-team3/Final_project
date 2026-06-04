@@ -37,6 +37,13 @@ except ImportError:
     _ACTION_AVAILABLE = False
     GripperCommand = None
 
+try:
+    from interfaces.srv import GripperSetPosition
+    _SET_POS_AVAILABLE = True
+except ImportError:
+    _SET_POS_AVAILABLE = False
+    GripperSetPosition = None
+
 logger = logging.getLogger(__name__)
 
 TCP_MAGIC = b"GP"
@@ -637,6 +644,8 @@ class GripperNode(Node):
         self.declare_parameter("direct_cmd_streaming_ack_timeout_sec", 0.5)
         self.declare_parameter("direct_cmd_streaming_no_ack", True)
         self.declare_parameter("mode", "real")
+        self.declare_parameter("set_position_service_enabled", True)
+        self.declare_parameter("set_position_service", "/gripper/set_position")
 
         # ---- 파라미터 읽기 ----
         ns = str(self.get_parameter("robot_ns").value).strip()
@@ -693,6 +702,8 @@ class GripperNode(Node):
         self._direct_cmd_streaming_ack_timeout = float(self.get_parameter("direct_cmd_streaming_ack_timeout_sec").value)
         self._direct_cmd_streaming_no_ack = bool(self.get_parameter("direct_cmd_streaming_no_ack").value)
         self._mode = str(self.get_parameter("mode").value).lower()
+        self._set_pos_svc_enabled = bool(self.get_parameter("set_position_service_enabled").value)
+        self._set_pos_svc_name = str(self.get_parameter("set_position_service").value)
 
         if self._plc_feedback_enabled:
             self._plc_addr_pos = self._clamp_plc_out_int_addr(self._plc_addr_pos, "plc_addr_pos")
@@ -743,6 +754,17 @@ class GripperNode(Node):
             self.create_subscription(
                 String, self._direct_cmd_topic, self._on_direct_cmd, 10, callback_group=self._cb
             )
+
+        if self._set_pos_svc_enabled and _SET_POS_AVAILABLE:
+            self.create_service(
+                GripperSetPosition,
+                self._set_pos_svc_name,
+                self._set_position_callback,
+                callback_group=self._cb,
+            )
+            self.get_logger().info(f"[gripper] SetPosition 서비스: {self._set_pos_svc_name}")
+        elif self._set_pos_svc_enabled and not _SET_POS_AVAILABLE:
+            self.get_logger().warn("[gripper] GripperSetPosition import 불가 — 서비스 생략")
 
         if self._action_enabled:
             if not _ACTION_AVAILABLE:
@@ -1564,6 +1586,50 @@ class GripperNode(Node):
                 self.get_logger().warn(f"[gripper] direct cmd 전송 실패: {err}")
         except Exception as e:
             self.get_logger().error(f"[gripper] direct cmd 예외: {e}")
+
+    # ------------------------------------------------------------------ set_position service
+
+    def _set_position_callback(self, request, response):
+        t_pulse = int(request.position)
+        t_cur = int(request.current) if request.current > 0 else self._cur_init
+        timeout = float(request.timeout_sec) if request.timeout_sec > 0 else self._tcp_ack_timeout
+
+        if self._mode == "virtual":
+            self._current_hz_pos = t_pulse
+            response.success = True
+            response.message = "virtual mock"
+            response.final_position = t_pulse
+            response.final_current = t_cur
+            return response
+
+        if self._cmd_transport != "tcp" or not self._socket_active:
+            response.success = False
+            response.message = "TCP 오프라인 또는 transport=drl (tcp 모드에서만 사용 가능)"
+            response.final_position = self._current_hz_pos
+            response.final_current = self._current_hz_cur
+            return response
+
+        try:
+            cur_pkt = ModbusRTU.fc06(self._slave_id, self._goal_cur_reg, t_cur)
+            pos_frames = self._direct_cmd_pos_frames(t_pulse)
+            ok1, err1 = self._send_cmd_and_wait_ack([cur_pkt], timeout_sec=timeout)
+            if not ok1:
+                raise RuntimeError(f"cur ack 실패: {err1}")
+            time.sleep(0.05)
+            ok2, err2 = self._send_cmd_and_wait_ack(pos_frames, timeout_sec=timeout)
+            if not ok2:
+                raise RuntimeError(f"pos ack 실패: {err2}")
+            self._current_hz_pos = t_pulse
+            response.success = True
+            response.message = "완료"
+        except Exception as e:
+            self.get_logger().error(f"[gripper] set_position 실패: {e}")
+            response.success = False
+            response.message = str(e)
+
+        response.final_position = self._current_hz_pos
+        response.final_current = self._current_hz_cur
+        return response
 
     # ------------------------------------------------------------------ action
 

@@ -18,6 +18,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/CheckToolFeasibility.srv"
   "srv/UpdateToolStatus.srv"
   "srv/LogEvent.srv"
+  "srv/GripperSetPosition.srv"
   # Actions
   "action/MoveToPose.action"
   "action/Grasp.action"
