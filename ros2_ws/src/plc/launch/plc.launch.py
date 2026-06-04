@@ -28,9 +28,10 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("device_id", default_value="1"),
             DeclareLaunchArgument("reset_coil_address", default_value="256"),
             DeclareLaunchArgument("pulse_duration_s", default_value="0.2"),
-            DeclareLaunchArgument("enable_watchdog", default_value="false"),
-            DeclareLaunchArgument("watchdog_coil_address", default_value="-1"),
-            DeclareLaunchArgument("watchdog_period_s", default_value="0.25"),
+            DeclareLaunchArgument("enable_watchdog", default_value="true"),
+            DeclareLaunchArgument("watchdog_coil_address", default_value="80"),
+            DeclareLaunchArgument("watchdog_period_s", default_value="0.1"),
+            DeclareLaunchArgument("watchdog_timeout_s", default_value="0.5"),
             DeclareLaunchArgument("enable_estop_poll", default_value="false"),
             DeclareLaunchArgument("estop_input_address", default_value="-1"),
             DeclareLaunchArgument("estop_poll_period_s", default_value="0.1"),
@@ -68,6 +69,10 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         "watchdog_period_s": ParameterValue(
                             LaunchConfiguration("watchdog_period_s"),
+                            value_type=float,
+                        ),
+                        "watchdog_timeout_s": ParameterValue(
+                            LaunchConfiguration("watchdog_timeout_s"),
                             value_type=float,
                         ),
                         "enable_estop_poll": ParameterValue(

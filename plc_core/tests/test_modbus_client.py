@@ -47,6 +47,10 @@ class FakeSerialClient:
         self.calls.append(("read_discrete_inputs", kwargs))
         return FakeResponse(error=self.next_error, bits=[True])
 
+    def read_coils(self, **kwargs) -> FakeResponse:
+        self.calls.append(("read_coils", kwargs))
+        return FakeResponse(error=self.next_error, bits=[True])
+
     def write_register(self, **kwargs) -> FakeResponse:
         self.calls.append(("write_register", kwargs))
         return FakeResponse(error=self.next_error)
@@ -93,8 +97,8 @@ def config() -> ModbusPLCConfig:
         write_register_label="P000",
         write_register_address=0,
         pulse_duration_s=0.001,
-        watchdog_coil_label="M0105",
-        watchdog_coil_address=261,
+        watchdog_coil_label="M0050",
+        watchdog_coil_address=80,
         estop_input_label="P010",
         estop_input_address=10,
         system_state_outputs={
@@ -208,22 +212,35 @@ def test_read_estop_uses_configured_discrete_input(config: ModbusPLCConfig) -> N
     )
 
 
-def test_heartbeat_toggles_configured_watchdog_coil(
+def test_watchdog_read_uses_configured_watchdog_coil(
     config: ModbusPLCConfig,
 ) -> None:
     fake_client = FakeSerialClient()
     plc = ModbusPLCClient(config, client_factory=lambda **_: fake_client)
 
-    plc.heartbeat()
-    plc.heartbeat()
+    assert plc.read_watchdog() is True
 
-    assert fake_client.calls[-2:] == [
-        ("write_coil", {"address": 261, "value": True, "device_id": 1}),
-        ("write_coil", {"address": 261, "value": False, "device_id": 1}),
-    ]
+    assert fake_client.calls[-1] == (
+        "read_coils",
+        {"address": 80, "count": 1, "device_id": 1},
+    )
 
 
-def test_heartbeat_requires_configured_watchdog_coil(
+def test_heartbeat_alias_reads_configured_watchdog_coil(
+    config: ModbusPLCConfig,
+) -> None:
+    fake_client = FakeSerialClient()
+    plc = ModbusPLCClient(config, client_factory=lambda **_: fake_client)
+
+    assert plc.heartbeat() is True
+
+    assert fake_client.calls[-1] == (
+        "read_coils",
+        {"address": 80, "count": 1, "device_id": 1},
+    )
+
+
+def test_watchdog_read_requires_configured_watchdog_coil(
     config: ModbusPLCConfig,
 ) -> None:
     no_watchdog = ModbusPLCConfig(
@@ -236,7 +253,18 @@ def test_heartbeat_requires_configured_watchdog_coil(
     plc = ModbusPLCClient(no_watchdog, client_factory=lambda **_: FakeSerialClient())
 
     with pytest.raises(PLCError):
-        plc.heartbeat()
+        plc.read_watchdog()
+
+
+def test_read_coil_raises_plc_error_on_modbus_failure(
+    config: ModbusPLCConfig,
+) -> None:
+    fake_client = FakeSerialClient()
+    fake_client.next_error = True
+    plc = ModbusPLCClient(config, client_factory=lambda **_: fake_client)
+
+    with pytest.raises(PLCError):
+        plc.read_coil(config.watchdog_coil_address)
 
 
 def test_pulse_coil_writes_on_then_off(config: ModbusPLCConfig) -> None:

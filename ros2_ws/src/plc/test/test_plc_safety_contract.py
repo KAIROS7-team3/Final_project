@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import sqlite3
 import sys
 import types
 import threading
 from pathlib import Path
-import sqlite3
 
 from plc_core.client import PLCStatus
 from plc_core.config import ModbusPLCConfig
@@ -117,9 +117,16 @@ class FakeTimer:
 
 
 class FakePLC:
-    def __init__(self, *, connected: bool = True, fail_write: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        connected: bool = True,
+        fail_write: bool = False,
+        watchdog_value: bool = True,
+    ) -> None:
         self.connected = connected
         self.fail_write = fail_write
+        self.watchdog_value = watchdog_value
         self.calls: list[tuple[str, object]] = []
         self.current_state = SystemState.IDLE
 
@@ -137,6 +144,10 @@ class FakePLC:
 
     def write_start_coils(self, value: bool) -> None:
         self.calls.append(("write_start_coils", {"value": value}))
+
+    def read_watchdog(self) -> bool:
+        self.calls.append(("read_watchdog", {}))
+        return self.watchdog_value
 
     def set_system_state(
         self,
@@ -179,6 +190,8 @@ def make_config() -> ModbusPLCConfig:
         write_register_label="P000",
         write_register_address=0,
         pulse_duration_s=0.2,
+        watchdog_coil_label="M0050",
+        watchdog_coil_address=80,
         system_state_outputs={
             SystemState.IDLE: (),
             SystemState.MOVING: ("M0002",),
@@ -193,12 +206,19 @@ def make_node(
     *,
     connected: bool = True,
     fail_write: bool = False,
-    db_path: str = "missing.db",
 ) -> XgbRos2ModbusNode:
     node = XgbRos2ModbusNode.__new__(XgbRos2ModbusNode)
-    node._config = types.SimpleNamespace(modbus=make_config(), db_path=db_path)
+    node._config = types.SimpleNamespace(
+        modbus=make_config(),
+        watchdog_period_s=0.1,
+        watchdog_timeout_s=0.5,
+        db_path="robot_arm.db",
+    )
     node._plc = FakePLC(connected=connected, fail_write=fail_write)
     node._estop_latched = threading.Event()
+    node._watchdog_latched = threading.Event()
+    node._watchdog_last_value = None
+    node._watchdog_same_sample_count = 0
     node._estop_pub = FakePublisher()
     node._status_pub = FakePublisher()
     node._pulse_timers = []
@@ -220,10 +240,11 @@ def test_error_and_estop_led_contract() -> None:
     assert STATE_LED_MAP[SystemState.WATCHDOG] == (LEDColor.YELLOW, LEDMode.FLASH)
 
 
-def test_safety_hook_addresses_can_be_disabled() -> None:
+def test_watchdog_hook_targets_dedicated_m050_coil() -> None:
     config = make_config()
 
-    assert config.watchdog_coil_address is None
+    assert config.watchdog_coil_label == "M0050"
+    assert config.watchdog_coil_address == 80
     assert config.estop_input_address is None
 
 
@@ -260,6 +281,101 @@ def test_estop_latch_blocks_output_commands() -> None:
     assert node._status_pub.messages[-1].system_state == SystemState.E_STOP.value
 
 
+def test_watchdog_timer_handles_0_2_on_0_2_off_heartbeat_without_latching() -> None:
+    node = make_node()
+
+    for sample in (True, True, False, False, True, True, False, False):
+        node._plc.watchdog_value = sample
+        node.watchdog_timer_callback()
+
+    assert not node._watchdog_latched.is_set()
+    assert node._status_pub.messages == []
+    assert ("read_watchdog", {}) in node._plc.calls
+
+
+def test_watchdog_timer_latches_after_0_5s_of_no_change() -> None:
+    node = make_node()
+
+    node.watchdog_timer_callback()
+    assert not node._watchdog_latched.is_set()
+    node.watchdog_timer_callback()
+    assert not node._watchdog_latched.is_set()
+    node.watchdog_timer_callback()
+    assert not node._watchdog_latched.is_set()
+    node.watchdog_timer_callback()
+    assert not node._watchdog_latched.is_set()
+    node.watchdog_timer_callback()
+    assert not node._watchdog_latched.is_set()
+    node.watchdog_timer_callback()
+
+    assert node._watchdog_latched.is_set()
+    assert node._status_pub.messages[-1].system_state == SystemState.WATCHDOG.value
+    assert ("read_watchdog", {}) in node._plc.calls
+
+
+def test_watchdog_latch_blocks_output_commands() -> None:
+    node = make_node()
+    node._watchdog_latched.set()
+
+    assert node._write_m_coil(0, True, "M0000") is False
+
+    assert node._status_pub.messages[-1].system_state == SystemState.WATCHDOG.value
+
+
+def test_estop_priority_over_watchdog_latch() -> None:
+    node = make_node()
+    node._watchdog_latched.set()
+    node._estop_latched.set()
+
+    node._publish_fault_state()
+
+    assert node._status_pub.messages[-1].system_state == SystemState.E_STOP.value
+
+
+def test_watchdog_timer_does_not_override_estop() -> None:
+    node = make_node()
+    node._estop_latched.set()
+
+    node.watchdog_timer_callback()
+
+    assert ("read_watchdog", {}) not in node._plc.calls
+    assert node._status_pub.messages[-1].system_state == SystemState.E_STOP.value
+
+
+def test_plc_error_is_recorded_to_system_events(tmp_path: Path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE system_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                track TEXT,
+                severity TEXT NOT NULL,
+                notes TEXT
+            )
+            """
+        )
+        conn.commit()
+
+    node = make_node(fail_write=True)
+    node._config.db_path = str(db_path)
+
+    assert node._write_m_coil(0, True, "M0000") is False
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT event_type, track, severity, notes FROM system_events"
+        ).fetchone()
+
+    assert row == (
+        "plc_error",
+        None,
+        "error",
+        "M0000 control failed: simulated coil write failure",
+    )
+
+
 def test_system_state_estop_writes_direct_output_without_reset() -> None:
     node = make_node()
     message = types.SimpleNamespace(data="e_stop")
@@ -270,6 +386,17 @@ def test_system_state_estop_writes_direct_output_without_reset() -> None:
     assert ("write_coil", {"address": 3, "value": True}) in node._plc.calls
     assert node._estop_latched.is_set()
     assert node._estop_pub.messages[-1].data is True
+    assert node._status_pub.messages[-1].system_state == SystemState.E_STOP.value
+
+
+def test_system_state_watchdog_is_ignored_when_estop_is_latched() -> None:
+    node = make_node()
+    node._estop_latched.set()
+    message = types.SimpleNamespace(data="watchdog")
+
+    node.system_state_callback(message)
+
+    assert node._watchdog_latched.is_set() is False
     assert node._status_pub.messages[-1].system_state == SystemState.E_STOP.value
 
 
@@ -294,26 +421,3 @@ def test_read_timer_does_not_reconnect_when_disconnected() -> None:
     node.read_timer_callback()
 
     assert ("connect", {}) not in node._plc.calls
-
-
-def test_plc_actuator_failure_records_db_system_event(tmp_path) -> None:
-    db_path = tmp_path / "robot_arm.db"
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            "CREATE TABLE system_events ("
-            "event_type TEXT NOT NULL, "
-            "track TEXT, "
-            "severity TEXT NOT NULL, "
-            "notes TEXT)"
-        )
-    node = make_node(fail_write=True, db_path=str(db_path))
-
-    assert node._write_coil_raw(0, True, "M0000") is False
-
-    with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT event_type, severity, notes FROM system_events"
-        ).fetchone()
-    assert row[0] == "plc_error"
-    assert row[1] == "error"
-    assert "M0000 control failed" in row[2]

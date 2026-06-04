@@ -40,8 +40,8 @@ class ModbusPLCConfig:
     write_register_address: int
     # Start/reset coil은 latch가 아니라 push-button처럼 짧게 눌렀다 떼는 방식으로 쓴다.
     pulse_duration_s: float
-    # M0005는 상태 출력용 watchdog 입력이다. heartbeat watchdog/E-stop hook은
-    # 전용 래더를 추가한 뒤에만 주소를 채운다.
+    # M0050 같은 전용 watchdog heartbeat coil은 PLC 래더가 생성하는 감시 신호다.
+    # ROS2/상위 노드는 이 코일을 읽어서 heartbeat가 살아 있는지 확인한다.
     watchdog_coil_label: str | None = None
     watchdog_coil_address: int | None = None
     estop_input_label: str | None = None
@@ -69,7 +69,7 @@ class ModbusPLCConfig:
         # reset은 현재 래더상 M device coil이어야 한다.
         if not self.reset_coil_label.upper().startswith("M"):
             raise PLCConfigError("reset_coil_label must be an M device label")
-        # watchdog은 쓰기용 coil이므로 M device만 허용한다. 현재 기본값은 비활성이다.
+        # watchdog heartbeat는 PLC 래더 전용 M device coil을 읽는 방식으로 쓴다.
         if self.watchdog_coil_label and not self.watchdog_coil_label.upper().startswith(
             "M"
         ):

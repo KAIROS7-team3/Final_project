@@ -25,12 +25,11 @@ plc_node:
     write_register_address: 0
 
     # Safety/operation hooks.
-    # 현재 래더에는 heartbeat watchdog 전용 coil과 E-stop input이 없다.
-    # M0005는 상태 출력용 watchdog 입력이고, heartbeat hook은 별도 device가 필요하다.
+    # M0050은 PLC 래더가 생성하는 전용 watchdog heartbeat coil이다.
+    # ROS2 노드는 이 신호를 읽어 0.5s 내 변동이 없으면 watchdog fault로 본다.
     # M0100은 reset 접점이고, M1000~M1005는 내부 자기유지 bit다.
-    # 래더에 전용 device를 추가한 뒤 label/address를 채우고 enable_*를 true로 바꾼다.
-    watchdog_coil_label: ""
-    watchdog_coil_address: -1
+    watchdog_coil_label: "M0050"
+    watchdog_coil_address: 80
     estop_input_label: ""
     estop_input_address: -1
 
@@ -44,8 +43,9 @@ plc_node:
     connect_retry_count: 3
     connect_retry_backoff_s: 0.5
     pulse_duration_s: 0.2
-    enable_watchdog: false
-    # Disabled default. When enable_watchdog is true, keep this <= 0.25.
-    watchdog_period_s: 0.25
+    enable_watchdog: true
+    # Watchdog heartbeat coil is 0.2s ON / 0.2s OFF. Poll faster than that.
+    watchdog_period_s: 0.1
+    watchdog_timeout_s: 0.5
     enable_estop_poll: false
     estop_poll_period_s: 0.1
