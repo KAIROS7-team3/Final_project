@@ -32,8 +32,8 @@ gripper_node:
     state_hz: 10.0
 
     # --- 그리퍼 파라미터 ---
-    pulse_open: 0
-    pulse_closed_preset: 700
+    pulse_open: 450        # TW: gripper_release stroke=450
+    pulse_closed_preset: 600  # TW: gripper_grap_boxhand stroke=600
     init_current: 400
     grip_current: 300
     grip_current_threshold: 50
