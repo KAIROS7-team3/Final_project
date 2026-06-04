@@ -2,9 +2,7 @@
 ────────────────────────
 toolbox_motion.py 시퀀스를 virtual/real 모드에서 실행하는 테스트 노드.
 
-그리퍼는 action client(/gripper/grasp)를 사용해 파지 완료 확인 후 다음 스텝 진행.
-gripper_node의 gripper_command_action_enabled: true 필요.
-action 서버 미가동 시 fallback으로 topic publish + sleep 사용.
+chamjo robot_action_server_node.py의 _run_sequence/_movel/_movej 패턴 재사용.
 
 실행:
   ros2 run motion toolbox_seq_runner --ros-args -p sequence:=open_0
@@ -21,23 +19,14 @@ action 서버 미가동 시 fallback으로 topic publish + sleep 사용.
 
 import sys
 import time
-import threading
 
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.action import ActionClient
 from std_msgs.msg import String
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
 from dsr_msgs2.srv import SetCurrentTcp, ConfigCreateTcp
-
-try:
-    from interfaces.action import Grasp as GripperCommand
-    _GRIPPER_ACTION_AVAILABLE = True
-except ImportError:
-    _GRIPPER_ACTION_AVAILABLE = False
-    GripperCommand = None
 
 # unit_actions는 ros2_ws 밖에 있으므로 경로 추가
 sys.path.insert(0, '/home/kimsungyeoun/Final_project')
@@ -74,21 +63,6 @@ class ToolboxSeqRunner(Node):
         self._set_tcp_cli    = self.create_client(SetCurrentTcp,   f'{p}/tcp/set_current_tcp',    callback_group=self._cb_group)
         self._create_tcp_cli = self.create_client(ConfigCreateTcp, f'{p}/tcp/config_create_tcp',  callback_group=self._cb_group)
         self._gripper_pub    = self.create_publisher(String, '/gripper/cmd_direct', 10)
-
-        # 그리퍼 action client — 동기 파지 완료 확인용
-        # wait_for_server는 init 때 한 번만 → spin 중에 재확인하면 서버를 잃어버림
-        self._gripper_action_client = None
-        self._gripper_action_ready = False
-        if _GRIPPER_ACTION_AVAILABLE:
-            self._gripper_action_client = ActionClient(
-                self, GripperCommand, '/gripper/grasp', callback_group=self._cb_group
-            )
-            self.get_logger().info('[runner] 그리퍼 action 서버 대기 중...')
-            if self._gripper_action_client.wait_for_server(timeout_sec=5.0):
-                self._gripper_action_ready = True
-                self.get_logger().info('[runner] 그리퍼 action 서버 연결됨: /gripper/grasp')
-            else:
-                self.get_logger().warn('[runner] 그리퍼 action 서버 없음 — topic fallback 사용')
 
         self.get_logger().info(f'[runner] 서비스 대기 중...')
         for cli, name in [
@@ -232,81 +206,20 @@ class ToolboxSeqRunner(Node):
 
     def _grip(self, step) -> bool:
         pulse = step.pulse if step.pulse is not None else 0
-
         if pulse == 0:
             cmd = 'open'
-            grasp_force = 0.0
         elif pulse <= 450:
+            # release 계열 (TW: gripper_release = stroke 450) — current 0으로 config 기본값 사용
             cmd = f'custom {pulse} 0'
-            grasp_force = 0.0
         else:
+            # grip 계열 (TW: gripper_grap_boxhand = stroke 600) — current 400mA
             cmd = f'custom {pulse} 400'
-            grasp_force = 400.0
-
-        # action 서버가 살아있으면 동기 파지 완료 대기
-        if self._gripper_action_ready:
-            return self._grip_via_action(cmd, grasp_force)
-
-        # fallback: topic publish + sleep
-        self.get_logger().warn('  [grip] action 서버 없음 — topic fallback')
         msg = String()
         msg.data = cmd
         self._gripper_pub.publish(msg)
-        self.get_logger().info(f'  gripper cmd(topic): {cmd}')
-        time.sleep(1.0)
+        self.get_logger().info(f'  gripper cmd: {cmd}')
+        time.sleep(0.5)
         return True
-
-    def _grip_via_action(self, cmd: str, grasp_force: float) -> bool:
-        """action goal 전송 후 result 수신까지 블로킹."""
-
-        goal = GripperCommand.Goal()
-        goal.tool_id           = 'drawer_handle'
-        goal.approach_direction = cmd          # open / close / custom 정보 전달
-        goal.grasp_force       = float(grasp_force)
-
-        self.get_logger().info(f'  gripper action goal: {cmd} force={grasp_force}')
-
-        done_event = threading.Event()
-        result_holder: dict = {'success': False, 'message': ''}
-
-        def _feedback_cb(fb):
-            self.get_logger().debug(
-                f'  gripper feedback: phase={fb.feedback.phase} progress={fb.feedback.progress:.2f}'
-            )
-
-        def _result_cb(future):
-            try:
-                res = future.result()
-                result_holder['success'] = bool(res.result.success)
-                result_holder['message'] = str(res.result.message)
-            except Exception as e:
-                result_holder['success'] = False
-                result_holder['message'] = str(e)
-            done_event.set()
-
-        def _goal_cb(future):
-            goal_handle = future.result()
-            if not goal_handle.accepted:
-                self.get_logger().error('  gripper action goal rejected')
-                done_event.set()
-                return
-            goal_handle.get_result_async().add_done_callback(_result_cb)
-
-        send_future = self._gripper_action_client.send_goal_async(
-            goal, feedback_callback=_feedback_cb
-        )
-        send_future.add_done_callback(_goal_cb)
-
-        # action_max_wait_sec(기본 20s) + 여유 5초
-        done_event.wait(timeout=25.0)
-
-        ok = result_holder['success']
-        msg_str = result_holder['message']
-        if ok:
-            self.get_logger().info(f'  gripper action 완료: {msg_str}')
-        else:
-            self.get_logger().error(f'  gripper action 실패: {msg_str}')
-        return ok
 
 
 def main(args=None) -> None:

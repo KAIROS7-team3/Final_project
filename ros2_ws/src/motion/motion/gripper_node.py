@@ -1571,8 +1571,16 @@ class GripperNode(Node):
         self._executing = True
         try:
             req = goal_handle.request  # type: ignore[union-attr]
-            force = float(req.grasp_force) if hasattr(req, "grasp_force") and req.grasp_force > 0 else float(self._cur_grip)
-            t_pulse = self._pulse_closed
+            # approach_direction 파싱: "open" / "close" / "custom <pulse> <cur>"
+            approach = str(req.approach_direction).strip() if hasattr(req, "approach_direction") else "close"
+            parts = approach.split()
+            action_name = parts[0] if parts else "close"
+            pulse_arg = int(parts[1]) if len(parts) >= 2 else 0
+            cur_arg = int(parts[2]) if len(parts) >= 3 else 0
+            t_pulse, t_cur_default = self._resolve_preset_action(action_name, pulse=pulse_arg, current=cur_arg)
+            if t_pulse < 0:
+                t_pulse, t_cur_default = self._pulse_closed, self._cur_grip
+            force = float(req.grasp_force) if hasattr(req, "grasp_force") and req.grasp_force > 0 else float(t_cur_default)
             t_cur = int(min(max(force, 10.0), 1000.0))
 
             def _publish_fb(phase: str, progress: float) -> None:
