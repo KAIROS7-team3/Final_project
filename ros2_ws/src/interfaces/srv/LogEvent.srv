@@ -1,0 +1,11 @@
+# 상태를 바꾸지 않는 감사 이벤트를 tool_events에 기록한다 (B1-1).
+# 현재 용도: 명령 거부 기록 — 특히 orchestrator S-7(is_moving) 가드가
+# DB Gate 도달 전에 드롭한 intent. event_type은 서버(db_service_node)에서
+# 'rejected'로 제한하므로 임의 이벤트 위조 경로가 되지 않는다(B2-1 표면 최소화).
+string tool_id        # 거부된 명령이 가리킨 공구
+string event_type     # 현재 'rejected'만 허용 (서버 검증)
+string track          # 'A' | 'B' | 'C' | '' (없음)
+string notes          # 거부 사유 (예: "S-7: robot moving; intent=fetch")
+---
+bool success
+string message

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import rclpy
 from db_core.repository import ToolRepository
-from interfaces.srv import CheckToolFeasibility, UpdateToolStatus
+from interfaces.srv import CheckToolFeasibility, LogEvent, UpdateToolStatus
 from rclpy.node import Node
 
 
@@ -34,6 +34,11 @@ class DbServiceNode(Node):
             UpdateToolStatus,
             "/db/UpdateToolStatus",
             self._handle_update_tool_status,
+        )
+        self.create_service(
+            LogEvent,
+            "/db/LogEvent",
+            self._handle_log_event,
         )
 
     def _handle_check_tool_feasibility(
@@ -72,6 +77,38 @@ class DbServiceNode(Node):
         if not result.success:
             self.get_logger().error(
                 f"status update failed tool_id={request.tool_id}: {result.message}"
+            )
+        return response
+
+    def _handle_log_event(
+        self,
+        request: LogEvent.Request,
+        response: LogEvent.Response,
+    ) -> LogEvent.Response:
+        """상태 무변경 감사 이벤트(현재 'rejected'만)를 tool_events에 남긴다 (B1-1).
+
+        event_type을 서버에서 'rejected'로 제한해 이 서비스가 임의 이벤트를
+        위조하는 경로가 되지 않게 한다(DB Gate 쓰기 표면 최소화, B2-1).
+        """
+
+        if request.event_type != "rejected":
+            response.success = False
+            response.message = f"unsupported event_type: {request.event_type}"
+            self.get_logger().warning(
+                f"LogEvent rejected unsupported event_type={request.event_type} "
+                f"tool_id={request.tool_id}"
+            )
+            return response
+        result = self._repository.log_rejection(
+            tool_id=request.tool_id,
+            reason=request.notes,
+            track=request.track or None,
+        )
+        response.success = result.success
+        response.message = result.message
+        if not result.success:
+            self.get_logger().error(
+                f"LogEvent failed tool_id={request.tool_id}: {result.message}"
             )
         return response
 
