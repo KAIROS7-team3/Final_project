@@ -226,6 +226,89 @@ pulse 시간을 현장에서 늘려 확인하려면:
 ros2 launch plc plc.launch.py port:=/dev/ttyUSB0 baudrate:=115200 device_id:=1 pulse_duration_s:=0.5
 ```
 
+## 데모 검증
+
+아래 절차는 실제 PLC와 serial 케이블이 연결된 상태에서 패키지 동작을
+현장 데모처럼 확인할 때 사용한다.
+
+### 1. 노드 실행
+
+다른 터미널에서 workspace를 source한 뒤 PLC 노드를 띄운다.
+
+```bash
+cd /home/thomas/Final_Project/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch plc plc.launch.py port:=/dev/ttyUSB0 baudrate:=115200 device_id:=1
+```
+
+`/dev/ttyUSB0`가 아닌 경우 실제 장치로 바꾼다. 데모 중에는 watchdog과 E-stop
+polling을 기본값인 `false`로 두고, 먼저 통신과 pulse 동작만 확인한다.
+
+### 2. 상태 토픽 확인
+
+다른 터미널에서 아래 토픽을 열어 둔다.
+
+```bash
+ros2 topic echo /plc/status
+ros2 topic echo /plc_word_read
+ros2 topic echo /plc/e_stop
+```
+
+정상이라면 `/plc/status`에는 `system_state`, `led_color`, `led_mode`가 주기적으로
+갱신되고, `/plc_word_read`에는 P020 읽기 값이 들어온다.
+
+### 3. M coil pulse 확인
+
+`/plc_m0`부터 `/plc_m5`까지 한 번씩 보내서 각 M coil이 push-button처럼
+잠깐 ON 되었다가 OFF 되는지 확인한다.
+
+```bash
+ros2 topic pub --once /plc_m0 std_msgs/msg/Bool "{data: true}"
+ros2 topic pub --once /plc_m1 std_msgs/msg/Bool "{data: true}"
+ros2 topic pub --once /plc_m2 std_msgs/msg/Bool "{data: true}"
+```
+
+노드 로그에서 `M0000 -> ON`, `M0000 -> OFF` 같은 순서가 보이면 pulse가 정상이다.
+`true`는 latched ON이 아니라 momentary press여야 한다.
+
+### 4. reset 동작 확인
+
+`M0100` reset pulse를 한 번 보내서 래치 해제가 되는지 확인한다.
+
+```bash
+ros2 topic pub --once /plc_reset std_msgs/msg/Bool "{data: true}"
+```
+
+정상이라면 로그에 `M0100 -> ON` 다음 `M0100 -> OFF`가 찍히고,
+`P0040~P0044` 출력이 해제된다.
+
+### 5. semantic 상태 확인
+
+PLC가 받는 의미 단위 상태도 데모에서 확인한다.
+
+```bash
+ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: idle}"
+ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: moving}"
+ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: error}"
+```
+
+확인 포인트:
+- `idle`은 reset만 수행하고 별도 출력 coil pulse가 없다.
+- `moving`은 `M0002` pulse로 `P0042`가 반응해야 한다.
+- `error`는 `M0004` pulse로 `P0043`가 반응해야 한다.
+
+### 6. E-stop 확인
+
+E-stop 입력 배선이 실제로 연결된 경우에만 확인한다.
+
+```bash
+ros2 topic echo /plc/e_stop
+```
+
+입력이 감지되면 `true`가 발행되고, `/plc/status`는 `system_state: e_stop`로
+전환된다. E-stop latch 중에는 출력 변경 요청이 거부되어야 한다.
+
 ## 기본 테스트
 
 다른 터미널에서:
