@@ -238,8 +238,8 @@ def _read_cur():
     for _i in range(3):
         _flush()
         flange_serial_write(_fc03(PRESENT_CURRENT_REG, 1))
-        wait(0.05)
-        _sz, _val = flange_serial_read(0.3)
+        wait(0.02)
+        _sz, _val = flange_serial_read(0.1)
         if _sz >= 7 and _val[1] == 3 and _val[2] == 2:
             _v = (_val[3] << 8) | _val[4]
             if _v > 32767:
@@ -251,8 +251,8 @@ def _read_reg16(_addr):
     for _i in range(2):
         _flush()
         flange_serial_write(_fc03(_addr, 1))
-        wait(0.03)
-        _sz, _val = flange_serial_read(0.2)
+        wait(0.02)
+        _sz, _val = flange_serial_read(0.1)
         if _sz >= 7 and _val[1] == 3 and _val[2] == 2:
             return ((_val[3] << 8) | _val[4])
     return -99999
@@ -261,8 +261,8 @@ def _read_pos():
     for _i in range(3):
         _flush()
         flange_serial_write(_fc03(PRESENT_POSITION_REG, PRESENT_POSITION_REGS))
-        wait(0.05)
-        _sz, _val = flange_serial_read(0.3)
+        wait(0.02)
+        _sz, _val = flange_serial_read(0.1)
         if PRESENT_POSITION_REGS == 1:
             if _sz >= 7 and _val[1] == 3 and _val[2] == 2:
                 return ((_val[3] << 8) | _val[4])
@@ -291,8 +291,8 @@ def _read_cur_pos_bulk():
         for _i in range(3):
             _flush()
             flange_serial_write(_fc03(_start, _count))
-            wait(0.05)
-            _sz, _val = flange_serial_read(0.3)
+            wait(0.02)
+            _sz, _val = flange_serial_read(0.1)
             if _sz < (5 + 2*_count) or _val[1] != 3:
                 continue
             _data = _val[3:3+2*_count]
@@ -1609,24 +1609,45 @@ class GripperNode(Node):
             response.final_current = self._current_hz_cur
             return response
 
+        # 1) Modbus 쓰기 + ACK 대기 — 실패 시 즉시 반환
         try:
             cur_pkt = ModbusRTU.fc06(self._slave_id, self._goal_cur_reg, t_cur)
             pos_frames = self._direct_cmd_pos_frames(t_pulse)
-            ok1, err1 = self._send_cmd_and_wait_ack([cur_pkt], timeout_sec=timeout)
-            if not ok1:
-                raise RuntimeError(f"cur ack 실패: {err1}")
-            time.sleep(0.05)
-            ok2, err2 = self._send_cmd_and_wait_ack(pos_frames, timeout_sec=timeout)
-            if not ok2:
-                raise RuntimeError(f"pos ack 실패: {err2}")
-            self._current_hz_pos = t_pulse
-            response.success = True
-            response.message = "완료"
+            ok, err = self._send_cmd_and_wait_ack([cur_pkt] + pos_frames, timeout_sec=timeout)
+            if not ok:
+                self.get_logger().error(f"[gripper] set_position ack 실패: {err}")
+                response.success = False
+                response.message = f"ack 실패: {err}"
+                response.final_position = self._current_hz_pos
+                response.final_current = self._current_hz_cur
+                return response
         except Exception as e:
             self.get_logger().error(f"[gripper] set_position 실패: {e}")
             response.success = False
             response.message = str(e)
+            response.final_position = self._current_hz_pos
+            response.final_current = self._current_hz_cur
+            return response
 
+        # 2) 완료 확인 루프 (chamjo _execute_callback 패턴)
+        #    state stream 활성 + 신선할 때: 위치 도달 또는 파지 전류 감지까지 폴링
+        #    settle timeout 후에도 ACK 성공이므로 success=True 유지
+        if self._tcp_state_stream_enabled and (time.time() - self._last_state_rx_t) < 2.0:
+            settle_deadline = time.time() + 0.5
+            while time.time() < settle_deadline:
+                time.sleep(0.05)
+                if self._grip_enabled and abs(self._current_hz_cur) > self._grip_threshold:
+                    self.get_logger().info(f"[gripper] 파지 감지 cur={self._current_hz_cur}")
+                    break
+                if abs(self._current_hz_pos - t_pulse) < self._done_tol:
+                    self.get_logger().info(f"[gripper] 위치 도달 pos={self._current_hz_pos}")
+                    break
+        else:
+            # state stream 비활성/만료 — 낙관적 업데이트
+            self._current_hz_pos = t_pulse
+
+        response.success = True
+        response.message = "완료"
         response.final_position = self._current_hz_pos
         response.final_current = self._current_hz_cur
         return response

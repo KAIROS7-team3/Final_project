@@ -12,9 +12,9 @@ gripper_node:
     # binary: 헤더 8B+바이너리 페이로드, 레이턴시 낮음 (권장)
     # json:   텍스트 프레임, 디버깅 편함
     tcp_protocol: binary
-    tcp_state_stream_enabled: false
-    tcp_state_hz: 20.0
-    tcp_cmd_frame_wait_sec: 0.02
+    tcp_state_stream_enabled: true
+    tcp_state_hz: 5.0
+    tcp_cmd_frame_wait_sec: 0.005
     tcp_ack_timeout_sec: 3.0
     tcp_watchdog_enabled: true
     tcp_watchdog_stale_sec: 2.5
