@@ -18,7 +18,7 @@ def generate_launch_description() -> LaunchDescription:
     """`plc_node`를 설정 파일과 launch override parameter로 실행한다."""
 
     config_path = Path(get_package_share_directory("plc")) / "config" / "xgb_plc.yaml"
-    db_path = Path(__file__).resolve().parents[4] / "robot_arm.db"
+    db_path = Path.home() / "Final_Project" / "robot_arm.db"
 
     return LaunchDescription(
         [
