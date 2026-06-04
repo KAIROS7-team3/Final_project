@@ -52,8 +52,8 @@ ACC_J: float = 10.0
 
 # ── 그리퍼 pulse 상수 ─────────────────────────────────────────────────────
 
-PULSE_OPEN:       int = 0
-PULSE_GRIP_BOX:   int = 400   # 서랍 손잡이 파지 전류(mA) — gripper_grap_boxhand 기준
+PULSE_OPEN:       int = 450   # gripper_release stroke (TW SubRoutine 실측)
+PULSE_GRIP_BOX:   int = 600   # gripper_grap_boxhand stroke (TW SubRoutine 실측)
 
 
 # ── 웨이포인트 상수 (TaskWriter 실측값, DSR BASE 좌표계, mm/deg) ───────────

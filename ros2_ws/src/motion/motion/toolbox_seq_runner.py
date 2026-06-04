@@ -26,7 +26,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import String
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
-from dsr_msgs2.srv import SetCurrentTcp
+from dsr_msgs2.srv import SetCurrentTcp, ConfigCreateTcp
 
 # unit_actions는 ros2_ws 밖에 있으므로 경로 추가
 sys.path.insert(0, '/home/kimsungyeoun/Final_project')
@@ -57,11 +57,12 @@ class ToolboxSeqRunner(Node):
         self._cb_group = ReentrantCallbackGroup()
 
         p = f'/{ns}'
-        self._movel_cli   = self.create_client(MoveLine,     f'{p}/motion/move_line',   callback_group=self._cb_group)
-        self._movej_cli   = self.create_client(MoveJoint,    f'{p}/motion/move_joint',  callback_group=self._cb_group)
-        self._stop_cli    = self.create_client(MoveStop,     f'{p}/motion/move_stop',   callback_group=self._cb_group)
-        self._set_tcp_cli = self.create_client(SetCurrentTcp, f'{p}/tcp/set_current_tcp', callback_group=self._cb_group)
-        self._gripper_pub = self.create_publisher(String, '/gripper/cmd_direct', 10)
+        self._movel_cli      = self.create_client(MoveLine,        f'{p}/motion/move_line',       callback_group=self._cb_group)
+        self._movej_cli      = self.create_client(MoveJoint,       f'{p}/motion/move_joint',      callback_group=self._cb_group)
+        self._stop_cli       = self.create_client(MoveStop,        f'{p}/motion/move_stop',       callback_group=self._cb_group)
+        self._set_tcp_cli    = self.create_client(SetCurrentTcp,   f'{p}/tcp/set_current_tcp',    callback_group=self._cb_group)
+        self._create_tcp_cli = self.create_client(ConfigCreateTcp, f'{p}/tcp/config_create_tcp',  callback_group=self._cb_group)
+        self._gripper_pub    = self.create_publisher(String, '/gripper/cmd_direct', 10)
 
         self.get_logger().info(f'[runner] 서비스 대기 중...')
         for cli, name in [
@@ -90,9 +91,7 @@ class ToolboxSeqRunner(Node):
             self.get_logger().error('[runner] 사용 가능: open_0 close_0 open_1 close_1')
             return
 
-        if not self._set_tcp(self._tcp_name):
-            self.get_logger().error(f'[runner] TCP 설정 실패: {self._tcp_name} — 시퀀스 중단')
-            return
+        self._set_tcp(self._tcp_name)
 
         self.get_logger().info(f'[runner] 시퀀스 시작: {self._seq_name} ({len(seq)} steps)')
         ok = self._run_sequence(seq)
@@ -100,6 +99,8 @@ class ToolboxSeqRunner(Node):
             self.get_logger().info(f'[runner] 시퀀스 완료: {self._seq_name}')
         else:
             self.get_logger().error(f'[runner] 시퀀스 실패: {self._seq_name}')
+        import threading
+        threading.Thread(target=rclpy.shutdown, daemon=True).start()
 
     def _resolve_sequence(self, name: str):
         mapping = {
@@ -136,17 +137,33 @@ class ToolboxSeqRunner(Node):
         return False
 
     def _set_tcp(self, name: str) -> bool:
-        req = SetCurrentTcp.Request()
-        req.name = name
-        fut = self._set_tcp_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
-        res = fut.result()
-        ok = bool(res and res.success)
-        if ok:
-            self.get_logger().info(f'[runner] TCP 설정 완료: {name}')
-        else:
-            self.get_logger().error(f'[runner] TCP 설정 실패: {name}')
-        return ok
+        # chamjo 패턴: fire-and-forget (응답 대기 없이 발송 후 짧은 sleep)
+        # Doosan 컨트롤러는 TCP 명령을 처리하면서도 success=False를 반환하는 경우가 있음
+        try:
+            # 1단계: 좌표로 TCP 등록 (이미 있으면 덮어쓰기)
+            if self._create_tcp_cli.service_is_ready():
+                create_req = ConfigCreateTcp.Request()
+                create_req.name = name
+                create_req.pos  = [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]
+                self._create_tcp_cli.call_async(create_req)
+                self.get_logger().info(f'[runner] TCP 등록 요청: {name} pos=[0,0,160,0,0,0]')
+            else:
+                self.get_logger().warn('[runner] config_create_tcp 서비스 미준비 — 건너뜀')
+
+            # 2단계: 등록된 TCP를 활성화
+            if self._set_tcp_cli.service_is_ready():
+                set_req = SetCurrentTcp.Request()
+                set_req.name = name
+                self._set_tcp_cli.call_async(set_req)
+                self.get_logger().info(f'[runner] TCP 활성화 요청: {name}')
+            else:
+                self.get_logger().warn('[runner] set_current_tcp 서비스 미준비 — 건너뜀')
+
+            time.sleep(0.3)  # 컨트롤러가 TCP 설정 처리할 시간
+        except Exception as e:
+            self.get_logger().warn(f'[runner] TCP 설정 예외 (무시): {e}')
+
+        return True  # 항상 시퀀스 진행 (chamjo 동일 패턴)
 
     def _movel(self, step, mode: int) -> bool:
         req = MoveLine.Request()
@@ -188,10 +205,14 @@ class ToolboxSeqRunner(Node):
         return ok
 
     def _grip(self, step) -> bool:
-        pulse = step.pulse or 0
+        pulse = step.pulse if step.pulse is not None else 0
         if pulse == 0:
             cmd = 'open'
+        elif pulse <= 450:
+            # release 계열 (TW: gripper_release = stroke 450) — current 0으로 config 기본값 사용
+            cmd = f'custom {pulse} 0'
         else:
+            # grip 계열 (TW: gripper_grap_boxhand = stroke 600) — current 400mA
             cmd = f'custom {pulse} 400'
         msg = String()
         msg.data = cmd
@@ -213,7 +234,10 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except RuntimeError:
+            pass
 
 
 if __name__ == '__main__':
