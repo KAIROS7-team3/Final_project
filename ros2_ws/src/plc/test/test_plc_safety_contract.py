@@ -292,4 +292,3 @@ def test_read_timer_does_not_reconnect_when_disconnected() -> None:
     node.read_timer_callback()
 
     assert ("connect", {}) not in node._plc.calls
-
