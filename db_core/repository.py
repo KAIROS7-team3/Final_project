@@ -18,6 +18,20 @@ VALID_STATUSES = frozenset({"in_slot", "out", "staged", "missing", "fod_alert"})
 VALID_EVENT_TYPES = frozenset(
     {"fetch", "return", "rejected", "error", "fod_alert", "reconciled"}
 )
+VALID_SYSTEM_EVENT_TYPES = frozenset(
+    {
+        "boot",
+        "boot_complete",
+        "reconciliation_mismatch",
+        "estop",
+        "estop_reset",
+        "db_cache_fallback",
+        "db_cache_expired",
+        "calibration",
+        "fod_alert",
+        "plc_error",
+    }
+)
 VALID_TRACKS = frozenset({"A", "B", "C"})
 DEFAULT_OPERATOR_ID = "operator_01"
 DB_CACHE_TTL_SECONDS = 300.0

@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 
 from db_core.client import DBCacheExpiredError, DBClient, DBError
+from db_core.repository import VALID_SYSTEM_EVENT_TYPES
 
 
 @pytest.fixture
@@ -89,7 +90,7 @@ def test_plc_error_migration_accepts_new_system_event(tmp_path):
     migration = (
         Path(__file__).resolve().parents[1]
         / "migrations"
-        / "0001_add_plc_error_system_event.sql"
+        / "002_add_plc_error_system_event.sql"
     )
     with sqlite3.connect(db_path) as conn:
         conn.executescript(
@@ -97,7 +98,7 @@ def test_plc_error_migration_accepts_new_system_event(tmp_path):
             CREATE TABLE system_events (
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT NOT NULL
-                    CHECK(event_type IN ('boot','calibration')),
+                    CHECK(event_type IN ('boot','calibration','fod_alert')),
                 track TEXT CHECK(track IN ('A','B','C')),
                 severity TEXT NOT NULL
                     CHECK(severity IN ('info','warning','error','critical')),
@@ -107,6 +108,8 @@ def test_plc_error_migration_accepts_new_system_event(tmp_path):
             );
             INSERT INTO system_events (event_type, severity, notes)
             VALUES ('boot', 'info', 'old row');
+            INSERT INTO system_events (event_type, severity, notes)
+            VALUES ('fod_alert', 'warning', 'old alert row');
             """
         )
         conn.executescript(migration.read_text())
@@ -118,4 +121,12 @@ def test_plc_error_migration_accepts_new_system_event(tmp_path):
             "SELECT event_type, severity FROM system_events ORDER BY event_id"
         ).fetchall()
 
-    assert rows == [("boot", "info"), ("plc_error", "error")]
+    assert rows == [
+        ("boot", "info"),
+        ("fod_alert", "warning"),
+        ("plc_error", "error"),
+    ]
+
+
+def test_valid_system_event_types_include_plc_error_and_fod_alert():
+    assert {"fod_alert", "plc_error"} <= VALID_SYSTEM_EVENT_TYPES

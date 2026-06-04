@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS system_events (
         CHECK(event_type IN (
             'boot','boot_complete','reconciliation_mismatch',
             'estop','estop_reset','db_cache_fallback','db_cache_expired',
-            'calibration','plc_error'
+            'calibration','fod_alert','plc_error'
         )),
     track      TEXT CHECK(track IN ('A','B','C')),
     severity   TEXT NOT NULL CHECK(severity IN ('info','warning','error','critical')),
