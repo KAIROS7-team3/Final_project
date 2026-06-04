@@ -34,6 +34,8 @@ from unit_actions.toolbox_motion import (
     StepKind,
     drawer_open_seq,
     drawer_close_seq,
+    socket_drop_seq,
+    socket_catch_seq,
 )
 
 DR_BASE       = 0
@@ -89,7 +91,7 @@ class ToolboxSeqRunner(Node):
         seq = self._resolve_sequence(self._seq_name)
         if seq is None:
             self.get_logger().error(f'[runner] 알 수 없는 sequence: {self._seq_name}')
-            self.get_logger().error('[runner] 사용 가능: open_0 close_0 open_1 close_1')
+            self.get_logger().error('[runner] 사용 가능: open_0 close_0 open_1 close_1 socket_drop socket_catch')
             return
 
         self._set_tcp(self._tcp_name)
@@ -105,10 +107,12 @@ class ToolboxSeqRunner(Node):
 
     def _resolve_sequence(self, name: str):
         mapping = {
-            'open_0':  lambda: drawer_open_seq(0),
-            'close_0': lambda: drawer_close_seq(0),
-            'open_1':  lambda: drawer_open_seq(1),
-            'close_1': lambda: drawer_close_seq(1),
+            'open_0':       lambda: drawer_open_seq(0),
+            'close_0':      lambda: drawer_close_seq(0),
+            'open_1':       lambda: drawer_open_seq(1),
+            'close_1':      lambda: drawer_close_seq(1),
+            'socket_drop':  lambda: socket_drop_seq(),
+            'socket_catch': lambda: socket_catch_seq(),
         }
         fn = mapping.get(name)
         return fn() if fn else None
@@ -178,7 +182,7 @@ class ToolboxSeqRunner(Node):
         req.blend_type = 0
         req.sync_type  = 0
         fut = self._movel_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, fut, timeout_sec=15.0)
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=30.0)
         res = fut.result()
         time.sleep(0.2)
         ok = bool(res and res.success)
@@ -222,7 +226,7 @@ class ToolboxSeqRunner(Node):
             self.get_logger().error(f'  gripper set_position 실패: {msg}')
             return False
         self.get_logger().info(f'  gripper ok — pos={res.final_position} cur={res.final_current}')
-        time.sleep(0.3)  # 기계적 안착 대기
+        time.sleep(0.1)  # gripper_node가 완료 확인 후 반환하므로 안착 여유만
         return True
 
 

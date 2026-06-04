@@ -42,18 +42,19 @@ class Step:
 # rotationalVelocity=76.5 deg/s,   rotationalAcceleration=306.0 deg/s²
 # jointVelocity=60.0 deg/s,        jointAcceleration=100.0 deg/s²
 
-VEL_L: float = 25.0
-ACC_L: float = 100.0
-VEL_R: float = 7.65
-ACC_R: float = 30.6
-VEL_J: float = 6.0
-ACC_J: float = 10.0
+VEL_L: float = 50.0
+ACC_L: float = 200.0
+VEL_R: float = 15.3
+ACC_R: float = 61.2
+VEL_J: float = 12.0
+ACC_J: float = 20.0
 
 
 # ── 그리퍼 pulse 상수 ─────────────────────────────────────────────────────
 
-PULSE_OPEN:       int = 450   # gripper_release stroke (TW SubRoutine 실측)
-PULSE_GRIP_BOX:   int = 600   # gripper_grap_boxhand stroke (TW SubRoutine 실측)
+PULSE_OPEN:         int = 450   # gripper_release stroke (TW SubRoutine 실측)
+PULSE_GRIP_BOX:     int = 600   # gripper_grap_boxhand stroke (TW SubRoutine 실측)
+PULSE_GRIP_SOCKET:  int = 650   # socket 파지 stroke (TW SubRoutine 실측)
 
 
 # ── 웨이포인트 상수 (TaskWriter 실측값, DSR BASE 좌표계, mm/deg) ───────────
@@ -116,6 +117,14 @@ LAYER1_CLOSE_END:      list = [380.61, 291.56, 115.7,  89.99, 89.99, 90.0]
 LAYER_HEIGHT_Z_MM: float = 115.68 - 65.45   # ≈ 50.23 mm
 
 
+# ── socket 공구 위치 (toolboxapproach_box2_socket_*.tw 실측값, DSR BASE 좌표계, mm/deg) ──
+SOCKET_APPROACH_XY:  list = [269.98, 362.81, 234.0,   53.23,  180.0,  -38.07]
+SOCKET_APPROACH_Z:   list = [269.98, 362.8,  122.8,   48.74, -180.0,  -42.55]
+SOCKET_BOTTOM_XY:    list = [428.0, -172.72, 235.73, 160.43,  180.0,   73.74]
+SOCKET_BOTTOM:       list = [428.0, -172.72,  -0.12, 158.87,  180.0,   72.17]
+SOCKET_CATCH_HOME_L: list = [373.0,    0.0,  245.0,    3.13, -180.0,    3.13]
+
+
 # ── 웨이포인트 테이블 ─────────────────────────────────────────────────────
 
 _LAYER_WP = {
@@ -161,6 +170,7 @@ def wait_step(sec: float) -> Step:
 
 GRIP_OPEN    = lambda: grip(PULSE_OPEN)
 GRIP_BOX     = lambda: grip(PULSE_GRIP_BOX)
+GRIP_SOCKET  = lambda: grip(PULSE_GRIP_SOCKET)
 JOINT_HOME   = lambda: mj_abs(JOINT_HOME_DEG)
 
 
@@ -227,6 +237,48 @@ def fetch_from_drawer_seq(layer: int) -> list[Step]:
     drawer_open_seq()의 alias. 가독성용.
     """
     return drawer_open_seq(layer)
+
+
+def socket_drop_seq() -> list[Step]:
+    """소켓 공구함(bottom) → staging area 전달 시퀀스 (TW: box2_socket_drop_ver2).
+
+    호출 전 팔이 홈 자세에 있어야 함.
+    종료 후 팔은 JOINT_HOME 자세.
+    """
+    return [
+        JOINT_HOME(),
+        GRIP_OPEN(),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_BOTTOM),
+        GRIP_SOCKET(),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_APPROACH_Z),
+        GRIP_OPEN(),
+        ml_abs(SOCKET_APPROACH_XY),
+        JOINT_HOME(),
+    ]
+
+
+def socket_catch_seq() -> list[Step]:
+    """staging area → 소켓 공구함(bottom) 반납 시퀀스 (TW: box2_socket_catch_ver2).
+
+    호출 전 팔이 홈 자세에 있어야 함.
+    종료 후 팔은 SOCKET_CATCH_HOME_L 위치(MoveL 복귀).
+    """
+    return [
+        JOINT_HOME(),
+        GRIP_OPEN(),
+        ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_APPROACH_Z),
+        GRIP_SOCKET(),
+        ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_BOTTOM),
+        GRIP_OPEN(),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_CATCH_HOME_L),
+    ]
 
 
 def return_to_drawer_seq(layer: int) -> list[Step]:
