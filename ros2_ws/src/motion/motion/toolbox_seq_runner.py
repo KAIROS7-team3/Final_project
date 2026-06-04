@@ -76,12 +76,19 @@ class ToolboxSeqRunner(Node):
         self._gripper_pub    = self.create_publisher(String, '/gripper/cmd_direct', 10)
 
         # 그리퍼 action client — 동기 파지 완료 확인용
+        # wait_for_server는 init 때 한 번만 → spin 중에 재확인하면 서버를 잃어버림
         self._gripper_action_client = None
+        self._gripper_action_ready = False
         if _GRIPPER_ACTION_AVAILABLE:
             self._gripper_action_client = ActionClient(
                 self, GripperCommand, '/gripper/grasp', callback_group=self._cb_group
             )
-            self.get_logger().info('[runner] 그리퍼 action client 생성: /gripper/grasp')
+            self.get_logger().info('[runner] 그리퍼 action 서버 대기 중...')
+            if self._gripper_action_client.wait_for_server(timeout_sec=5.0):
+                self._gripper_action_ready = True
+                self.get_logger().info('[runner] 그리퍼 action 서버 연결됨: /gripper/grasp')
+            else:
+                self.get_logger().warn('[runner] 그리퍼 action 서버 없음 — topic fallback 사용')
 
         self.get_logger().info(f'[runner] 서비스 대기 중...')
         for cli, name in [
@@ -237,7 +244,7 @@ class ToolboxSeqRunner(Node):
             grasp_force = 400.0
 
         # action 서버가 살아있으면 동기 파지 완료 대기
-        if self._gripper_action_client is not None:
+        if self._gripper_action_ready:
             return self._grip_via_action(cmd, grasp_force)
 
         # fallback: topic publish + sleep
@@ -251,13 +258,6 @@ class ToolboxSeqRunner(Node):
 
     def _grip_via_action(self, cmd: str, grasp_force: float) -> bool:
         """action goal 전송 후 result 수신까지 블로킹."""
-        if not self._gripper_action_client.wait_for_server(timeout_sec=3.0):
-            self.get_logger().warn('  [grip] action 서버 응답 없음 — topic fallback')
-            msg = String()
-            msg.data = cmd
-            self._gripper_pub.publish(msg)
-            time.sleep(1.0)
-            return True
 
         goal = GripperCommand.Goal()
         goal.tool_id           = 'drawer_handle'
