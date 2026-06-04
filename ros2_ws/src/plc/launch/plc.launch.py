@@ -18,7 +18,6 @@ def generate_launch_description() -> LaunchDescription:
     """`plc_node`를 설정 파일과 launch override parameter로 실행한다."""
 
     config_path = Path(get_package_share_directory("plc")) / "config" / "xgb_plc.yaml"
-    db_path = Path.home() / "Final_Project" / "robot_arm.db"
 
     return LaunchDescription(
         [
@@ -36,7 +35,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_estop_poll", default_value="false"),
             DeclareLaunchArgument("estop_input_address", default_value="-1"),
             DeclareLaunchArgument("estop_poll_period_s", default_value="0.1"),
-            DeclareLaunchArgument("db_path", default_value=str(db_path)),
+            DeclareLaunchArgument("db_path", default_value="robot_arm.db"),
             Node(
                 package="plc",
                 executable="plc_node",
