@@ -231,7 +231,12 @@ class ToolRepository:
         now = now_dt.isoformat()
         try:
             with self._connect() as conn:
-                conn.execute("BEGIN")
+                # BEGIN IMMEDIATE: 쓰기 잠금을 트랜잭션 시작 시점에 잡는다. deferred
+                # BEGIN이면 SELECT가 읽기 스냅샷만 잡은 사이 다른 writer가 커밋해
+                # 이후 INSERT 업그레이드가 SQLITE_BUSY_SNAPSHOT("database is locked")로
+                # 실패한다(busy_timeout으로 해소 안 됨). 동시 writer(fod_monitor·
+                # db_service·Track C)를 busy_timeout 대기로 직렬화한다 (B2-1).
+                conn.execute("BEGIN IMMEDIATE")
                 row = conn.execute(
                     "SELECT current_status FROM tools WHERE tool_id = ?",
                     (tool_id,),
@@ -281,7 +286,7 @@ class ToolRepository:
         now = now_dt.isoformat()
         updates: list[FodUpdate] = []
         with self._connect() as conn:
-            conn.execute("BEGIN")
+            conn.execute("BEGIN IMMEDIATE")
             for row in conn.execute(
                 """
                 SELECT tool_id, current_status, last_updated
@@ -392,19 +397,8 @@ class ToolRepository:
                 if row is None:
                     return UpdateResult(False, f"unknown tool_id: {tool_id}")
                 current_status = str(row["current_status"])
-                conn.execute("BEGIN")
-                event_id = self._insert_tool_event(
-                    conn=conn,
-                    tool_id=tool_id,
-                    event_type="rejected",
-                    track=track,
-                    status_before=current_status,
-                    status_after=current_status,
-                    notes=reason,
-                    timestamp=now,
-                )
-                if event_id is not None:
-                    self._update_last_event(conn, tool_id, event_id)
+                conn.execute("BEGIN IMMEDIATE")
+                self._append_rejection(conn, tool_id, current_status, reason, track, now)
                 conn.commit()
         except sqlite3.Error as exc:
             return UpdateResult(False, f"failed to log rejection: {exc}")
@@ -438,7 +432,7 @@ class ToolRepository:
         now = datetime.now(timezone.utc).isoformat()
         try:
             with self._connect() as conn:
-                conn.execute("BEGIN")
+                conn.execute("BEGIN IMMEDIATE")
                 self._insert_system_event(
                     conn=conn,
                     event_type=event_type,
@@ -501,23 +495,43 @@ class ToolRepository:
         now = datetime.now(timezone.utc).isoformat()
         try:
             with self._connect() as conn:
-                conn.execute("BEGIN")
-                event_id = self._insert_tool_event(
-                    conn=conn,
-                    tool_id=tool_id,
-                    event_type="rejected",
-                    track=None,
-                    status_before=current_status,
-                    status_after=current_status,
-                    notes=reason,
-                    timestamp=now,
-                )
-                if event_id is not None:
-                    self._update_last_event(conn, tool_id, event_id)
+                conn.execute("BEGIN IMMEDIATE")
+                self._append_rejection(conn, tool_id, current_status, reason, None, now)
                 conn.commit()
         except sqlite3.Error as exc:
             return f"failed to log rejected event: {exc}"
         return ""
+
+    def _append_rejection(
+        self,
+        conn: sqlite3.Connection,
+        tool_id: str,
+        current_status: str,
+        reason: str,
+        track: str | None,
+        timestamp: str,
+    ) -> None:
+        """Append one rejected event (status unchanged) and bump last_event_id.
+
+        거부 한 줄을 tool_events에 남기는 단일 로직 — DB Gate(S-2) 내부 경로
+        (_record_rejection)와 외부 공개 경로(log_rejection, S-7)가 공유한다(B2-1).
+        호출자가 connect()/BEGIN/commit 트랜잭션 경계를 소유한다. status_after는
+        NOT NULL이라 current_status를 status_before/after에 그대로 넣어 상태를
+        바꾸지 않는다.
+        """
+
+        event_id = self._insert_tool_event(
+            conn=conn,
+            tool_id=tool_id,
+            event_type="rejected",
+            track=track,
+            status_before=current_status,
+            status_after=current_status,
+            notes=reason,
+            timestamp=timestamp,
+        )
+        if event_id is not None:
+            self._update_last_event(conn, tool_id, event_id)
 
     @staticmethod
     def _validate_update(
