@@ -32,6 +32,7 @@ from interfaces.srv import GripperSetPosition
 sys.path.insert(0, '/home/kimsungyeoun/Final_project')
 from unit_actions.toolbox_motion import (
     StepKind,
+    home_seq,
     drawer_open_seq,
     drawer_close_seq,
     socket_fetch_seq,
@@ -91,7 +92,7 @@ class ToolboxSeqRunner(Node):
         seq = self._resolve_sequence(self._seq_name)
         if seq is None:
             self.get_logger().error(f'[runner] 알 수 없는 sequence: {self._seq_name}')
-            self.get_logger().error('[runner] 사용 가능: open_0 close_0 open_1 close_1 socket_fetch socket_return')
+            self.get_logger().error('[runner] 사용 가능: home open_0 close_0 open_1 close_1 socket_fetch socket_return')
             return
 
         self._set_tcp(self._tcp_name)
@@ -107,10 +108,11 @@ class ToolboxSeqRunner(Node):
 
     def _resolve_sequence(self, name: str):
         mapping = {
-            'open_0':       lambda: drawer_open_seq(0),
-            'close_0':      lambda: drawer_close_seq(0),
-            'open_1':       lambda: drawer_open_seq(1),
-            'close_1':      lambda: drawer_close_seq(1),
+            'home':          lambda: home_seq(),
+            'open_0':        lambda: drawer_open_seq(0),
+            'close_0':       lambda: drawer_close_seq(0),
+            'open_1':        lambda: drawer_open_seq(1),
+            'close_1':       lambda: drawer_close_seq(1),
             'socket_fetch':  lambda: socket_fetch_seq(),
             'socket_return': lambda: socket_return_seq(),
         }

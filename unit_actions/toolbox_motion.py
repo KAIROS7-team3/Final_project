@@ -176,6 +176,11 @@ JOINT_HOME   = lambda: mj_abs(JOINT_HOME_DEG)
 
 # ── 시퀀스 함수 ───────────────────────────────────────────────────────────
 
+def home_seq() -> list[Step]:
+    """홈 자세 복귀 시퀀스."""
+    return [GRIP_OPEN(), JOINT_HOME()]
+
+
 def _wp(layer: int, key: str) -> list:
     if layer not in _LAYER_WP:
         raise ValueError(f"layer는 0 또는 1만 지원: {layer}")
