@@ -11,6 +11,8 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+import sqlite3
+from pathlib import Path
 
 import rclpy
 from interfaces.msg import PLCStatus as PLCStatusMsg
@@ -37,8 +39,10 @@ class PlcNodeConfig:
     connect_retry_backoff_s: float
     enable_watchdog: bool
     watchdog_period_s: float
+    watchdog_timeout_s: float
     enable_estop_poll: bool
     estop_poll_period_s: float
+    db_path: str
 
 
 class XgbRos2ModbusNode(Node):
@@ -50,6 +54,10 @@ class XgbRos2ModbusNode(Node):
         self._plc = ModbusPLCClient(self._config.modbus)
         # E-stop은 자동 복구하지 않는다. true가 되면 운영자가 노드를 재시작해야 한다.
         self._estop_latched = threading.Event()
+        # watchdog timeout은 별도 latch로 유지한다. heartbeat가 복구돼도 자동 해제하지 않는다.
+        self._watchdog_latched = threading.Event()
+        self._watchdog_last_value: bool | None = None
+        self._watchdog_same_sample_count = 0
         self._pulse_timers: list[object] = []
 
         status_qos = QoSProfile(
@@ -123,9 +131,8 @@ class XgbRos2ModbusNode(Node):
             self.reconnect_timer_callback,
         )
         self.create_timer(self._config.read_period_s, self.read_timer_callback)
-        # M0005는 상태 출력용 watchdog 입력이다. heartbeat/E-stop hook은 별도
-        # device가 확정되기 전까지 기본값 false다.
-        # 전용 래더와 주소가 확정된 뒤 launch parameter로 켠다.
+        # M0050은 PLC 래더가 생성하는 전용 watchdog heartbeat coil이다.
+        # enable_watchdog=true일 때는 이 코일을 읽어 heartbeat 변동을 감시한다.
         if self._config.enable_watchdog:
             self.create_timer(
                 self._config.watchdog_period_s,
@@ -161,10 +168,9 @@ class XgbRos2ModbusNode(Node):
         self.declare_parameter("read_register_address", 0)
         self.declare_parameter("write_register_label", "P000")
         self.declare_parameter("write_register_address", 0)
-        # 현재 래더 이미지에는 heartbeat watchdog/E-stop device가 없다.
-        # 빈 label + -1 address는 safety hook 비활성 상태를 뜻한다.
-        self.declare_parameter("watchdog_coil_label", "")
-        self.declare_parameter("watchdog_coil_address", -1)
+        # watchdog heartbeat는 PLC 래더가 생성하는 전용 M coil을 읽는다.
+        self.declare_parameter("watchdog_coil_label", "M0050")
+        self.declare_parameter("watchdog_coil_address", 80)
         self.declare_parameter("estop_input_label", "")
         self.declare_parameter("estop_input_address", -1)
         self.declare_parameter(
@@ -187,10 +193,12 @@ class XgbRos2ModbusNode(Node):
         self.declare_parameter("connect_retry_count", 3)
         self.declare_parameter("connect_retry_backoff_s", 0.5)
         self.declare_parameter("pulse_duration_s", 0.2)
-        self.declare_parameter("enable_watchdog", False)
-        self.declare_parameter("watchdog_period_s", 0.25)
+        self.declare_parameter("enable_watchdog", True)
+        self.declare_parameter("watchdog_period_s", 0.1)
+        self.declare_parameter("watchdog_timeout_s", 0.5)
         self.declare_parameter("enable_estop_poll", False)
         self.declare_parameter("estop_poll_period_s", 0.1)
+        self.declare_parameter("db_path", "robot_arm.db")
 
         start_coil_labels = tuple(
             str(label) for label in self.get_parameter("start_coil_labels").value
@@ -225,7 +233,9 @@ class XgbRos2ModbusNode(Node):
 
         enable_watchdog = bool(self.get_parameter("enable_watchdog").value)
         watchdog_period_s = float(self.get_parameter("watchdog_period_s").value)
+        watchdog_timeout_s = float(self.get_parameter("watchdog_timeout_s").value)
         enable_estop_poll = bool(self.get_parameter("enable_estop_poll").value)
+        db_path = str(self.get_parameter("db_path").value)
 
         modbus_config = ModbusPLCConfig(
             port=str(self.get_parameter("port").value),
@@ -265,8 +275,14 @@ class XgbRos2ModbusNode(Node):
         if enable_watchdog:
             if modbus_config.watchdog_coil_address is None:
                 raise ValueError("enable_watchdog requires watchdog_coil_address")
-            if watchdog_period_s > 0.25:
-                raise ValueError("watchdog_period_s must be <= 0.25 when enabled")
+            if watchdog_period_s > 0.1:
+                raise ValueError("watchdog_period_s must be <= 0.1 when enabled")
+            if watchdog_timeout_s > 0.5:
+                raise ValueError("watchdog_timeout_s must be <= 0.5 when enabled")
+            if watchdog_timeout_s <= watchdog_period_s:
+                raise ValueError(
+                    "watchdog_timeout_s must be greater than watchdog_period_s"
+                )
         if enable_estop_poll and modbus_config.estop_input_address is None:
             raise ValueError("enable_estop_poll requires estop_input_address")
 
@@ -279,8 +295,10 @@ class XgbRos2ModbusNode(Node):
             ),
             enable_watchdog=enable_watchdog,
             watchdog_period_s=watchdog_period_s,
+            watchdog_timeout_s=watchdog_timeout_s,
             enable_estop_poll=enable_estop_poll,
             estop_poll_period_s=float(self.get_parameter("estop_poll_period_s").value),
+            db_path=db_path,
         )
 
     def _connect_with_retry(self) -> bool:
@@ -306,6 +324,7 @@ class XgbRos2ModbusNode(Node):
                     return True
             except PLCError as exc:
                 self.get_logger().error(f"PLC connect attempt {attempt} failed: {exc}")
+                self._record_plc_error(f"connect failed: {exc}")
 
             if attempt < self._config.connect_retry_count:
                 time.sleep(self._config.connect_retry_backoff_s * attempt)
@@ -314,6 +333,7 @@ class XgbRos2ModbusNode(Node):
             f"PLC connect failed on {self._config.modbus.port}; "
             "check wiring and serial port"
         )
+        self._record_plc_error(f"connect failed on {self._config.modbus.port}")
         self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
         return False
 
@@ -332,7 +352,11 @@ class XgbRos2ModbusNode(Node):
     def reconnect_timer_callback(self) -> None:
         """연결이 끊긴 경우 단일 connect 시도만 수행한다."""
 
-        if self._plc.connected or self._estop_latched.is_set():
+        if (
+            self._plc.connected
+            or self._estop_latched.is_set()
+            or self._watchdog_latched.is_set()
+        ):
             return
         try:
             if self._plc.connect():
@@ -343,16 +367,65 @@ class XgbRos2ModbusNode(Node):
                 )
         except PLCError as exc:
             self.get_logger().warning(f"PLC reconnect failed: {exc}")
+            self._record_plc_error(f"reconnect failed: {exc}")
+
+    def _record_plc_error(self, notes: str) -> None:
+        """PLC actuator/read failure를 DB system_events에 남긴다."""
+
+        db_path = Path(self._config.db_path)
+        if not db_path.exists():
+            self.get_logger().warning(
+                f"PLC DB event skipped because db_path does not exist: {db_path}"
+            )
+            return
+
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "INSERT INTO system_events (event_type, track, severity, notes) "
+                    "VALUES (?, ?, ?, ?)",
+                    ("plc_error", None, "error", notes),
+                )
+                conn.commit()
+        except sqlite3.Error as exc:
+            self.get_logger().error(f"PLC DB event logging failed: {exc}")
 
     def _outputs_allowed(self) -> bool:
-        """E-stop latch 중에는 PLC 출력 변경 요청을 거부한다."""
+        """E-stop 또는 watchdog latch 중에는 PLC 출력 변경 요청을 거부한다."""
 
         if not self._estop_latched.is_set():
-            return True
+            if not self._watchdog_latched.is_set():
+                return True
+            self.get_logger().error(
+                "PLC output command rejected because watchdog is latched"
+            )
+            self._set_and_publish_system_state(
+                SystemState.WATCHDOG,
+                apply_outputs=False,
+            )
+            return False
         self.get_logger().error("PLC output command rejected because E-stop is latched")
         self._publish_estop(True)
         self._set_and_publish_system_state(SystemState.E_STOP, apply_outputs=False)
         return False
+
+    def _fault_state(self) -> SystemState:
+        """현재 활성 latch 기준으로 publish할 fault state를 반환한다."""
+
+        if self._estop_latched.is_set():
+            return SystemState.E_STOP
+        if self._watchdog_latched.is_set():
+            return SystemState.WATCHDOG
+        return SystemState.ERROR
+
+    def _publish_fault_state(self) -> None:
+        """E-stop > watchdog > error 순서로 fault state를 publish한다."""
+
+        status = self._plc.set_system_state(
+            self._fault_state(),
+            apply_outputs=False,
+        )
+        self._publish_status(status)
 
     def _publish_estop(self, asserted: bool) -> None:
         """Publish PLC E-stop latch state."""
@@ -384,7 +457,10 @@ class XgbRos2ModbusNode(Node):
                 state,
                 reset_before_apply=reset_before_apply,
             ):
-                status = self._plc.set_error(apply_outputs=False)
+                status = self._plc.set_system_state(
+                    self._fault_state(),
+                    apply_outputs=False,
+                )
                 self._publish_status(status)
                 return
             status = self._plc.set_system_state(
@@ -393,7 +469,11 @@ class XgbRos2ModbusNode(Node):
             )
         except PLCError as exc:
             self.get_logger().error(f"PLC semantic state apply failed: {exc}")
-            status = self._plc.set_error(apply_outputs=False)
+            self._record_plc_error(f"semantic state apply failed: {exc}")
+            status = self._plc.set_system_state(
+                self._fault_state(),
+                apply_outputs=False,
+            )
         self._publish_status(status)
 
     def _apply_system_state_outputs(
@@ -499,7 +579,8 @@ class XgbRos2ModbusNode(Node):
             self._plc.write_coil(address, value)
         except PLCError as exc:
             self.get_logger().error(f"{label} control failed: {exc}")
-            self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
+            self._record_plc_error(f"{label} control failed: {exc}")
+            self._publish_fault_state()
             return False
 
         status = "ON" if value else "OFF"
@@ -518,7 +599,8 @@ class XgbRos2ModbusNode(Node):
             )
         except PLCError as exc:
             self.get_logger().error(f"PLC word read failed: {exc}")
-            self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
+            self._record_plc_error(f"word read failed: {exc}")
+            self._publish_fault_state()
             return
 
         msg = Int32()
@@ -530,17 +612,48 @@ class XgbRos2ModbusNode(Node):
         self._publish_status(self._plc.get_status())
 
     def watchdog_timer_callback(self) -> None:
-        """PLC watchdog heartbeat coil을 주기적으로 갱신한다."""
+        """PLC watchdog heartbeat coil이 0.2s 리듬으로 변하는지 감시한다."""
 
+        if self._estop_latched.is_set():
+            self._publish_fault_state()
+            return
+        if self._watchdog_latched.is_set():
+            return
         if not self._ensure_connected():
+            self._watchdog_latched.set()
+            self._publish_fault_state()
             return
 
         try:
-            # heartbeat는 같은 값 반복 write가 아니라 toggle로 보낸다.
-            self._plc.heartbeat()
+            current_value = self._plc.read_watchdog()
         except PLCError as exc:
-            self.get_logger().error(f"PLC watchdog heartbeat failed: {exc}")
-            self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
+            self.get_logger().error(f"PLC watchdog heartbeat read failed: {exc}")
+            self._record_plc_error(f"watchdog heartbeat failed: {exc}")
+            self._watchdog_latched.set()
+            self._publish_fault_state()
+            return
+
+        if self._watchdog_last_value is None:
+            self._watchdog_last_value = current_value
+            self._watchdog_same_sample_count = 0
+            return
+
+        if current_value != self._watchdog_last_value:
+            self._watchdog_last_value = current_value
+            self._watchdog_same_sample_count = 0
+            return
+
+        self._watchdog_same_sample_count += 1
+        if (
+            self._watchdog_same_sample_count * self._config.watchdog_period_s
+            >= self._config.watchdog_timeout_s
+        ):
+            self.get_logger().error(
+                "PLC watchdog heartbeat stalled for "
+                f"{self._watchdog_same_sample_count * self._config.watchdog_period_s:.2f}s"
+            )
+            self._watchdog_latched.set()
+            self._publish_fault_state()
 
     def estop_poll_timer_callback(self) -> None:
         """PLC E-stop input을 polling하고 감지 시 latch 상태로 전환한다."""
@@ -556,7 +669,8 @@ class XgbRos2ModbusNode(Node):
             estop_pressed = self._plc.read_estop()
         except PLCError as exc:
             self.get_logger().error(f"PLC E-stop input read failed: {exc}")
-            self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
+            self._record_plc_error(f"E-stop input read failed: {exc}")
+            self._publish_fault_state()
             return
 
         if estop_pressed:
@@ -582,7 +696,8 @@ class XgbRos2ModbusNode(Node):
             self._plc.write_coil(address, value)
         except PLCError as exc:
             self.get_logger().error(f"{label} control failed: {exc}")
-            self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
+            self._record_plc_error(f"{label} control failed: {exc}")
+            self._publish_fault_state()
             return False
 
         status = "ON" if value else "OFF"
@@ -673,6 +788,17 @@ class XgbRos2ModbusNode(Node):
                 reset_before_apply=False,
             )
             return
+        if self._estop_latched.is_set():
+            self._publish_fault_state()
+            return
+        if state == SystemState.WATCHDOG:
+            self._watchdog_latched.set()
+            self._set_and_publish_system_state(
+                SystemState.WATCHDOG,
+                apply_outputs=self._plc.connected,
+                reset_before_apply=False,
+            )
+            return
         if not self._outputs_allowed():
             return
         if not self._ensure_connected():
@@ -692,7 +818,8 @@ class XgbRos2ModbusNode(Node):
             self._plc.write_start_coils(value)
         except PLCError as exc:
             self.get_logger().error(f"M coil batch control failed: {exc}")
-            self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
+            self._record_plc_error(f"M coil batch control failed: {exc}")
+            self._publish_fault_state()
             return False
 
         status = "ON" if value else "OFF"
@@ -722,7 +849,8 @@ class XgbRos2ModbusNode(Node):
             )
         except PLCError as exc:
             self.get_logger().error(f"PLC word write failed: {exc}")
-            self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
+            self._record_plc_error(f"word write failed: {exc}")
+            self._publish_fault_state()
             return
 
         self.get_logger().info(

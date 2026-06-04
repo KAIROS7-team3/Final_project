@@ -33,7 +33,6 @@ class ModbusPLCClient:
         self._config = config
         # ROS2 wrapper가 마지막으로 적용한 의미 상태를 /plc/status snapshot으로 재사용한다.
         self._current_state = SystemState.IDLE
-        self._watchdog_level = False
         # pymodbus serial client 생성만 여기서 하고, 실제 연결은 connect()에서 연다.
         self._client = client_factory(
             port=config.port,
@@ -139,6 +138,22 @@ class ModbusPLCClient:
 
         self._raise_if_error(response, f"coil write failed address={address}")
 
+    def read_coil(self, address: int) -> bool:
+        """M coil 1개를 읽는다."""
+
+        try:
+            # FC01 Read Coils. watchdog heartbeat coil처럼 PLC가 생성하는 bit를 읽는다.
+            response = self._client.read_coils(
+                address=address,
+                count=1,
+                device_id=self._config.device_id,
+            )
+        except (ModbusException, OSError) as exc:
+            raise PLCError(f"coil read failed address={address}: {exc}") from exc
+
+        self._raise_if_error(response, f"coil read failed address={address}")
+        return bool(response.bits[0])
+
     def pulse_coil(
         self,
         address: int,
@@ -196,15 +211,17 @@ class ModbusPLCClient:
 
         self.pulse_coil(self._config.reset_coil_address, pulse_duration_s)
 
-    def heartbeat(self) -> None:
-        """PLC watchdog heartbeat coil을 매 호출마다 toggle한다."""
+    def read_watchdog(self) -> bool:
+        """PLC watchdog heartbeat coil의 현재 값을 읽는다."""
 
         if self._config.watchdog_coil_address is None:
             raise PLCError("watchdog coil address is not configured")
-        # M0005 상태 출력과 별개인 heartbeat coil이 설정된 경우에만 호출된다.
-        # 같은 값을 반복 write하면 PLC가 hung node와 정상 node를 구분하기 어렵다.
-        self._watchdog_level = not self._watchdog_level
-        self.write_coil(self._config.watchdog_coil_address, self._watchdog_level)
+        return self.read_coil(self._config.watchdog_coil_address)
+
+    def heartbeat(self) -> bool:
+        """Backward-compatible alias for the watchdog heartbeat read."""
+
+        return self.read_watchdog()
 
     def read_estop(self) -> bool:
         """PLC E-stop discrete input을 읽는다. True는 E-stop 감지를 뜻한다."""
