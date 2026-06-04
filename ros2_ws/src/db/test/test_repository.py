@@ -9,6 +9,7 @@ import db_core
 import pytest
 from db_core.repository import (
     DB_CACHE_TTL_SECONDS,
+    MAX_REJECTION_NOTES_LEN,
     VALID_EVENT_TYPES,
     VALID_SYSTEM_EVENT_TYPES,
     SchemaValidationError,
@@ -728,3 +729,112 @@ def test_migration_001_upgrades_old_check_and_is_idempotent(tmp_path) -> None:
     apply_and_check()
     # 멱등성: 재실행해도 오류 없이 성공하고 데이터가 보존된다.
     apply_and_check()
+
+
+def test_log_rejection_writes_rejected_event_without_status_change(tmp_path) -> None:
+    """B1-1: orchestrator S-7 경로가 쓰는 log_rejection 은 current_status 를 바꾸지
+    않고 tool_events('rejected') 한 줄만 남긴다."""
+
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+    repository = ToolRepository(db_path)
+
+    result = repository.log_rejection(
+        tool_id="spanner_16mm",
+        reason="S-7: robot moving; intent=fetch",
+    )
+
+    assert result.success is True
+    conn = sqlite3.connect(db_path)
+    event = conn.execute(
+        "SELECT event_type, track, status_before, status_after, notes FROM tool_events"
+    ).fetchone()
+    status = conn.execute(
+        "SELECT current_status, last_event_id FROM tools WHERE tool_id = 'spanner_16mm'"
+    ).fetchone()
+    conn.close()
+    # in_slot -> in_slot (무변경), event_type='rejected', track 은 None.
+    assert event == (
+        "rejected",
+        None,
+        "in_slot",
+        "in_slot",
+        "S-7: robot moving; intent=fetch",
+    )
+    assert status[0] == "in_slot"
+    assert status[1] is not None  # last_event_id 가 방금 이벤트를 가리킨다.
+
+
+def test_log_rejection_records_track_when_supplied(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+
+    result = ToolRepository(db_path).log_rejection(
+        tool_id="socket_19mm", reason="busy", track="B"
+    )
+
+    assert result.success is True
+    conn = sqlite3.connect(db_path)
+    track = conn.execute("SELECT track FROM tool_events").fetchone()[0]
+    conn.close()
+    assert track == "B"
+
+
+def test_log_rejection_unknown_tool_returns_failure(tmp_path) -> None:
+    """존재하지 않는 tool_id 는 FK 충돌 대신 깔끔한 실패로 반환되고, 행을 남기지 않는다."""
+
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+
+    result = ToolRepository(db_path).log_rejection(tool_id="ghost_tool", reason="x")
+
+    assert result.success is False
+    assert "unknown tool_id" in result.message
+    conn = sqlite3.connect(db_path)
+    count = conn.execute("SELECT COUNT(*) FROM tool_events").fetchone()[0]
+    conn.close()
+    assert count == 0
+
+
+def test_log_rejection_rejects_invalid_track(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+
+    result = ToolRepository(db_path).log_rejection(
+        tool_id="spanner_16mm", reason="x", track="Z"
+    )
+
+    assert result.success is False
+    assert "unsupported track" in result.message
+    conn = sqlite3.connect(db_path)
+    count = conn.execute("SELECT COUNT(*) FROM tool_events").fetchone()[0]
+    conn.close()
+    assert count == 0
+
+
+def test_log_rejection_requires_tool_id(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+
+    result = ToolRepository(db_path).log_rejection(tool_id="", reason="x")
+
+    assert result.success is False
+    assert "tool_id is required" in result.message
+
+
+def test_log_rejection_truncates_oversized_notes(tmp_path) -> None:
+    """자유형 notes 는 MAX_REJECTION_NOTES_LEN 으로 잘려 감사 로그 비대화를 막는다."""
+
+    db_path = tmp_path / "robot_arm.db"
+    _create_db(str(db_path))
+
+    oversized = "x" * (MAX_REJECTION_NOTES_LEN + 500)
+    result = ToolRepository(db_path).log_rejection(
+        tool_id="spanner_16mm", reason=oversized
+    )
+
+    assert result.success is True
+    conn = sqlite3.connect(db_path)
+    notes = conn.execute("SELECT notes FROM tool_events").fetchone()[0]
+    conn.close()
+    assert len(notes) == MAX_REJECTION_NOTES_LEN
