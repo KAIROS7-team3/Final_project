@@ -26,6 +26,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import String
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
+from dsr_msgs2.srv import SetCurrentTcp
 
 # unit_actions는 ros2_ws 밖에 있으므로 경로 추가
 sys.path.insert(0, '/home/kimsungyeoun/Final_project')
@@ -47,22 +48,26 @@ class ToolboxSeqRunner(Node):
 
         self.declare_parameter('robot_ns', 'dsr01')
         self.declare_parameter('sequence', 'open_0')
+        self.declare_parameter('tcp_name', 'GripperDA_v1')
 
         ns = self.get_parameter('robot_ns').get_parameter_value().string_value
         seq_name = self.get_parameter('sequence').get_parameter_value().string_value
+        self._tcp_name = self.get_parameter('tcp_name').get_parameter_value().string_value
 
         self._cb_group = ReentrantCallbackGroup()
 
         p = f'/{ns}'
-        self._movel_cli = self.create_client(MoveLine,  f'{p}/motion/move_line',  callback_group=self._cb_group)
-        self._movej_cli = self.create_client(MoveJoint, f'{p}/motion/move_joint', callback_group=self._cb_group)
-        self._stop_cli  = self.create_client(MoveStop,  f'{p}/motion/move_stop',  callback_group=self._cb_group)
+        self._movel_cli   = self.create_client(MoveLine,     f'{p}/motion/move_line',   callback_group=self._cb_group)
+        self._movej_cli   = self.create_client(MoveJoint,    f'{p}/motion/move_joint',  callback_group=self._cb_group)
+        self._stop_cli    = self.create_client(MoveStop,     f'{p}/motion/move_stop',   callback_group=self._cb_group)
+        self._set_tcp_cli = self.create_client(SetCurrentTcp, f'{p}/tcp/set_current_tcp', callback_group=self._cb_group)
         self._gripper_pub = self.create_publisher(String, '/gripper/cmd_direct', 10)
 
         self.get_logger().info(f'[runner] 서비스 대기 중...')
         for cli, name in [
-            (self._movel_cli, 'move_line'),
-            (self._movej_cli, 'move_joint'),
+            (self._movel_cli,   'move_line'),
+            (self._movej_cli,   'move_joint'),
+            (self._set_tcp_cli, 'set_current_tcp'),
         ]:
             if not cli.wait_for_service(timeout_sec=10.0):
                 self.get_logger().error(f'[runner] {name} 없음 — bringup 먼저 실행')
@@ -83,6 +88,10 @@ class ToolboxSeqRunner(Node):
         if seq is None:
             self.get_logger().error(f'[runner] 알 수 없는 sequence: {self._seq_name}')
             self.get_logger().error('[runner] 사용 가능: open_0 close_0 open_1 close_1')
+            return
+
+        if not self._set_tcp(self._tcp_name):
+            self.get_logger().error(f'[runner] TCP 설정 실패: {self._tcp_name} — 시퀀스 중단')
             return
 
         self.get_logger().info(f'[runner] 시퀀스 시작: {self._seq_name} ({len(seq)} steps)')
@@ -125,6 +134,19 @@ class ToolboxSeqRunner(Node):
             return True
         self.get_logger().warn(f'  알 수 없는 StepKind: {step.kind}')
         return False
+
+    def _set_tcp(self, name: str) -> bool:
+        req = SetCurrentTcp.Request()
+        req.name = name
+        fut = self._set_tcp_cli.call_async(req)
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+        res = fut.result()
+        ok = bool(res and res.success)
+        if ok:
+            self.get_logger().info(f'[runner] TCP 설정 완료: {name}')
+        else:
+            self.get_logger().error(f'[runner] TCP 설정 실패: {name}')
+        return ok
 
     def _movel(self, step, mode: int) -> bool:
         req = MoveLine.Request()
