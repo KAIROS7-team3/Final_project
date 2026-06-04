@@ -105,7 +105,7 @@ class CalibMotionNode(Node):
         self.cli = self.create_client(MoveJoint, '/dsr01/motion/move_joint')
         self.get_logger().info('move_joint 서비스 연결 대기 중...')
         if not self.cli.wait_for_service(timeout_sec=SERVICE_TIMEOUT):
-            self.get_logger().error('move_joint 서비스 연결 실패 (timeout=%.1fs)', SERVICE_TIMEOUT)
+            self.get_logger().error(f'move_joint 서비스 연결 실패 (timeout={SERVICE_TIMEOUT:.1f}s)')
             raise RuntimeError('move_joint service unavailable')
         self.get_logger().info('연결 완료.')
 
