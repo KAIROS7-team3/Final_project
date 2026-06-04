@@ -41,6 +41,7 @@ parameter 로드, topic 변환, `/plc/status` publish를 담당하는 wrapper다
 | `watchdog_timeout_s` | `0.5` | heartbeat stall 허용 한계 |
 | `enable_estop_poll` | `false` | PLC E-stop input polling 사용 여부 |
 | `estop_poll_period_s` | `0.1` | E-stop input polling 주기 |
+| `db_path` | `/home/thomas/Final_Project/robot_arm.db` | PLC 실패를 기록할 SQLite DB 경로 |
 
 운영 배포 단계에서는 udev rule로 PLC serial 장치를 `/dev/plc`로 고정하는 것을
 목표로 한다. 현재 개발/검증 기본값은 실제 성공한 `/dev/ttyUSB0`이다.
@@ -247,6 +248,7 @@ ros2 launch plc plc.launch.py port:=/dev/ttyUSB0 baudrate:=115200 device_id:=1
 
 `/dev/ttyUSB0`가 아닌 경우 실제 장치로 바꾼다. 데모 중에 watchdog이나 E-stop
 감시를 끄려면 `enable_watchdog:=false` 또는 `enable_estop_poll:=false`를 명시한다.
+DB를 다른 위치로 쓰려면 `db_path:=/absolute/path/to/robot_arm.db`를 같이 넘긴다.
 
 #### watchdog on smoke test
 
