@@ -6,6 +6,7 @@ TCP/DRL 통합 아키텍처:
   이 노드(PC)가 클라이언트로 접속해 Modbus RTU 명령을 전달한다.
 - Doosan 내장 server_socket_* API에 버그가 있어 DRL 내부 socket 사용.
 - RViz 연동 시 gripper_command_action_enabled: false로 설정 → action 서버 생략.
+- tcp_protocol: json | binary  (binary가 레이턴시 낮음)
 """
 from __future__ import annotations
 
@@ -40,14 +41,18 @@ logger = logging.getLogger(__name__)
 
 TCP_MAGIC = b"GP"
 TCP_VERSION = 1
-TCP_HDR = struct.Struct(">2sBBHH")
+TCP_HDR = struct.Struct(">2sBBHH")  # magic(2) ver(1) type(1) seq(2) payload_len(2)
 
-TCP_T_PING = 1
-TCP_T_PONG = 2
-TCP_T_CMD = 3
-TCP_T_ACK = 4
+TCP_T_PING  = 1
+TCP_T_PONG  = 2
+TCP_T_CMD   = 3
+TCP_T_ACK   = 4
 TCP_T_STATE = 5
-TCP_T_STOP = 6
+TCP_T_STOP  = 6
+
+# binary STATE payload format: cur(i16) pos(i32) gcur(i16) gpos_lo(u16) gpos_hi(u16)
+_STATE_FMT = ">hihHH"
+_STATE_SIZE = struct.calcsize(_STATE_FMT)
 
 
 class ModbusRTU:
@@ -167,6 +172,7 @@ def build_drl_move_and_poll(
 
 # DRL 서버 코드 — 로봇 내장 DRL 환경에서 실행됨
 # Doosan 내장 server_socket_* API 버그로 인해 표준 파이썬 socket 사용
+# PROTOCOL="json" | "binary" 로 프로토콜 선택 가능
 DRL_SERVER_CODE = """\
 import socket
 import json
@@ -234,6 +240,16 @@ def _read_cur():
             return _v
     return -99999
 
+def _read_reg16(_addr):
+    for _i in range(2):
+        _flush()
+        flange_serial_write(_fc03(_addr, 1))
+        wait(0.03)
+        _sz, _val = flange_serial_read(0.2)
+        if _sz >= 7 and _val[1] == 3 and _val[2] == 2:
+            return ((_val[3] << 8) | _val[4])
+    return -99999
+
 def _read_pos():
     for _i in range(3):
         _flush()
@@ -256,6 +272,8 @@ def _read_pos():
 def _read_cur_pos_bulk():
     try:
         _pos_regs = int(PRESENT_POSITION_REGS)
+        if _pos_regs < 1:
+            _pos_regs = 1
         _cur_reg = int(PRESENT_CURRENT_REG)
         _pos_reg = int(PRESENT_POSITION_REG)
         _start = _cur_reg if _cur_reg < _pos_reg else _pos_reg
@@ -324,7 +342,7 @@ except Exception:
 _srv.bind(('0.0.0.0', TCP_PORT))
 _srv.listen(1)
 _srv.settimeout(30.0)
-tp_log("TCP Server on port " + str(TCP_PORT) + ", waiting...")
+tp_log("GP TCP Server port=" + str(TCP_PORT) + " proto=" + PROTOCOL)
 
 _conn = None
 try:
@@ -356,7 +374,17 @@ if _conn:
         except:
             pass
 
-    _send_obj({"type": "hello", "slave_id": SLAVE_ID, "tcp_port": TCP_PORT})
+    def _send_bin(_type, _seq, _payload):
+        try:
+            _hdr = HDR.pack(MAGIC, VERSION, int(_type), int(_seq) & 0xFFFF, len(_payload))
+            _sendall(_hdr + _payload)
+        except:
+            pass
+
+    if PROTOCOL == "binary":
+        _send_bin(T_PONG, 0, b"")
+    else:
+        _send_obj({"type": "hello", "slave_id": SLAVE_ID, "tcp_port": TCP_PORT})
     _plc_write_int(PLC_ADDR_CODE, 0)
 
     try:
@@ -365,6 +393,41 @@ if _conn:
         pass
     _rxbuf = b""
     _last_state_t = 0.0
+
+    def _recv_bin_packets():
+        global _rxbuf
+        packets = []
+        while True:
+            try:
+                r, _, _ = select.select([_conn], [], [], 0)
+                if not r:
+                    break
+                _raw = _conn.recv(2048)
+                if _raw == b"":
+                    return None
+                if _raw:
+                    if b"STOP" in _raw:
+                        return "STOP"
+                    _rxbuf = _rxbuf + _raw
+            except Exception:
+                break
+        while True:
+            if len(_rxbuf) < HDR.size:
+                break
+            try:
+                _magic, _ver, _type, _seq, _plen = HDR.unpack(_rxbuf[:HDR.size])
+            except:
+                _rxbuf = _rxbuf[1:]
+                continue
+            if _magic != MAGIC or _ver != VERSION or _plen < 0 or _plen > 65535:
+                _rxbuf = _rxbuf[1:]
+                continue
+            if len(_rxbuf) < HDR.size + _plen:
+                break
+            _payload = _rxbuf[HDR.size:HDR.size+_plen]
+            _rxbuf = _rxbuf[HDR.size+_plen:]
+            packets.append((_type, _seq, _payload))
+        return packets
 
     def _drain_rx_json():
         global _rxbuf
@@ -396,30 +459,87 @@ if _conn:
         return msgs
 
     while True:
-        _cmd_msgs = _drain_rx_json()
-        if _cmd_msgs is None or _cmd_msgs == "STOP":
-            break
-        if _cmd_msgs:
-            for _m in _cmd_msgs:
-                if _m.get("type", "") == "ping":
-                    _send_obj({"type": "pong", "t": 0})
+        if PROTOCOL == "binary":
+            _pkts = _recv_bin_packets()
+            if _pkts is None or _pkts == "STOP":
+                break
+            for _type, _seq, _payload in (_pkts or []):
+                if _type == T_PING:
+                    _send_bin(T_PONG, _seq, b"")
                     continue
-                _cmd_id = _m.get("id", 0)
-                _frames = _m.get("frames", [])
-                _flush()
+                if _type == T_STOP:
+                    break
+                if _type != T_CMD:
+                    continue
                 _ok = True
                 _err = ""
                 try:
-                    for _hx in _frames:
-                        _pkt = bytes.fromhex(_hx)
-                        flange_serial_write(_pkt)
-                        wait(TCP_CMD_FRAME_WAIT_SEC)
+                    if len(_payload) < 2:
+                        _ok = False
+                    else:
+                        _n = (_payload[0] << 8) | _payload[1]
+                        _off = 2
                         _flush()
+                        for _k in range(_n):
+                            if _off + 2 > len(_payload):
+                                _ok = False
+                                break
+                            _flen = (_payload[_off] << 8) | _payload[_off+1]
+                            _off = _off + 2
+                            if _off + _flen > len(_payload):
+                                _ok = False
+                                break
+                            _pkt = _payload[_off:_off+_flen]
+                            _off = _off + _flen
+                            flange_serial_write(_pkt)
+                            wait(TCP_CMD_FRAME_WAIT_SEC)
+                            _flush()
                 except Exception as _e:
                     _ok = False
                     _err = str(_e)
-                _send_obj({"type": "ack", "id": _cmd_id, "ok": _ok, "err": _err})
+                try:
+                    _eb = (_err or "").encode("utf-8") if (not _ok and _err) else b""
+                    if len(_eb) > 200:
+                        _eb = _eb[:200]
+                    _ap = bytes([1 if _ok else 0]) + bytes([(len(_eb) >> 8) & 0xFF, len(_eb) & 0xFF]) + _eb
+                    _send_bin(T_ACK, _seq, _ap)
+                except:
+                    pass
                 _plc_write_int(PLC_ADDR_CODE, 1 if _ok else -1)
+        else:
+            _cmd_msgs = _drain_rx_json()
+            if _cmd_msgs is None or _cmd_msgs == "STOP":
+                break
+            if _cmd_msgs:
+                for _m in _cmd_msgs:
+                    if _m.get("type", "") == "ping":
+                        _send_obj({"type": "pong", "t": 0})
+                        continue
+                    _cmd_id = _m.get("id", 0)
+                    _frames = _m.get("frames", [])
+                    _flush()
+                    _ok = True
+                    _err = ""
+                    try:
+                        for _hx in _frames:
+                            _pkt = bytes.fromhex(_hx)
+                            flange_serial_write(_pkt)
+                            wait(TCP_CMD_FRAME_WAIT_SEC)
+                            _flush()
+                    except Exception as _e:
+                        _ok = False
+                        _err = str(_e)
+                    _send_obj({"type": "ack", "id": _cmd_id, "ok": _ok, "err": _err})
+                    _plc_write_int(PLC_ADDR_CODE, 1 if _ok else -1)
+
+                    if SNAP_ENABLED:
+                        try:
+                            _snap = {}
+                            for _addr in range(270, 291):
+                                _snap[str(_addr)] = _read_reg16(_addr)
+                            _send_obj({"type": "snap", "id": _cmd_id, "snap": _snap})
+                        except:
+                            pass
 
         _now = time.time()
         if TCP_STATE_STREAM_ENABLED and (_now - _last_state_t) >= STATE_PERIOD_SEC:
@@ -428,7 +548,27 @@ if _conn:
             if cur_val != -99999 and pos_val != -99999:
                 _plc_write_int(PLC_ADDR_CUR, cur_val)
                 _plc_write_int(PLC_ADDR_POS, pos_val)
-                _send_obj({"type": "state", "cur": cur_val, "pos": pos_val})
+                gcur = _read_reg16(GOAL_CUR_REG)
+                gpos_lo = _read_reg16(GOAL_POS_REG)
+                gpos_hi = _read_reg16(GOAL_POS_REG + 1)
+                if PROTOCOL == "binary":
+                    try:
+                        _p = struct.pack(">hihHH", int(cur_val), int(pos_val), int(gcur), int(gpos_lo) & 0xFFFF, int(gpos_hi) & 0xFFFF)
+                    except Exception:
+                        _p = b""
+                    _send_bin(T_STATE, 0, _p)
+                else:
+                    _send_obj({
+                        "type": "state",
+                        "cur": cur_val,
+                        "pos": pos_val,
+                        "pcur_reg": PRESENT_CURRENT_REG,
+                        "gcur_reg": GOAL_CUR_REG,
+                        "gpos_reg": GOAL_POS_REG,
+                        "gcur": gcur,
+                        "gpos_lo": gpos_lo,
+                        "gpos_hi": gpos_hi,
+                    })
 
         wait(0.005)
 
@@ -436,7 +576,7 @@ if _conn:
 
 _srv.close()
 flange_serial_close()
-tp_log("TCP Server closed.")
+tp_log("GP TCP Server closed.")
 """
 
 
@@ -445,6 +585,7 @@ class GripperNode(Node):
         super().__init__("gripper_node")
         self._cb = ReentrantCallbackGroup()
 
+        # ---- 파라미터 선언 ----
         self.declare_parameter("robot_ns", "dsr01")
         self.declare_parameter("robot_ip", "110.120.1.40")
         self.declare_parameter("robot_port", 9000)
@@ -462,7 +603,7 @@ class GripperNode(Node):
         self.declare_parameter("present_position_regs", 2)
         self.declare_parameter("goal_current_reg", 275)
         self.declare_parameter("goal_position_reg", 282)
-        self.declare_parameter("goal_position_write_mode", "fc16")
+        self.declare_parameter("goal_position_write_mode", "fc16")  # auto|fc06|fc16
         self.declare_parameter("goal_position_regs", 2)
         self.declare_parameter("drl_snap_enabled", False)
         self.declare_parameter("plc_feedback_enabled", False)
@@ -470,10 +611,10 @@ class GripperNode(Node):
         self.declare_parameter("plc_addr_cur", 2)
         self.declare_parameter("plc_addr_code", 1)
         self.declare_parameter("tcp_ack_timeout_sec", 3.0)
-        self.declare_parameter("tcp_state_hz", 10.0)
+        self.declare_parameter("tcp_state_hz", 20.0)       # 20Hz 기본 (binary 모드 효과 극대화)
         self.declare_parameter("tcp_state_stream_enabled", True)
         self.declare_parameter("tcp_cmd_frame_wait_sec", 0.02)
-        self.declare_parameter("tcp_protocol", "json")
+        self.declare_parameter("tcp_protocol", "json")     # json | binary
         self.declare_parameter("tcp_watchdog_enabled", True)
         self.declare_parameter("tcp_watchdog_period_sec", 1.0)
         self.declare_parameter("tcp_watchdog_stale_sec", 2.5)
@@ -491,8 +632,13 @@ class GripperNode(Node):
         self.declare_parameter("gripper_command_action_enabled", False)
         self.declare_parameter("direct_cmd_topic_enabled", False)
         self.declare_parameter("direct_cmd_topic", "/gripper/cmd_direct")
+        self.declare_parameter("direct_cmd_latest_only", True)
+        self.declare_parameter("direct_cmd_streaming", True)
+        self.declare_parameter("direct_cmd_streaming_ack_timeout_sec", 0.5)
+        self.declare_parameter("direct_cmd_streaming_no_ack", True)
         self.declare_parameter("mode", "real")
 
+        # ---- 파라미터 읽기 ----
         ns = str(self.get_parameter("robot_ns").value).strip()
         self._prefix = f"/{ns}" if ns else ""
         self._robot_ip = str(self.get_parameter("robot_ip").value).strip()
@@ -542,11 +688,21 @@ class GripperNode(Node):
         self._action_enabled = bool(self.get_parameter("gripper_command_action_enabled").value)
         self._direct_cmd_enabled = bool(self.get_parameter("direct_cmd_topic_enabled").value)
         self._direct_cmd_topic = str(self.get_parameter("direct_cmd_topic").value)
+        self._direct_cmd_latest_only = bool(self.get_parameter("direct_cmd_latest_only").value)
+        self._direct_cmd_streaming = bool(self.get_parameter("direct_cmd_streaming").value)
+        self._direct_cmd_streaming_ack_timeout = float(self.get_parameter("direct_cmd_streaming_ack_timeout_sec").value)
+        self._direct_cmd_streaming_no_ack = bool(self.get_parameter("direct_cmd_streaming_no_ack").value)
         self._mode = str(self.get_parameter("mode").value).lower()
 
-        # 상태 변수
+        if self._plc_feedback_enabled:
+            self._plc_addr_pos = self._clamp_plc_out_int_addr(self._plc_addr_pos, "plc_addr_pos")
+            self._plc_addr_cur = self._clamp_plc_out_int_addr(self._plc_addr_cur, "plc_addr_cur")
+            self._plc_addr_code = self._clamp_plc_out_int_addr(self._plc_addr_code, "plc_addr_code")
+
+        # ---- 상태 변수 ----
         self._current_hz_pos: int = 0
         self._current_hz_cur: int = 0
+        self._last_gpos_lo: int | None = None
         self._last_state_rx_t: float = 0.0
         self._sock: socket.socket | None = None
         self._socket_active: bool = False
@@ -558,24 +714,32 @@ class GripperNode(Node):
         self._tcp_hello_seen: bool = False
         self._tcp_pong_seen: bool = False
         self._tcp_state_seen: bool = False
+        self._tcp_ack_seen: bool = False
         self._tcp_sniff_logged: bool = False
         self._recv_thread: threading.Thread | None = None
         self._last_pong_rx_t: float = 0.0
-        self._last_gpos_lo: int | None = None
         self._tcp_reconnect_lock = threading.Lock()
         self._tcp_reconnect_inflight: bool = False
         self._executing: bool = False
-        self._direct_cmd_q: queue.Queue | None = None
+        self._last_sent_direct_pulse: int | None = None
+        self._last_sent_direct_cur: int | None = None
+        self._direct_stream_lock = threading.Lock()
 
-        # ROS 인터페이스
+        # ---- ROS 인터페이스 ----
         self._cli_drl = self.create_client(
             DrlStart, f"{self._prefix}/drl/drl_start", callback_group=self._cb
         )
         self._state_pub = self.create_publisher(JointState, "/gripper/state", qos_profile_sensor_data)
         self.create_timer(1.0 / self._state_hz, self._publish_state, callback_group=self._cb)
 
+        self._direct_cmd_q: queue.Queue | None = None
+        self._direct_cmd_worker_thread: threading.Thread | None = None
         if self._direct_cmd_enabled:
             self._direct_cmd_q = queue.Queue(maxsize=20)
+            self._direct_cmd_worker_thread = threading.Thread(
+                target=self._direct_cmd_worker_loop, daemon=True
+            )
+            self._direct_cmd_worker_thread.start()
             self.create_subscription(
                 String, self._direct_cmd_topic, self._on_direct_cmd, 10, callback_group=self._cb
             )
@@ -583,8 +747,7 @@ class GripperNode(Node):
         if self._action_enabled:
             if not _ACTION_AVAILABLE:
                 self.get_logger().error(
-                    "gripper_command_action_enabled=true 이지만 action 인터페이스를 import할 수 없음. "
-                    "action 서버를 생략합니다."
+                    "gripper_command_action_enabled=true 이지만 action 인터페이스 import 불가 — action 서버 생략"
                 )
             else:
                 ActionServer(
@@ -597,14 +760,18 @@ class GripperNode(Node):
                     callback_group=self._cb,
                 )
 
+        self.add_on_set_parameters_callback(self._on_param_set)
+
         if self._tcp_wd_enabled and self._cmd_transport == "tcp":
             threading.Thread(target=self._tcp_watchdog_loop, daemon=True).start()
 
         self._init_timer = self.create_timer(1.0, self._init_drl_server, callback_group=self._cb)
         self.get_logger().info(
-            f"[gripper] transport={self._cmd_transport} ip={self._robot_ip}:{self._tcp_port} "
-            f"action={'on' if self._action_enabled else 'off'}"
+            f"[gripper] transport={self._cmd_transport} proto={self._tcp_protocol} "
+            f"ip={self._robot_ip}:{self._tcp_port} action={'on' if self._action_enabled else 'off'}"
         )
+
+    # ------------------------------------------------------------------ helpers
 
     def _tcp_state_period_sec(self) -> float:
         if not self._tcp_state_stream_enabled:
@@ -633,30 +800,88 @@ class GripperNode(Node):
             .replace("__PLC_ADDR_CODE__", str(int(self._plc_addr_code)))
         )
 
+    def _clamp_plc_out_int_addr(self, addr: int, name: str) -> int:
+        a = int(addr)
+        if a < 0 or a > 23:
+            clamped = 0 if a < 0 else 23
+            self.get_logger().warn(f"{name}={a} out of range (0~23). clamped to {clamped}.")
+            return clamped
+        return a
+
     def _configure_tcp_socket(self, sock: socket.socket) -> None:
-        for opt, val in [
-            (socket.IPPROTO_TCP, socket.TCP_NODELAY, 1),
-            (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
-        ]:
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except Exception:
+            pass
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        except Exception:
+            pass
+        for opt_name, val in (("TCP_KEEPIDLE", 10), ("TCP_KEEPINTVL", 3), ("TCP_KEEPCNT", 3)):
             try:
-                sock.setsockopt(opt, val if isinstance(val, int) else val[0], val if isinstance(val, int) else val[1])
+                opt = getattr(socket, opt_name, None)
+                if opt is not None:
+                    sock.setsockopt(socket.IPPROTO_TCP, opt, int(val))
             except Exception:
                 pass
 
+    # ------------------------------------------------------------------ binary protocol
+
+    def _send_bin(self, mtype: int, seq: int, payload: bytes = b"") -> None:
+        hdr = TCP_HDR.pack(TCP_MAGIC, TCP_VERSION, int(mtype) & 0xFF, int(seq) & 0xFFFF, len(payload))
+        self._sock.sendall(hdr + (payload or b""))
+
+    def _bin_try_parse_one(self) -> tuple[int, int, bytes] | None:
+        buf = self._tcp_rx_buf
+        if len(buf) < TCP_HDR.size:
+            return None
+        try:
+            magic, ver, mtype, seq, plen = TCP_HDR.unpack(buf[:TCP_HDR.size])
+        except Exception:
+            self._tcp_rx_buf = buf[1:]
+            return None
+        if magic != TCP_MAGIC or ver != TCP_VERSION or plen < 0 or plen > 65535:
+            self._tcp_rx_buf = buf[1:]
+            return None
+        if len(buf) < TCP_HDR.size + plen:
+            return None
+        payload = buf[TCP_HDR.size: TCP_HDR.size + plen]
+        self._tcp_rx_buf = buf[TCP_HDR.size + plen:]
+        return int(mtype), int(seq), payload
+
+    # ------------------------------------------------------------------ send helpers
+
     def _send_frame(self, obj: dict) -> None:
+        """JSON 프레임 전송. binary 모드에서 ping은 binary로 대신 전송."""
+        if self._tcp_protocol == "binary":
+            if str(obj.get("type", "")).lower() == "ping":
+                self._send_bin(TCP_T_PING, 0, b"")
+            return
         payload = json.dumps(obj).encode("utf-8")
         self._sock.sendall(struct.pack(">H", len(payload)) + payload)
 
     def _send_cmd_and_wait_ack(self, frames: list[bytes], timeout_sec: float | None = None) -> tuple[bool, str]:
+        if not (self._tcp_hello_seen or self._tcp_state_seen or self._tcp_pong_seen):
+            if not self._tcp_handshake(timeout_sec=1.5):
+                return False, "no hello/state/pong from server"
+
         cmd_id = self._next_cmd_id
         self._next_cmd_id += 1
         ev = threading.Event()
         with self._ack_lock:
             self._ack_waiters[cmd_id] = ev
             self._ack_results.pop(cmd_id, None)
+
         try:
-            msg = {"type": "cmd", "id": cmd_id, "frames": [b.hex() for b in frames]}
-            self._send_frame(msg)
+            if self._tcp_protocol == "binary":
+                parts = [struct.pack(">H", len(frames))]
+                for b in frames:
+                    parts.append(struct.pack(">H", len(b)))
+                    parts.append(b)
+                self._send_bin(TCP_T_CMD, cmd_id, b"".join(parts))
+            else:
+                msg = {"type": "cmd", "id": cmd_id, "frames": [b.hex() for b in frames]}
+                self._send_frame(msg)
         except Exception as e:
             with self._ack_lock:
                 self._ack_waiters.pop(cmd_id, None)
@@ -664,9 +889,19 @@ class GripperNode(Node):
 
         to = float(timeout_sec) if timeout_sec is not None else float(self._tcp_ack_timeout)
         if not ev.wait(timeout=to):
-            with self._ack_lock:
-                self._ack_waiters.pop(cmd_id, None)
-            return False, "ack timeout"
+            # 재주입 직후 늦은 ACK 대응: 1초 grace window
+            grace_deadline = time.time() + 1.0
+            while time.time() < grace_deadline:
+                with self._ack_lock:
+                    late = self._ack_results.get(cmd_id)
+                if late is not None:
+                    ev.set()
+                    break
+                time.sleep(0.02)
+            if not ev.is_set():
+                with self._ack_lock:
+                    self._ack_waiters.pop(cmd_id, None)
+                return False, "ack timeout"
 
         with self._ack_lock:
             self._ack_waiters.pop(cmd_id, None)
@@ -679,8 +914,15 @@ class GripperNode(Node):
         try:
             cmd_id = self._next_cmd_id
             self._next_cmd_id += 1
-            msg = {"type": "cmd", "id": cmd_id, "frames": [b.hex() for b in frames]}
-            self._send_frame(msg)
+            if self._tcp_protocol == "binary":
+                parts = [struct.pack(">H", len(frames))]
+                for b in frames:
+                    parts.append(struct.pack(">H", len(b)))
+                    parts.append(b)
+                self._send_bin(TCP_T_CMD, cmd_id, b"".join(parts))
+            else:
+                msg = {"type": "cmd", "id": cmd_id, "frames": [b.hex() for b in frames]}
+                self._send_frame(msg)
             return True, ""
         except Exception as e:
             return False, f"send failed: {e}"
@@ -698,6 +940,8 @@ class GripperNode(Node):
             time.sleep(0.05)
         return False
 
+    # ------------------------------------------------------------------ recv loop
+
     def _recv_loop(self) -> None:
         while self._socket_active and rclpy.ok():
             try:
@@ -709,45 +953,130 @@ class GripperNode(Node):
                 if self._tcp_rx_max > 0 and len(self._tcp_rx_buf) > self._tcp_rx_max:
                     self._tcp_rx_buf = self._tcp_rx_buf[-max(1024, self._tcp_rx_keep):]
 
-                last_state_msg = None
-                while len(self._tcp_rx_buf) >= 2:
-                    n = (self._tcp_rx_buf[0] << 8) | self._tcp_rx_buf[1]
-                    if len(self._tcp_rx_buf) < 2 + n:
-                        break
-                    payload = self._tcp_rx_buf[2:2 + n]
-                    self._tcp_rx_buf = self._tcp_rx_buf[2 + n:]
-                    try:
-                        msg = json.loads(payload.decode("utf-8", errors="ignore"))
-                    except Exception:
-                        continue
-                    mtype = msg.get("type", "")
-                    if mtype == "state":
-                        last_state_msg = msg
-                    elif mtype == "hello":
-                        self._tcp_hello_seen = True
-                        self.get_logger().info(f"[gripper] TCP hello: {msg}")
-                    elif mtype == "pong":
-                        self._tcp_pong_seen = True
-                        self._tcp_hello_seen = True
-                        self._last_pong_rx_t = time.time()
-                    elif mtype == "ack":
-                        cmd_id = int(msg.get("id", 0))
-                        with self._ack_lock:
-                            self._ack_results[cmd_id] = msg
-                            ev = self._ack_waiters.get(cmd_id)
-                        if ev:
-                            ev.set()
+                if not self._tcp_sniff_logged and len(self._tcp_rx_buf) > 0:
+                    sniff = self._tcp_rx_buf[:32]
+                    self.get_logger().info(
+                        f"[gripper] TCP 초기 수신({len(sniff)}B): hex={sniff.hex()} ascii={sniff!r}"
+                    )
+                    self._tcp_sniff_logged = True
 
-                if last_state_msg is not None:
-                    raw_pos = int(last_state_msg.get("pos", 0))
+                last_state_bin: tuple | None = None
+                last_state_msg: dict | None = None
+
+                if self._tcp_protocol == "binary":
+                    while True:
+                        parsed = self._bin_try_parse_one()
+                        if not parsed:
+                            break
+                        mtype, seq, payload = parsed
+                        if mtype == TCP_T_PONG:
+                            self._tcp_pong_seen = True
+                            self._tcp_hello_seen = True
+                            self._last_pong_rx_t = time.time()
+                            self.get_logger().info("[gripper] TCP pong 수신 (binary OK)")
+                        elif mtype == TCP_T_ACK:
+                            ok = bool(payload[0]) if len(payload) >= 1 else False
+                            err = ""
+                            if (not ok) and len(payload) >= 3:
+                                elen = (payload[1] << 8) | payload[2]
+                                if elen > 0 and len(payload) >= 3 + elen:
+                                    try:
+                                        err = payload[3:3 + elen].decode("utf-8", errors="ignore")
+                                    except Exception:
+                                        pass
+                            ack_msg = {"type": "ack", "id": int(seq), "ok": ok, "err": err}
+                            with self._ack_lock:
+                                self._ack_results[int(seq)] = ack_msg
+                                ev = self._ack_waiters.get(int(seq))
+                            if ev:
+                                ev.set()
+                            if not self._tcp_ack_seen:
+                                self._tcp_ack_seen = True
+                                self.get_logger().info("[gripper] TCP binary ACK 수신 시작")
+                        elif mtype == TCP_T_STATE:
+                            if len(payload) >= _STATE_SIZE:
+                                try:
+                                    cur, pos, gcur, gpos_lo, gpos_hi = struct.unpack(_STATE_FMT, payload[:_STATE_SIZE])
+                                    last_state_bin = (int(cur), int(pos), int(gcur), int(gpos_lo), int(gpos_hi))
+                                except Exception:
+                                    pass
+                else:
+                    while len(self._tcp_rx_buf) >= 2:
+                        n = (self._tcp_rx_buf[0] << 8) | self._tcp_rx_buf[1]
+                        if len(self._tcp_rx_buf) < 2 + n:
+                            break
+                        payload = self._tcp_rx_buf[2:2 + n]
+                        self._tcp_rx_buf = self._tcp_rx_buf[2 + n:]
+                        try:
+                            msg = json.loads(payload.decode("utf-8", errors="ignore"))
+                        except Exception:
+                            continue
+                        mtype_s = msg.get("type", "")
+                        if mtype_s == "state":
+                            last_state_msg = msg
+                        elif mtype_s == "hello":
+                            self._tcp_hello_seen = True
+                            self.get_logger().info(f"[gripper] TCP hello: {msg}")
+                        elif mtype_s == "pong":
+                            self._tcp_pong_seen = True
+                            self._tcp_hello_seen = True
+                            self._last_pong_rx_t = time.time()
+                        elif mtype_s == "ack":
+                            cmd_id = int(msg.get("id", 0))
+                            with self._ack_lock:
+                                self._ack_results[cmd_id] = msg
+                                ev = self._ack_waiters.get(cmd_id)
+                            if ev:
+                                ev.set()
+                            if not self._tcp_ack_seen:
+                                self._tcp_ack_seen = True
+                                self.get_logger().info("[gripper] TCP JSON ACK 수신 시작")
+                        elif mtype_s == "snap":
+                            if isinstance(msg.get("snap"), dict):
+                                self.get_logger().info(f"[gripper] SNAP(270-290): {msg.get('snap')}")
+
+                # 배치 중 최신 상태만 반영 (레이턴시 최소화)
+                if last_state_bin is not None:
+                    cur, raw_pos, gcur, gpos_lo, gpos_hi = last_state_bin
+                    self._current_hz_cur = int(cur)
                     if self._pos_use_low:
                         raw_pos = raw_pos & 0xFFFF
+                    elif self._pos_word_order == "lo_hi":
+                        raw_pos = ((raw_pos & 0xFFFF) << 16) | ((raw_pos >> 16) & 0xFFFF)
                     if self._pos_scale and self._pos_scale != 1.0:
-                        raw_pos = int(round(float(raw_pos) / self._pos_scale))
-                    self._current_hz_pos = raw_pos
-                    self._current_hz_cur = int(last_state_msg.get("cur", 0))
+                        self._current_hz_pos = int(round(float(raw_pos) / self._pos_scale))
+                    else:
+                        self._current_hz_pos = int(raw_pos)
                     self._last_state_rx_t = time.time()
-                    self._tcp_state_seen = True
+                    self._last_gpos_lo = int(gpos_lo)
+                    if not self._tcp_state_seen:
+                        self._tcp_state_seen = True
+                        self.get_logger().info("[gripper] TCP binary STATE 수신 시작")
+                    self.get_logger().debug(
+                        f"[gripper] cur={cur} pos={raw_pos} gcur={gcur} gpos_lo={gpos_lo} gpos_hi={gpos_hi}"
+                    )
+                elif last_state_msg is not None:
+                    m = last_state_msg
+                    self._current_hz_cur = int(m.get("cur", 0))
+                    raw_pos = int(m.get("pos", 0))
+                    if self._pos_use_low:
+                        raw_pos = raw_pos & 0xFFFF
+                    elif self._pos_word_order == "lo_hi":
+                        raw_pos = ((raw_pos & 0xFFFF) << 16) | ((raw_pos >> 16) & 0xFFFF)
+                    if self._pos_scale and self._pos_scale != 1.0:
+                        self._current_hz_pos = int(round(float(raw_pos) / self._pos_scale))
+                    else:
+                        self._current_hz_pos = int(raw_pos)
+                    self._last_state_rx_t = time.time()
+                    self._tcp_hello_seen = True
+                    if "gpos_lo" in m:
+                        try:
+                            self._last_gpos_lo = int(m.get("gpos_lo"))
+                        except Exception:
+                            pass
+                    if not self._tcp_state_seen:
+                        self._tcp_state_seen = True
+                        self.get_logger().info("[gripper] TCP JSON STATE 수신 시작")
 
             except socket.timeout:
                 continue
@@ -760,10 +1089,14 @@ class GripperNode(Node):
                 break
         self._socket_active = False
 
+    # ------------------------------------------------------------------ watchdog / reconnect
+
     def _tcp_watchdog_loop(self) -> None:
         while rclpy.ok():
             try:
                 time.sleep(max(0.2, self._tcp_wd_period))
+                if not self._tcp_wd_enabled or self._cmd_transport != "tcp":
+                    continue
                 if not self._socket_active or self._tcp_reconnect_inflight:
                     continue
                 try:
@@ -806,10 +1139,13 @@ class GripperNode(Node):
                     self._tcp_rx_buf = b""
                     self._tcp_hello_seen = False
                     self._tcp_state_seen = False
+                    self._tcp_ack_seen = False
+                    self._tcp_sniff_logged = False
                     self._tcp_pong_seen = False
                     self._recv_thread = threading.Thread(target=self._recv_loop, daemon=True)
                     self._recv_thread.start()
                     if self._tcp_handshake(timeout_sec=2.5):
+                        self._last_pong_rx_t = time.time()
                         self.get_logger().info("[gripper] TCP reconnect 성공")
                         return
                     self._socket_active = False
@@ -823,6 +1159,83 @@ class GripperNode(Node):
                 self._tcp_reconnect_lock.release()
             except Exception:
                 pass
+
+    def _reinject_tcp_server(self) -> None:
+        """파라미터 변경 시 DRL TCP 서버를 재주입하고 재접속한다."""
+        if not self._tcp_reconnect_lock.acquire(blocking=False):
+            return
+        self._tcp_reconnect_inflight = True
+        try:
+            try:
+                if self._sock and self._socket_active:
+                    self._sock.sendall(struct.pack(">H", 4) + b"STOP")
+            except Exception:
+                pass
+            self._socket_active = False
+            if self._sock:
+                try:
+                    self._sock.close()
+                except Exception:
+                    pass
+            self._sock = None
+            self._last_state_rx_t = 0.0
+            self._last_pong_rx_t = 0.0
+
+            try:
+                killer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                killer.settimeout(0.7)
+                killer.connect((self._robot_ip, self._tcp_port))
+                killer.sendall(b"STOP")
+                killer.close()
+                time.sleep(0.5)
+            except Exception:
+                pass
+
+            if not self._cli_drl.service_is_ready():
+                return
+            req = DrlStart.Request()
+            req.robot_system = 0
+            req.code = self._build_drl_server_code()
+            self._cli_drl.call_async(req).add_done_callback(
+                lambda f: self.get_logger().info(
+                    "[gripper] DRL 서버 재주입 완료" if (f.result() and f.result().success) else "[gripper] DRL 서버 재주입 실패"
+                )
+            )
+
+            for attempt in range(10):
+                try:
+                    time.sleep(2.0 if attempt == 0 else 0.8)
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(3.0)
+                    sock.connect((self._robot_ip, self._tcp_port))
+                    self._configure_tcp_socket(sock)
+                    self._sock = sock
+                    self._socket_active = True
+                    self._tcp_rx_buf = b""
+                    self._tcp_hello_seen = False
+                    self._tcp_state_seen = False
+                    self._tcp_ack_seen = False
+                    self._tcp_sniff_logged = False
+                    self._tcp_pong_seen = False
+                    self._recv_thread = threading.Thread(target=self._recv_loop, daemon=True)
+                    self._recv_thread.start()
+                    if self._tcp_handshake(timeout_sec=5.0):
+                        self._last_pong_rx_t = time.time()
+                        self.get_logger().info("[gripper] TCP 재주입 후 재접속 성공")
+                        return
+                    self._socket_active = False
+                    self._sock.close()
+                    self._sock = None
+                except Exception:
+                    continue
+        finally:
+            self._tcp_reconnect_inflight = False
+            try:
+                self._tcp_reconnect_lock.release()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------ DRL call
 
     def _call_drl(self, code: str, timeout_sec: float = 5.0) -> bool:
         if not self._cli_drl.service_is_ready():
@@ -844,6 +1257,8 @@ class GripperNode(Node):
         self._cli_drl.call_async(req).add_done_callback(_done)
         event.wait(timeout=timeout_sec)
         return ok["v"]
+
+    # ------------------------------------------------------------------ init
 
     def _init_drl_server(self) -> None:
         self._init_timer.cancel()
@@ -891,7 +1306,7 @@ class GripperNode(Node):
                     ModbusRTU.fc06(self._slave_id, 275, self._cur_init),
                 ]
                 if self._call_drl(build_drl_write_packets(init_pkts), timeout_sec=5.0):
-                    self.get_logger().info("[gripper] DRL 초기화 완료(토크ON/기본전류)")
+                    self.get_logger().info("[gripper] DRL 초기화 완료 (토크ON/기본전류)")
                 else:
                     self.get_logger().error("[gripper] DRL 초기화 실패")
             except Exception as e:
@@ -913,7 +1328,7 @@ class GripperNode(Node):
         req.robot_system = 0
         req.code = self._build_drl_server_code()
         self._cli_drl.call_async(req)
-        self.get_logger().info("[gripper] DRL 서버 코드 배포 완료 — 소켓 접속 대기...")
+        self.get_logger().info(f"[gripper] DRL 서버({self._tcp_protocol}) 배포 완료 — 소켓 접속 대기...")
 
         for attempt in range(15):
             try:
@@ -927,6 +1342,8 @@ class GripperNode(Node):
                 self._tcp_rx_buf = b""
                 self._tcp_hello_seen = False
                 self._tcp_state_seen = False
+                self._tcp_ack_seen = False
+                self._tcp_sniff_logged = False
                 self._tcp_pong_seen = False
                 self.get_logger().info(f"[gripper] TCP 접속 성공 (port={self._tcp_port})")
                 self._recv_thread = threading.Thread(target=self._recv_loop, daemon=True)
@@ -942,6 +1359,83 @@ class GripperNode(Node):
                 self.get_logger().warn(f"[gripper] TCP 대기중 ({attempt+1}/15): {e}")
         self.get_logger().error("[gripper] TCP 소켓 확립 실패")
 
+    # ------------------------------------------------------------------ param callback
+
+    def _on_param_set(self, params) -> SetParametersResult:
+        try:
+            need_reinject = False
+            for p in params:
+                n = p.name
+                if n == "present_current_reg":
+                    self._present_current_reg = int(p.value); need_reinject = True
+                elif n == "present_position_reg":
+                    self._present_position_reg = int(p.value); need_reinject = True
+                elif n == "present_position_regs":
+                    self._present_position_regs = int(p.value); need_reinject = True
+                elif n == "goal_current_reg":
+                    self._goal_cur_reg = int(p.value); need_reinject = True
+                elif n == "goal_position_reg":
+                    self._goal_pos_reg = int(p.value); need_reinject = True
+                elif n == "goal_position_write_mode":
+                    self._goal_pos_write_mode = str(p.value).lower()
+                elif n == "goal_position_regs":
+                    self._goal_pos_regs = int(p.value)
+                elif n == "goal_position_scale":
+                    self._goal_pos_scale = float(p.value)
+                elif n == "position_scale":
+                    self._pos_scale = float(p.value)
+                elif n == "grip_current_threshold":
+                    self._grip_threshold = float(p.value)
+                elif n == "done_pos_tolerance":
+                    self._done_tol = int(p.value)
+                elif n == "done_min_motion":
+                    self._done_min_motion = int(p.value)
+                elif n == "done_require_reached":
+                    self._done_require_reached = bool(p.value)
+                elif n == "grip_detect_enabled":
+                    self._grip_enabled = bool(p.value)
+                elif n == "action_max_wait_sec":
+                    self._action_max_wait = float(p.value)
+                elif n == "drl_snap_enabled":
+                    self._drl_snap_enabled = bool(p.value); need_reinject = True
+                elif n == "plc_feedback_enabled":
+                    self._plc_feedback_enabled = bool(p.value); need_reinject = True
+                elif n == "plc_addr_pos":
+                    self._plc_addr_pos = int(p.value); need_reinject = True
+                elif n == "plc_addr_cur":
+                    self._plc_addr_cur = int(p.value); need_reinject = True
+                elif n == "plc_addr_code":
+                    self._plc_addr_code = int(p.value); need_reinject = True
+                elif n == "tcp_ack_timeout_sec":
+                    self._tcp_ack_timeout = float(p.value)
+                elif n == "tcp_watchdog_enabled":
+                    self._tcp_wd_enabled = bool(p.value)
+                elif n == "tcp_watchdog_period_sec":
+                    self._tcp_wd_period = float(p.value)
+                elif n == "tcp_watchdog_stale_sec":
+                    self._tcp_wd_stale = float(p.value)
+
+            if need_reinject and self._cmd_transport == "tcp" and not self._tcp_external:
+                self.get_logger().warn("[gripper] TCP 관련 파라미터 변경 → DRL 서버 재주입")
+                threading.Thread(target=self._reinject_tcp_server, daemon=True).start()
+            return SetParametersResult(successful=True)
+        except Exception as e:
+            return SetParametersResult(successful=False, reason=str(e))
+
+    # ------------------------------------------------------------------ direct cmd
+
+    def _resolve_preset_action(self, action: str, pulse: int = 0, current: int = 0) -> tuple[int, int]:
+        a = action.strip()
+        if a in ("open", "release"):
+            return self._pulse_open, self._cur_init
+        if a == "close":
+            return self._pulse_closed, self._cur_grip
+        if a == "custom":
+            p = pulse if pulse >= 0 else self._pulse_closed
+            c = current if current > 0 else self._cur_init
+            return p, c
+        return -1, -1
+
     def _on_direct_cmd(self, msg: String) -> None:
         raw = (msg.data or "").strip()
         if not raw:
@@ -950,66 +1444,149 @@ class GripperNode(Node):
         action = parts[0]
         pulse = int(parts[1]) if len(parts) >= 2 else 0
         current = int(parts[2]) if len(parts) >= 3 else 0
-
-        if action in ("open", "release"):
-            t_pulse, t_cur = self._pulse_open, self._cur_init
-        elif action == "close":
-            t_pulse, t_cur = self._pulse_closed, self._cur_grip
-        elif action == "custom":
-            t_pulse = pulse if pulse >= 0 else self._pulse_closed
-            t_cur = current if current > 0 else self._cur_init
-        else:
+        t_pulse, t_cur = self._resolve_preset_action(action, pulse=pulse, current=current)
+        if t_pulse == -1:
             self.get_logger().warn(f"[gripper] direct cmd 알 수 없는 동작: {raw!r}")
             return
 
-        if self._cmd_transport == "drl":
-            if self._mode == "virtual":
-                # virtual 모드: flange serial DRL을 에뮬레이터에 보내면 컨트롤러 상태가 리셋됨
-                self._current_hz_pos = t_pulse
-                self.get_logger().info(f"[gripper] virtual cmd(mock) pulse={t_pulse}")
+        # streaming no-ack 경로: lock 안에서 동기 전송, 중복 스킵
+        if self._direct_cmd_streaming and self._direct_cmd_streaming_no_ack and self._cmd_transport == "tcp":
+            self._direct_cmd_streaming_inline(action, int(t_pulse), int(t_cur))
+            return
+
+        if not self._direct_cmd_q:
+            return
+        item = (action, int(t_pulse), int(t_cur))
+        if self._direct_cmd_latest_only:
+            while True:
+                try:
+                    self._direct_cmd_q.get_nowait()
+                except queue.Empty:
+                    break
+        try:
+            self._direct_cmd_q.put_nowait(item)
+        except queue.Full:
+            try:
+                self._direct_cmd_q.get_nowait()
+            except Exception:
+                pass
+            try:
+                self._direct_cmd_q.put_nowait(item)
+            except Exception:
+                pass
+
+    def _direct_cmd_streaming_inline(self, action: str, t_pulse: int, t_cur: int) -> None:
+        with self._direct_stream_lock:
+            if self._last_sent_direct_pulse == t_pulse and self._last_sent_direct_cur == t_cur:
+                return
+            if not self._socket_active:
+                return
+            pos_frames = self._direct_cmd_pos_frames(t_pulse)
+            frames: list[bytes] = []
+            if self._last_sent_direct_cur != t_cur:
+                frames.append(ModbusRTU.fc06(self._slave_id, self._goal_cur_reg, t_cur))
+            frames.extend(pos_frames)
+            ok, err = self._send_cmd_fire_and_forget(frames)
+            if not ok:
+                self.get_logger().warning(f"[gripper] inline send failed: {err}", throttle_duration_sec=2.0)
+                return
+            self._last_sent_direct_pulse = t_pulse
+            self._last_sent_direct_cur = t_cur
+
+    def _drain_direct_cmd_latest(self) -> tuple[str, int, int]:
+        assert self._direct_cmd_q is not None
+        action, t_pulse, t_cur = self._direct_cmd_q.get()
+        while True:
+            try:
+                action, t_pulse, t_cur = self._direct_cmd_q.get_nowait()
+            except queue.Empty:
+                break
+        return action, t_pulse, t_cur
+
+    def _direct_cmd_worker_loop(self) -> None:
+        assert self._direct_cmd_q is not None
+        while rclpy.ok():
+            try:
+                if self._direct_cmd_latest_only:
+                    action, t_pulse, t_cur = self._drain_direct_cmd_latest()
+                else:
+                    action, t_pulse, t_cur = self._direct_cmd_q.get()
+                self._direct_cmd_worker(action, t_pulse, t_cur)
+            except Exception:
+                continue
+
+    def _direct_cmd_pos_frames(self, t_pulse: int) -> list[bytes]:
+        goal_val = int(round(float(t_pulse) * (self._goal_pos_scale if self._goal_pos_scale else 1.0)))
+        pos_pkt_fc06 = ModbusRTU.fc06(self._slave_id, self._goal_pos_reg, int(goal_val) & 0xFFFF)
+        pos_pkt_fc16 = ModbusRTU.fc16(self._slave_id, self._goal_pos_reg, 2, [int(goal_val) & 0xFFFF, 0])
+        if self._goal_pos_regs <= 1:
+            return [pos_pkt_fc06]
+        if self._goal_pos_write_mode == "fc16":
+            return [pos_pkt_fc16]
+        return [pos_pkt_fc06]
+
+    def _direct_cmd_worker(self, action: str, t_pulse: int, t_cur: int) -> None:
+        try:
+            self.get_logger().info(f"[gripper] direct cmd: action={action} pos={t_pulse} cur={t_cur}")
+
+            if self._cmd_transport == "drl":
+                if self._mode == "virtual":
+                    self._current_hz_pos = t_pulse
+                    self.get_logger().info(f"[gripper] virtual mock pulse={t_pulse}")
+                    return
+                pkts = [
+                    ModbusRTU.fc06(self._slave_id, self._goal_cur_reg, t_cur),
+                    ModbusRTU.fc16(self._slave_id, self._goal_pos_reg, 2, [t_pulse & 0xFFFF, 0]),
+                ]
+                ok = self._call_drl(build_drl_write_packets(pkts), timeout_sec=5.0)
+                if ok:
+                    self._current_hz_pos = t_pulse
+                self.get_logger().info(f"[gripper] direct cmd(drl): ok={ok}")
                 return
 
-            def _run(pulse: int, cur: int) -> None:
-                try:
-                    pkts = [
-                        ModbusRTU.fc06(self._slave_id, self._goal_cur_reg, cur),
-                        ModbusRTU.fc16(self._slave_id, self._goal_pos_reg, 2, [pulse & 0xFFFF, 0]),
-                    ]
-                    ok = self._call_drl(build_drl_write_packets(pkts), timeout_sec=5.0)
-                    if ok:
-                        self._current_hz_pos = pulse
-                        self.get_logger().info(f"[gripper] direct cmd(drl) ok pulse={pulse}")
-                    else:
-                        self.get_logger().warn("[gripper] direct cmd(drl) 실패")
-                except Exception as e:
-                    self.get_logger().error(f"[gripper] direct cmd(drl) 예외: {e}")
-            threading.Thread(target=_run, args=(t_pulse, t_cur), daemon=True).start()
-            return
+            if not self._socket_active:
+                self.get_logger().warn("[gripper] direct cmd 실패: TCP 오프라인")
+                return
 
-        if not self._socket_active:
-            self.get_logger().warn("[gripper] direct cmd 실패: TCP 오프라인")
-            return
-
-        try:
             cur_pkt = ModbusRTU.fc06(self._slave_id, self._goal_cur_reg, t_cur)
-            pos_pkt = ModbusRTU.fc16(self._slave_id, self._goal_pos_reg, 2, [t_pulse & 0xFFFF, 0])
-            ok, err = self._send_cmd_fire_and_forget([cur_pkt, pos_pkt])
+            pos_frames = self._direct_cmd_pos_frames(t_pulse)
+            ack_to = self._direct_cmd_streaming_ack_timeout if self._direct_cmd_streaming else None
+            use_no_ack = bool(self._direct_cmd_streaming and self._direct_cmd_streaming_no_ack)
+            send_fn = self._send_cmd_fire_and_forget if use_no_ack else self._send_cmd_and_wait_ack
+
+            frames: list[bytes] = [cur_pkt] + pos_frames
+            ok, err = send_fn(frames, timeout_sec=ack_to)
             if ok:
+                self._last_sent_direct_pulse = t_pulse
+                self._last_sent_direct_cur = t_cur
                 self._current_hz_pos = t_pulse
             else:
                 self.get_logger().warn(f"[gripper] direct cmd 전송 실패: {err}")
         except Exception as e:
             self.get_logger().error(f"[gripper] direct cmd 예외: {e}")
 
+    # ------------------------------------------------------------------ action
+
     def _execute_callback(self, goal_handle: object) -> object:
-        """GripperCommand action execute callback (action_enabled=true 일 때만 호출됨)."""
         self._executing = True
         try:
             req = goal_handle.request  # type: ignore[union-attr]
-            tool_id = str(req.tool_id or "")
-            force = float(req.grasp_force) if hasattr(req, "grasp_force") else float(self._cur_grip)
+            force = float(req.grasp_force) if hasattr(req, "grasp_force") and req.grasp_force > 0 else float(self._cur_grip)
             t_pulse = self._pulse_closed
             t_cur = int(min(max(force, 10.0), 1000.0))
+
+            def _publish_fb(phase: str, progress: float) -> None:
+                try:
+                    if GripperCommand is None:
+                        return
+                    fb = GripperCommand.Feedback()  # type: ignore[union-attr]
+                    fb.phase = phase
+                    fb.progress = float(progress)
+                    goal_handle.publish_feedback(fb)  # type: ignore[union-attr]
+                except Exception:
+                    pass
+
+            _publish_fb("sending", 0.0)
 
             if self._cmd_transport == "drl":
                 if self._mode == "virtual":
@@ -1020,6 +1597,7 @@ class GripperNode(Node):
                     goal_handle.succeed()  # type: ignore[union-attr]
                     return result
 
+                _publish_fb("drl_executing", 0.2)
                 drl_code = build_drl_move_and_poll(
                     slave_id=self._slave_id,
                     target_pulse=t_pulse,
@@ -1031,6 +1609,7 @@ class GripperNode(Node):
                 ok = self._call_drl(drl_code, timeout_sec=15.0)
                 if ok:
                     self._current_hz_pos = t_pulse
+                _publish_fb("done", 1.0)
                 result = GripperCommand.Result()  # type: ignore[union-attr]
                 result.success = ok
                 result.message = "완료(drl)" if ok else "DRL 실행 실패"
@@ -1049,15 +1628,14 @@ class GripperNode(Node):
 
             try:
                 cur_pkt = ModbusRTU.fc06(self._slave_id, self._goal_cur_reg, t_cur)
-                pos_pkt = ModbusRTU.fc16(self._slave_id, self._goal_pos_reg, 2, [t_pulse & 0xFFFF, 0])
+                pos_frames = self._direct_cmd_pos_frames(t_pulse)
                 ok1, err1 = self._send_cmd_and_wait_ack([cur_pkt])
                 if not ok1:
                     raise RuntimeError(f"cur ack failed: {err1}")
                 time.sleep(0.05)
-                ok2, err2 = self._send_cmd_and_wait_ack([pos_pkt])
+                ok2, err2 = self._send_cmd_and_wait_ack(pos_frames)
                 if not ok2:
                     raise RuntimeError(f"pos ack failed: {err2}")
-                self.get_logger().info(f"[gripper] tool={tool_id} pos={t_pulse} cur={t_cur}")
             except Exception as e:
                 self.get_logger().error(f"[gripper] execute 예외: {e}")
                 result = GripperCommand.Result()  # type: ignore[union-attr]
@@ -1066,10 +1644,12 @@ class GripperNode(Node):
                 goal_handle.abort()  # type: ignore[union-attr]
                 return result
 
-            # 완료 대기
+            # 완료 대기 + 피드백
             start_t = time.time()
             gripped = False
             while (time.time() - start_t) < self._action_max_wait:
+                elapsed = time.time() - start_t
+                _publish_fb("moving", min(0.9, elapsed / max(1.0, self._action_max_wait)))
                 time.sleep(0.1)
                 if self._grip_enabled and abs(self._current_hz_cur) > self._grip_threshold:
                     gripped = True
@@ -1077,6 +1657,7 @@ class GripperNode(Node):
                 if abs(self._current_hz_pos - t_pulse) < self._done_tol:
                     break
 
+            _publish_fb("done", 1.0)
             result = GripperCommand.Result()  # type: ignore[union-attr]
             result.success = True
             result.message = "파지 감지" if gripped else "위치 도달"
@@ -1084,6 +1665,8 @@ class GripperNode(Node):
             return result
         finally:
             self._executing = False
+
+    # ------------------------------------------------------------------ state publish
 
     def _publish_state(self) -> None:
         msg = JointState()
