@@ -180,7 +180,8 @@
 
 ```
 db_core/               ← 순수 Python (rclpy import 금지)
-├── client.py          DBClient: get_tool_status(), log_event() 등
+├── repository.py      ToolRepository: DB Gate·전이 검증·이벤트 기록 공유 코어
+├── client.py          DBClient: Track C in-process 어댑터 — ToolRepository에 위임 (B2-1)
 └── schema.py          테이블 정의, 쿼리 상수
 
 plc_core/              ← 순수 Python (rclpy import 금지)
