@@ -42,12 +42,12 @@ class Step:
 # rotationalVelocity=76.5 deg/s,   rotationalAcceleration=306.0 deg/s²
 # jointVelocity=60.0 deg/s,        jointAcceleration=100.0 deg/s²
 
-VEL_L: float = 250.0
-ACC_L: float = 1000.0
-VEL_R: float = 76.5
-ACC_R: float = 306.0
-VEL_J: float = 60.0
-ACC_J: float = 100.0
+VEL_L: float = 25.0
+ACC_L: float = 100.0
+VEL_R: float = 7.65
+ACC_R: float = 30.6
+VEL_J: float = 6.0
+ACC_J: float = 10.0
 
 
 # ── 그리퍼 pulse 상수 ─────────────────────────────────────────────────────
@@ -63,41 +63,54 @@ PULSE_GRIP_BOX:   int = 400   # 서랍 손잡이 파지 전류(mA) — gripper_g
 JOINT_HOME_DEG:    list = [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]
 
 # ── layer 0 (1층 서랍) ────────────────────────────────────────────────────
-# 출처: toolboxapproach_box1.tw
+# 출처: toolboxapproach_box1_open.tw / toolboxapproach_box1_close.tw
 
-# MoveJ: 서랍 접근 전 안전 자세
-LAYER0_SETUP_J:    list = [-19.53, 53.85, 110.47, 71.14, 95.19, -75.18]
+# open MoveJ: 서랍 접근 전 안전 자세
+LAYER0_SETUP_J:        list = [-19.53, 53.85, 110.47, 71.14, 95.19, -75.18]
+
+# close MoveJ: inner 위치에서 손잡이로 이동 전 관절 공간 안전 자세 (open의 SETUP_J와 다름)
+LAYER0_CLOSE_SETUP_J:  list = [-23.33, 56.66, 107.63, 67.45, 96.16, -75.52]
 
 # 서랍 손잡이 바로 앞 (파지 직전)
-LAYER0_APPROACH:   list = [378.88, 433.02, 65.45, 90.0, 90.0, 90.0]
+LAYER0_APPROACH:       list = [378.88, 433.02, 65.45, 90.0, 90.0, 90.0]
 
 # 서랍 당긴 후 열린 위치
-LAYER0_OPEN:       list = [378.88, 243.86, 65.46, 90.0, 90.0, 90.0]
+LAYER0_OPEN:           list = [378.88, 243.86, 65.46, 90.0, 90.0, 90.0]
 
 # 열린 후 Z 약간 낮춤 (서랍 안쪽 자세 진입)
-LAYER0_SILENCE:    list = [378.88, 243.86, 56.43, 90.0, 90.0, 90.0]
+LAYER0_SILENCE:        list = [378.88, 243.86, 56.43, 90.0, 90.0, 90.0]
 
 # 서랍 내부 공구 접근 위치 (공구 집기/놓기)
-LAYER0_INNER:      list = [378.88, 169.1,  50.45, 90.0, 90.0, 90.0]
+LAYER0_INNER:          list = [378.88, 169.1,  50.45, 90.0, 90.0, 90.0]
 
 # 서랍 닫기 직전 하강 위치 (gripper_grap_boxhand 전)
-LAYER0_OPENDOWN:   list = [378.88, 243.86, 55.45, 90.0, 90.0, 90.0]
+LAYER0_OPENDOWN:       list = [378.88, 243.86, 55.45, 90.0, 90.0, 90.0]
+
+# close 완료 후 최종 위치 (= INNER, box1_close 마지막 스텝)
+LAYER0_CLOSE_END:      list = LAYER0_INNER
 
 
 # ── layer 1 (2층 서랍) ────────────────────────────────────────────────────
-# 출처: toolboxapproach_box2.tw
+# 출처: toolboxapproach_box2_open.tw / toolboxapproach_box2_close.tw
 
-LAYER1_SETUP_J:    list = [-6.14, 44.85, 116.43, 84.19, 91.97, -71.38]
+# open MoveJ
+LAYER1_SETUP_J:        list = [-6.14, 44.85, 116.43, 84.19, 91.97, -71.38]
 
-LAYER1_APPROACH:   list = [380.57, 427.51, 115.68, 90.0, 90.0, 90.0]
+# close MoveJ: open의 SETUP_J와 다름
+LAYER1_CLOSE_SETUP_J:  list = [-23.64, 48.6, 110.08, 67.82, 98.38, -70.33]
 
-LAYER1_OPEN:       list = [380.56, 237.79, 115.69, 90.0, 90.0, 90.0]
+LAYER1_APPROACH:       list = [380.57, 427.51, 115.68, 90.0, 90.0, 90.0]
 
-LAYER1_SILENCE:    list = [380.56, 237.79, 106.7,  90.0, 90.0, 90.0]
+LAYER1_OPEN:           list = [380.56, 237.79, 115.69, 90.0, 90.0, 90.0]
 
-LAYER1_INNER:      list = [380.56, 165.94, 103.69, 90.0, 90.0, 90.0]
+LAYER1_SILENCE:        list = [380.56, 237.79, 106.7,  90.0, 90.0, 90.0]
 
-LAYER1_OPENDOWN:   list = [380.56, 237.79, 103.69, 90.0, 90.0, 90.0]
+LAYER1_INNER:          list = [380.56, 165.94, 103.69, 90.0, 90.0, 90.0]
+
+LAYER1_OPENDOWN:       list = [380.56, 237.79, 103.69, 90.0, 90.0, 90.0]
+
+# close 완료 후 최종 위치 (box2_close 마지막 스텝 — INNER와 APPROACH 사이 중간 위치)
+LAYER1_CLOSE_END:      list = [380.61, 291.56, 115.7,  89.99, 89.99, 90.0]
 
 # layer_height_z 실측: 115.68 - 65.45 ≈ 50 mm (toolbox.yaml layer_height_z 갱신 필요)
 LAYER_HEIGHT_Z_MM: float = 115.68 - 65.45   # ≈ 50.23 mm
@@ -107,20 +120,24 @@ LAYER_HEIGHT_Z_MM: float = 115.68 - 65.45   # ≈ 50.23 mm
 
 _LAYER_WP = {
     0: {
-        "setup_j":   LAYER0_SETUP_J,
-        "approach":  LAYER0_APPROACH,
-        "open":      LAYER0_OPEN,
-        "silence":   LAYER0_SILENCE,
-        "inner":     LAYER0_INNER,
-        "opendown":  LAYER0_OPENDOWN,
+        "setup_j":       LAYER0_SETUP_J,
+        "close_setup_j": LAYER0_CLOSE_SETUP_J,
+        "approach":      LAYER0_APPROACH,
+        "open":          LAYER0_OPEN,
+        "silence":       LAYER0_SILENCE,
+        "inner":         LAYER0_INNER,
+        "opendown":      LAYER0_OPENDOWN,
+        "close_end":     LAYER0_CLOSE_END,
     },
     1: {
-        "setup_j":   LAYER1_SETUP_J,
-        "approach":  LAYER1_APPROACH,
-        "open":      LAYER1_OPEN,
-        "silence":   LAYER1_SILENCE,
-        "inner":     LAYER1_INNER,
-        "opendown":  LAYER1_OPENDOWN,
+        "setup_j":       LAYER1_SETUP_J,
+        "close_setup_j": LAYER1_CLOSE_SETUP_J,
+        "approach":      LAYER1_APPROACH,
+        "open":          LAYER1_OPEN,
+        "silence":       LAYER1_SILENCE,
+        "inner":         LAYER1_INNER,
+        "opendown":      LAYER1_OPENDOWN,
+        "close_end":     LAYER1_CLOSE_END,
     },
 }
 
@@ -156,13 +173,12 @@ def _wp(layer: int, key: str) -> list:
 
 
 def drawer_open_seq(layer: int) -> list[Step]:
-    """서랍 열기 시퀀스 (홈 복귀 → MoveJ 안전 자세 → 손잡이 파지 → 당기기 → 내부 진입).
+    """서랍 열기 시퀀스 (TW: toolboxapproach_box{n}_open.tw 기준).
 
     layer: 0 = 1층, 1 = 2층
     종료 후 팔은 LAYER{n}_INNER 위치에 있음.
     """
     return [
-        JOINT_HOME(),
         GRIP_OPEN(),
         mj_abs(_wp(layer, "setup_j")),
         ml_abs(_wp(layer, "approach")),
@@ -175,19 +191,21 @@ def drawer_open_seq(layer: int) -> list[Step]:
 
 
 def drawer_close_seq(layer: int) -> list[Step]:
-    """서랍 닫기 시퀀스 (inner 위치에서 시작 → 손잡이 파지 → 밀기).
+    """서랍 닫기 시퀀스 (TW: toolboxapproach_box{n}_close.tw 기준).
 
     layer: 0 = 1층, 1 = 2층
-    drawer_open_seq() 이후 호출 전제.
+    drawer_open_seq() 이후 호출 전제 (팔이 INNER에 있는 상태).
+    종료 후 팔은 LAYER{n}_CLOSE_END 위치에 있음.
     """
     return [
         GRIP_OPEN(),
-        ml_abs(_wp(layer, "inner")),
+        mj_abs(_wp(layer, "close_setup_j")),
         ml_abs(_wp(layer, "opendown")),
         GRIP_BOX(),
         ml_abs(_wp(layer, "open")),
         ml_abs(_wp(layer, "approach")),
         GRIP_OPEN(),
+        ml_abs(_wp(layer, "close_end")),
     ]
 
 
