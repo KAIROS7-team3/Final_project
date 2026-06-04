@@ -1,0 +1,51 @@
+plc_node:
+  ros__parameters:
+    port: /dev/ttyUSB0
+    baudrate: 115200
+    parity: "N"
+    stopbits: 1
+    bytesize: 8
+    device_id: 1
+
+    # Start button coils. Arrays are index-aligned:
+    # start_coil_labels[i] -> start_coil_addresses[i] -> start_coil_outputs[i].
+    # XG5000 M labels are bit-device labels; M0100 maps to address 0x100, not 100.
+    start_coil_labels: ["M0000", "M0001", "M0002", "M0003", "M0004", "M0005"]
+    start_coil_addresses: [0, 1, 2, 3, 4, 5]
+    start_coil_outputs: ["P0040", "P0041", "P0042", "P0043", "P0043", "P0044"]
+
+    # Reset coil for the ladder common NC contact.
+    reset_coil_label: "M0100"
+    reset_coil_address: 256
+
+    # Word register test points.
+    read_register_label: "P020"
+    read_register_address: 0
+    write_register_label: "P000"
+    write_register_address: 0
+
+    # Safety/operation hooks.
+    # 현재 래더에는 heartbeat watchdog 전용 coil과 E-stop input이 없다.
+    # M0005는 상태 출력용 watchdog 입력이고, heartbeat hook은 별도 device가 필요하다.
+    # M0100은 reset 접점이고, M1000~M1005는 내부 자기유지 bit다.
+    # 래더에 전용 device를 추가한 뒤 label/address를 채우고 enable_*를 true로 바꾼다.
+    watchdog_coil_label: ""
+    watchdog_coil_address: -1
+    estop_input_label: ""
+    estop_input_address: -1
+
+    # Semantic state -> start coil mapping for higher-level packages.
+    # output labels are comma-separated M labels; empty/none/- means reset only.
+    # The node resets latched outputs via M0100 before pulsing the mapped coils.
+    system_state_names: ["idle", "listening", "inferring", "moving", "e_stop", "error", "watchdog"]
+    system_state_output_labels: ["none", "M0001", "M0001", "M0002", "M0003", "M0004", "M0005"]
+
+    read_period_s: 1.0
+    connect_retry_count: 3
+    connect_retry_backoff_s: 0.5
+    pulse_duration_s: 0.2
+    enable_watchdog: false
+    # Disabled default. When enable_watchdog is true, keep this <= 0.25.
+    watchdog_period_s: 0.25
+    enable_estop_poll: false
+    estop_poll_period_s: 0.1

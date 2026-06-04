@@ -13,20 +13,17 @@ def plc():
 
 class TestSetState:
     def test_idle_sets_white_solid(self, plc):
-        assert plc.set_state(SystemState.IDLE) is True
-        status = plc.get_status()
+        status = plc.set_state(SystemState.IDLE)
         assert status.led_color == LEDColor.WHITE
         assert status.led_mode == LEDMode.SOLID
 
     def test_error_sets_red_flash(self, plc):
-        assert plc.set_error() is True
-        status = plc.get_status()
+        status = plc.set_error()
         assert status.led_color == LEDColor.RED
         assert status.led_mode == LEDMode.FLASH
 
     def test_estop_sets_red_solid(self, plc):
-        assert plc.set_estop() is True
-        status = plc.get_status()
+        status = plc.set_estop()
         assert status.led_color == LEDColor.RED
         assert status.led_mode == LEDMode.SOLID
         assert status.system_state == SystemState.E_STOP

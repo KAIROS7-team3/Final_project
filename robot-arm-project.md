@@ -128,7 +128,7 @@
   - vision 파이프라인 노드 구현 완료: yolo_node / pose_node / tracker_node / context_builder
   - 단위 테스트 29개 통과 (test/test_hand_eye_loader, test_context_builder, test_tracker)
 - [ ] RH-P12-RN 그리퍼 드라이버 노드
-- [ ] PLC 드라이버 노드 (XBC-DR10E, Modbus RTU): LED 쓰기 검증
+- [ ] PLC 드라이버 노드 (XBC-DR14E, Modbus RTU): LED 쓰기 검증
 - [ ] udev 규칙: `/dev/doosan`, `/dev/gripper`, `/dev/plc`
 - [ ] Hand-eye 캘리브레이션 (`config/hand_eye.yaml`)
   - eye-to-hand, easy_handeye2 준비 완료 (scripts/calibrate_hand_eye.sh, launch/handeye_calibration.launch.py)
