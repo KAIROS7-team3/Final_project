@@ -19,3 +19,14 @@ db:
   # 파일에 동시 쓰기를 시도할 때 즉시 SQLITE_BUSY로 실패하지 않고 대기하는 시간.
   # 두 노드의 busy_timeout_ms 파라미터 기본값과 동일하게 유지한다.
   busy_timeout_ms: 5000
+
+calibration:
+  # hand-eye 캘리브레이션 모션 파라미터 (handeye_calib_motion.py)
+  #
+  # ⚠️ E-1 예외 사항: Doosan MoveJoint API(dsr_msgs2.srv.MoveJoint)는
+  #   degree 입력을 요구하는 하드웨어 경계 인터페이스다.
+  #   이 섹션의 vel/acc 단위는 deg/s, deg/s² — ROS2 내부 rad 표준과 다름.
+  #   변경 시 safety-reviewer 검토 권장 (S-5 joint/속도 한계).
+  motion_vel_deg_per_s: 20.0    # 캘리브레이션 이동 속도 (협동 모드 충분히 여유 있는 값)
+  motion_acc_deg_per_s2: 10.0   # 캘리브레이션 가속도
+  service_timeout_sec: 5.0      # move_joint 서비스 연결 대기 최대 시간
