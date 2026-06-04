@@ -69,27 +69,42 @@ def config() -> ModbusPLCConfig:
         stopbits=1,
         bytesize=8,
         device_id=1,
-        start_coil_labels=("M0000", "M0001", "M0002", "M0003"),
-        start_coil_addresses=(0, 1, 2, 3),
-        start_coil_outputs=("P0040", "P0041", "P0042", "P0043"),
-        reset_coil_label="M0010",
-        reset_coil_address=16,
+        start_coil_labels=(
+            "M0000",
+            "M0001",
+            "M0002",
+            "M0003",
+            "M0004",
+            "M0005",
+        ),
+        start_coil_addresses=(0, 1, 2, 3, 4, 5),
+        start_coil_outputs=(
+            "P0040",
+            "P0041",
+            "P0042",
+            "P0043",
+            "P0043",
+            "P0044",
+        ),
+        reset_coil_label="M0100",
+        reset_coil_address=256,
         read_register_label="P020",
         read_register_address=0,
         write_register_label="P000",
         write_register_address=0,
         pulse_duration_s=0.001,
-        watchdog_coil_label="M0100",
-        watchdog_coil_address=256,
+        watchdog_coil_label="M0105",
+        watchdog_coil_address=261,
         estop_input_label="P010",
         estop_input_address=10,
         system_state_outputs={
-            SystemState.IDLE: ("M0000",),
+            SystemState.IDLE: (),
             SystemState.LISTENING: ("M0001",),
             SystemState.INFERRING: ("M0001",),
             SystemState.MOVING: ("M0002",),
-            SystemState.ERROR: ("M0003",),
             SystemState.E_STOP: ("M0003",),
+            SystemState.ERROR: ("M0004",),
+            SystemState.WATCHDOG: ("M0005",),
         },
     )
 
@@ -111,8 +126,8 @@ def test_config_rejects_mismatched_start_coil_arrays() -> None:
             start_coil_labels=("M0000",),
             start_coil_addresses=(0, 1),
             start_coil_outputs=("P0040",),
-            reset_coil_label="M0010",
-            reset_coil_address=16,
+            reset_coil_label="M0100",
+            reset_coil_address=256,
             read_register_label="P020",
             read_register_address=0,
             write_register_label="P000",
@@ -123,17 +138,18 @@ def test_config_rejects_mismatched_start_coil_arrays() -> None:
 
 def test_m_topic_suffix_uses_xg5000_hex_bit_label() -> None:
     assert ModbusPLCConfig.m_topic_suffix("M0010") == "16"
+    assert ModbusPLCConfig.m_topic_suffix("M0100") == "256"
 
 
 def test_parse_system_state_outputs_supports_empty_and_comma_labels() -> None:
     outputs = ModbusPLCConfig.parse_system_state_outputs(
         ("idle", "moving", "error"),
-        ("none", "M0001,M0002", "M0003"),
+        ("none", "M0001,M0002", "M0004"),
     )
 
     assert outputs[SystemState.IDLE] == ()
     assert outputs[SystemState.MOVING] == ("M0001", "M0002")
-    assert outputs[SystemState.ERROR] == ("M0003",)
+    assert outputs[SystemState.ERROR] == ("M0004",)
 
 
 def test_config_rejects_unknown_semantic_output_label(
@@ -192,16 +208,19 @@ def test_read_estop_uses_configured_discrete_input(config: ModbusPLCConfig) -> N
     )
 
 
-def test_heartbeat_writes_configured_watchdog_coil(config: ModbusPLCConfig) -> None:
+def test_heartbeat_toggles_configured_watchdog_coil(
+    config: ModbusPLCConfig,
+) -> None:
     fake_client = FakeSerialClient()
     plc = ModbusPLCClient(config, client_factory=lambda **_: fake_client)
 
     plc.heartbeat()
+    plc.heartbeat()
 
-    assert fake_client.calls[-1] == (
-        "write_coil",
-        {"address": 256, "value": True, "device_id": 1},
-    )
+    assert fake_client.calls[-2:] == [
+        ("write_coil", {"address": 261, "value": True, "device_id": 1}),
+        ("write_coil", {"address": 261, "value": False, "device_id": 1}),
+    ]
 
 
 def test_heartbeat_requires_configured_watchdog_coil(
@@ -227,8 +246,8 @@ def test_pulse_coil_writes_on_then_off(config: ModbusPLCConfig) -> None:
     plc.pulse_coil(config.reset_coil_address)
 
     assert fake_client.calls[-2:] == [
-        ("write_coil", {"address": 16, "value": True, "device_id": 1}),
-        ("write_coil", {"address": 16, "value": False, "device_id": 1}),
+        ("write_coil", {"address": 256, "value": True, "device_id": 1}),
+        ("write_coil", {"address": 256, "value": False, "device_id": 1}),
     ]
 
 
@@ -244,10 +263,23 @@ def test_set_system_state_resets_then_pulses_configured_output(
     assert status.led_color == LEDColor.GREEN
     assert status.led_mode == LEDMode.SOLID
     assert fake_client.calls[-4:] == [
-        ("write_coil", {"address": 16, "value": True, "device_id": 1}),
-        ("write_coil", {"address": 16, "value": False, "device_id": 1}),
+        ("write_coil", {"address": 256, "value": True, "device_id": 1}),
+        ("write_coil", {"address": 256, "value": False, "device_id": 1}),
         ("write_coil", {"address": 2, "value": True, "device_id": 1}),
         ("write_coil", {"address": 2, "value": False, "device_id": 1}),
+    ]
+
+
+def test_set_estop_does_not_reset_before_output(config: ModbusPLCConfig) -> None:
+    fake_client = FakeSerialClient()
+    plc = ModbusPLCClient(config, client_factory=lambda **_: fake_client)
+
+    status = plc.set_estop()
+
+    assert status.system_state == SystemState.E_STOP
+    assert fake_client.calls[-2:] == [
+        ("write_coil", {"address": 3, "value": True, "device_id": 1}),
+        ("write_coil", {"address": 3, "value": False, "device_id": 1}),
     ]
 
 
@@ -272,7 +304,11 @@ def test_write_start_coils_batches_contiguous_addresses(config: ModbusPLCConfig)
 
     assert fake_client.calls[-1] == (
         "write_coils",
-        {"address": 0, "values": [True, True, True, True], "device_id": 1},
+        {
+            "address": 0,
+            "values": [True, True, True, True, True, True],
+            "device_id": 1,
+        },
     )
 
 

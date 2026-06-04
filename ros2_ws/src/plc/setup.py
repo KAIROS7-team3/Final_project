@@ -15,7 +15,7 @@ setup(
         (f"share/{package_name}/config", glob("config/*.yaml")),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
-    install_requires=["setuptools"],
+    install_requires=["setuptools", "pymodbus"],
     zip_safe=True,
     maintainer="KAIROS7-team3",
     maintainer_email="gold73201-collab@users.noreply.github.com",

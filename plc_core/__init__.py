@@ -7,7 +7,6 @@
 
 from plc_core.client import PLCClient, PLCStatus
 from plc_core.config import ModbusPLCConfig, PLCConfigError
-from plc_core.modbus_client import ModbusPLCClient, PLCError
 from plc_core.states import LEDColor, LEDMode, STATE_LED_MAP, SystemState
 
 __all__ = [
@@ -22,3 +21,15 @@ __all__ = [
     "STATE_LED_MAP",
     "SystemState",
 ]
+
+
+def __getattr__(name: str):
+    """Load pymodbus-backed symbols only when a caller explicitly asks for them."""
+
+    if name in {"ModbusPLCClient", "PLCError"}:
+        from plc_core.modbus_client import ModbusPLCClient, PLCError
+
+        globals()["ModbusPLCClient"] = ModbusPLCClient
+        globals()["PLCError"] = PLCError
+        return globals()[name]
+    raise AttributeError(f"module 'plc_core' has no attribute {name!r}")

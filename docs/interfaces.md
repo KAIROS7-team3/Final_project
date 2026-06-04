@@ -54,7 +54,7 @@
 |------|------|------|
 | `led_color` | `string` | `green` \| `yellow` \| `red` \| `white` |
 | `led_mode` | `string` | `solid` \| `pulse` \| `flash` |
-| `system_state` | `string` | `idle` \| `listening` \| `inferring` \| `moving` \| `error` \| `e_stop` |
+| `system_state` | `string` | `idle` \| `listening` \| `inferring` \| `moving` \| `error` \| `e_stop` \| `watchdog` |
 
 > 메시지 자체는 PLC의 현재 스냅샷(`Status`)이지만, 그 안의 `system_state` 필드는 상태머신의 멤버이므로 `State` 표현을 사용한다. 메시지명과 필드명의 차이는 의도된 것이다.
 
@@ -222,7 +222,8 @@ int32 slot_col
 | `/vision/tracked_poses` | `vision_msgs/Detection3DArray` | `tracker_node` | `context_builder` | Best Effort / depth 5 |
 | `/vision/scene_context` | `std_msgs/String` (JSON) | `context_builder` | `voice/gemma_intent_node`, `orchestrator` (Phase 5a) | Reliable / depth 1 |
 | `/robot/status` | `interfaces/RobotStatus` | `dsr_controller` 또는 `rl_policy_node` | `whisper_node` | Reliable / depth 1 |
-| `/plc/status` | `interfaces/PLCStatus` | `plc_node` | (모니터링용) | Best Effort / depth 1 |
+| `/plc/status` | `interfaces/PLCStatus` | `plc_node` | (모니터링용) | Reliable + Transient Local / depth 1 |
+| `/plc/e_stop` | `std_msgs/Bool` | `plc_node` | safety/orchestrator | Reliable + Transient Local / depth 1 |
 | `/vision/marker/map` | `interfaces/MarkerMap` | `marker_scan_node` | `orchestrator` BT ScanMarkers | Reliable / depth 1 |
 | `/vision/marker/debug/image` | `sensor_msgs/Image` | `marker_scan_node` | (디버그용) | Best Effort / depth 1 |
 

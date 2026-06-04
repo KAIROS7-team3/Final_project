@@ -53,13 +53,14 @@ class PLCClient:
         self._connected = False
         logger.info("[PLCClient] disconnected")
 
-    def set_state(self, state: SystemState) -> bool:
-        """상위 시스템 상태를 LED 색/모드로 변환해 적용한다."""
+    def set_state(self, state: SystemState) -> PLCStatus:
+        """상위 시스템 상태를 LED 색/모드로 변환해 적용하고 snapshot을 반환한다."""
 
         color, mode = STATE_LED_MAP[state]
         self._current_state = state
         logger.info("[PLCClient] set_state - state=%s led_color=%s led_mode=%s", state, color, mode)
-        return self.set_led(color, mode)
+        self.set_led(color, mode)
+        return self.get_status()
 
     def set_led(self, color: LEDColor, mode: LEDMode) -> bool:
         """LED 표시를 적용한다.
@@ -71,12 +72,12 @@ class PLCClient:
         logger.info("[PLCClient] set_led - color=%s mode=%s", color, mode)
         return True
 
-    def set_error(self) -> bool:
+    def set_error(self) -> PLCStatus:
         """일반 오류 상태를 빨간 점멸로 표시한다."""
 
         return self.set_state(SystemState.ERROR)
 
-    def set_estop(self) -> bool:
+    def set_estop(self) -> PLCStatus:
         """E-stop 상태를 빨간 고정등으로 표시한다."""
 
         return self.set_state(SystemState.E_STOP)
