@@ -39,6 +39,8 @@ VALID_SYSTEM_EVENT_TYPES = frozenset(
 )
 VALID_SEVERITIES = frozenset({"info", "warning", "error", "critical"})
 VALID_TRACKS = frozenset({"A", "B", "C"})
+# 외부 노드가 보내는 거부 사유(notes) 자유형 문자열의 상한 — 감사 로그 비대화 방지.
+MAX_REJECTION_NOTES_LEN = 1024
 DEFAULT_OPERATOR_ID = "operator_01"
 DB_CACHE_TTL_SECONDS = 300.0
 # db_service_node·fod_monitor_node가 같은 WAL 파일에 동시 쓰기를 시도할 때
@@ -349,6 +351,64 @@ class ToolRepository:
                 )
 
         return updates
+
+    def log_rejection(
+        self,
+        tool_id: str,
+        reason: str,
+        track: str | None = None,
+    ) -> UpdateResult:
+        """Persist a rejected command as a tool_events('rejected') row without
+        changing current_status (B1-1).
+
+        DB Gate(S-2) 거부는 내부 경로 _record_rejection(check_feasibility 안에서
+        호출)이 이미 기록한다. 본 메서드는 DB Gate에 도달하기도 전에 드롭된 명령을
+        외부 ROS 노드가 기록하기 위한 공개 경로다 — 특히 orchestrator의 S-7
+        is_moving 가드. status_after 컬럼이 NOT NULL이라 현재 상태를 읽어
+        status_before/after에 그대로 넣고 current_status는 바꾸지 않는다.
+        예외를 던지지 않고 UpdateResult(success, message)를 반환한다.
+        """
+
+        if not tool_id:
+            return UpdateResult(False, "tool_id is required")
+        # orchestrator는 "트랙 없음"을 빈 문자열로 보낸다 — None으로 정규화한 뒤
+        # 비어 있지 않은 값만 화이트리스트로 검증한다.
+        track = track or None
+        if track is not None and track not in VALID_TRACKS:
+            return UpdateResult(False, f"unsupported track: {track}")
+        # 외부에서 들어오는 자유형 문자열이라 감사 로그가 비대해지지 않게 길이를
+        # 제한한다(기록은 보존하되 잘라낸다).
+        reason = (reason or "")[:MAX_REJECTION_NOTES_LEN]
+
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            with self._connect() as conn:
+                # 존재 확인을 트랜잭션 밖(SELECT는 트랜잭션을 열지 않음)에서 먼저
+                # 하고, 쓸 게 확정된 뒤에만 BEGIN한다 — 조기 반환 시 롤백이 필요 없다.
+                row = conn.execute(
+                    "SELECT current_status FROM tools WHERE tool_id = ?",
+                    (tool_id,),
+                ).fetchone()
+                if row is None:
+                    return UpdateResult(False, f"unknown tool_id: {tool_id}")
+                current_status = str(row["current_status"])
+                conn.execute("BEGIN")
+                event_id = self._insert_tool_event(
+                    conn=conn,
+                    tool_id=tool_id,
+                    event_type="rejected",
+                    track=track,
+                    status_before=current_status,
+                    status_after=current_status,
+                    notes=reason,
+                    timestamp=now,
+                )
+                if event_id is not None:
+                    self._update_last_event(conn, tool_id, event_id)
+                conn.commit()
+        except sqlite3.Error as exc:
+            return UpdateResult(False, f"failed to log rejection: {exc}")
+        return UpdateResult(True, "logged")
 
     def log_system_event(
         self,
