@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS tool_events (
     event_id      INTEGER PRIMARY KEY AUTOINCREMENT,
     tool_id       TEXT NOT NULL REFERENCES tools(tool_id),
     event_type    TEXT NOT NULL
-        CHECK(event_type IN ('fetch','return','rejected','error','fod_alert','reconciled')),
+        CHECK(event_type IN ('fetch','return','rejected','error','timeout','fod_alert','reconciled')),
     track         TEXT CHECK(track IN ('A','B','C')),
     operator_id   TEXT NOT NULL REFERENCES operators(operator_id),
     status_before TEXT CHECK(status_before IN ('in_slot','out','staged','missing','fod_alert')),
@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS system_events (
     event_type TEXT NOT NULL
         CHECK(event_type IN (
             'boot','boot_complete','reconciliation_mismatch',
-            'estop','estop_reset','db_cache_fallback','db_cache_expired','calibration'
+            'estop','estop_reset','db_cache_fallback','db_cache_expired','calibration',
+            'fod_alert'
         )),
     track      TEXT CHECK(track IN ('A','B','C')),
     severity   TEXT NOT NULL CHECK(severity IN ('info','warning','error','critical')),

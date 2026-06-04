@@ -55,10 +55,16 @@ class FodMonitorNode(Node):
             self.get_logger().error(f"FOD monitor poll failed: {exc}")
             return
         for update in updates:
-            self.get_logger().warning(
+            message = (
                 f"FOD transition tool_id={update.tool_id}: "
                 f"{update.previous_status} -> {update.new_status}"
             )
+            # fod_alert 는 실제 경보(critical) — repository가 system_events 채널에도
+            # 같은 트랜잭션으로 기록한다 (E-5). missing 은 경보 전 단계라 warning.
+            if update.new_status == "fod_alert":
+                self.get_logger().error(f"{message} [FOD ALERT — logged to system_events]")
+            else:
+                self.get_logger().warning(message)
 
 
 def main(args: list[str] | None = None) -> None:
