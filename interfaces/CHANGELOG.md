@@ -28,6 +28,12 @@
 ## [Unreleased]
 
 ### Added
+- `srv/GripperSetPosition.srv`: RH-P12-RN 그리퍼 위치 제어 서비스 추가 (Track B Phase 1, PR #35).
+  - 필드: request `position`(pulse), `current`(mA), `timeout_sec` / response `success`, `message`, `final_position`, `final_current`.
+  - `gripper_node`가 `/gripper/set_position`으로 호스팅. Doosan 컨트롤러 TCP(port 9105) 경유 Modbus RTU로 RH-P12-RN 제어.
+  - rationale: 그리퍼 제어를 Track A/B 공용 ROS2 서비스로 노출 — toolbox 시퀀스(`unit_actions/toolbox_motion.py`)의 GRIP step이 이 서비스로 실행됨.
+  - 단위 주의: `position`/`current`는 DSR 네이티브 pulse/mA 단위 (E-1의 m/rad과 무관한 하드웨어 원시 단위).
+  - migration: 신규 서비스라 마이그레이션 불필요.
 - `msg/Intent.msg`: Gemma 4 의도 분류 결과를 구조화된 메시지로 발행. 필드: `intent_type`, `tool_id`, `confidence`, `raw_utterance`, `timestamp`.
   - rationale: 이전 `std_msgs/String`(JSON) 방식은 스키마 미강제·rosbag 분석 불가·`interface-guardian` 추적 불가.
   - migration: 코드 구현 전 단계라 마이그레이션 불필요.

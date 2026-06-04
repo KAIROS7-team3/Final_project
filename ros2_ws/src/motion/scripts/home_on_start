@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from motion.home_on_start import main
+main()

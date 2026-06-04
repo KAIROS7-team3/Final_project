@@ -1,0 +1,54 @@
+# RH-P12-RN gripper node config
+# command_transport: drl  — 명령마다 drl_start 호출 (단순, 느림)
+# command_transport: tcp  — DRL TCP 서버 상주, binary 프로토콜 (빠름)
+gripper_node:
+  ros__parameters:
+    robot_ns: dsr01
+    command_transport: tcp
+    tcp_external_server: false
+    robot_port: 9105
+
+    # --- 프로토콜 (tcp 모드에서만 유효) ---
+    # binary: 헤더 8B+바이너리 페이로드, 레이턴시 낮음 (권장)
+    # json:   텍스트 프레임, 디버깅 편함
+    tcp_protocol: binary
+    tcp_state_stream_enabled: true
+    tcp_state_hz: 5.0
+    tcp_cmd_frame_wait_sec: 0.005
+    tcp_ack_timeout_sec: 3.0
+    tcp_watchdog_enabled: true
+    tcp_watchdog_stale_sec: 2.5
+
+    # --- 액션 / direct cmd ---
+    gripper_command_action_enabled: true
+    direct_cmd_topic_enabled: true
+    direct_cmd_topic: "/gripper/cmd_direct"
+    direct_cmd_latest_only: true
+    direct_cmd_streaming: true
+    direct_cmd_streaming_no_ack: true
+    direct_cmd_streaming_ack_timeout_sec: 0.5
+
+    # --- 상태 발행 ---
+    state_hz: 10.0
+
+    # --- 그리퍼 파라미터 ---
+    pulse_open: 0          # 완전 개방
+    pulse_closed_preset: 700  # 강한 파지
+    init_current: 400
+    grip_current: 300
+    grip_current_threshold: 50
+    done_pos_tolerance: 20
+
+    # --- Modbus 레지스터 맵 (RH-P12-RN 기본값) ---
+    slave_id: 1
+    present_current_reg: 287
+    present_position_reg: 290
+    present_position_regs: 2
+    goal_current_reg: 275
+    goal_position_reg: 282
+    goal_position_write_mode: fc16
+    goal_position_regs: 2
+
+    # --- 디버그 ---
+    drl_snap_enabled: false
+    plc_feedback_enabled: false
