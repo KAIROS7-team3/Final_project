@@ -34,7 +34,6 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_estop_poll", default_value="false"),
             DeclareLaunchArgument("estop_input_address", default_value="-1"),
             DeclareLaunchArgument("estop_poll_period_s", default_value="0.1"),
-            DeclareLaunchArgument("db_path", default_value="robot_arm.db"),
             Node(
                 package="plc",
                 executable="plc_node",
@@ -80,7 +79,6 @@ def generate_launch_description() -> LaunchDescription:
                             LaunchConfiguration("estop_poll_period_s"),
                             value_type=float,
                         ),
-                        "db_path": LaunchConfiguration("db_path"),
                     },
                 ],
             )

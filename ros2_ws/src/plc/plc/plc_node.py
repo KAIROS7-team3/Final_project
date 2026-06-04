@@ -11,8 +11,6 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-import sqlite3
-from pathlib import Path
 
 import rclpy
 from interfaces.msg import PLCStatus as PLCStatusMsg
@@ -41,7 +39,6 @@ class PlcNodeConfig:
     watchdog_period_s: float
     enable_estop_poll: bool
     estop_poll_period_s: float
-    db_path: str
 
 
 class XgbRos2ModbusNode(Node):
@@ -194,7 +191,6 @@ class XgbRos2ModbusNode(Node):
         self.declare_parameter("watchdog_period_s", 0.25)
         self.declare_parameter("enable_estop_poll", False)
         self.declare_parameter("estop_poll_period_s", 0.1)
-        self.declare_parameter("db_path", "robot_arm.db")
 
         start_coil_labels = tuple(
             str(label) for label in self.get_parameter("start_coil_labels").value
@@ -285,7 +281,6 @@ class XgbRos2ModbusNode(Node):
             watchdog_period_s=watchdog_period_s,
             enable_estop_poll=enable_estop_poll,
             estop_poll_period_s=float(self.get_parameter("estop_poll_period_s").value),
-            db_path=str(self.get_parameter("db_path").value),
         )
 
     def _connect_with_retry(self) -> bool:
@@ -311,7 +306,6 @@ class XgbRos2ModbusNode(Node):
                     return True
             except PLCError as exc:
                 self.get_logger().error(f"PLC connect attempt {attempt} failed: {exc}")
-                self._record_plc_error(f"connect failed: {exc}")
 
             if attempt < self._config.connect_retry_count:
                 time.sleep(self._config.connect_retry_backoff_s * attempt)
@@ -320,7 +314,6 @@ class XgbRos2ModbusNode(Node):
             f"PLC connect failed on {self._config.modbus.port}; "
             "check wiring and serial port"
         )
-        self._record_plc_error(f"connect failed on {self._config.modbus.port}")
         self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
         return False
 
@@ -350,27 +343,6 @@ class XgbRos2ModbusNode(Node):
                 )
         except PLCError as exc:
             self.get_logger().warning(f"PLC reconnect failed: {exc}")
-            self._record_plc_error(f"reconnect failed: {exc}")
-
-    def _record_plc_error(self, notes: str) -> None:
-        """PLC actuator/read failure를 DB system_events에 남긴다."""
-
-        db_path = Path(self._config.db_path)
-        if not db_path.exists():
-            self.get_logger().warning(
-                f"PLC DB event skipped because db_path does not exist: {db_path}"
-            )
-            return
-        try:
-            with sqlite3.connect(db_path) as conn:
-                conn.execute(
-                    "INSERT INTO system_events (event_type, track, severity, notes) "
-                    "VALUES (?, ?, ?, ?)",
-                    ("plc_error", None, "error", notes),
-                )
-                conn.commit()
-        except sqlite3.Error as exc:
-            self.get_logger().error(f"PLC DB event logging failed: {exc}")
 
     def _outputs_allowed(self) -> bool:
         """E-stop latch 중에는 PLC 출력 변경 요청을 거부한다."""
@@ -421,7 +393,6 @@ class XgbRos2ModbusNode(Node):
             )
         except PLCError as exc:
             self.get_logger().error(f"PLC semantic state apply failed: {exc}")
-            self._record_plc_error(f"semantic state apply failed: {exc}")
             status = self._plc.set_error(apply_outputs=False)
         self._publish_status(status)
 
@@ -528,7 +499,6 @@ class XgbRos2ModbusNode(Node):
             self._plc.write_coil(address, value)
         except PLCError as exc:
             self.get_logger().error(f"{label} control failed: {exc}")
-            self._record_plc_error(f"{label} control failed: {exc}")
             self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
             return False
 
@@ -548,7 +518,6 @@ class XgbRos2ModbusNode(Node):
             )
         except PLCError as exc:
             self.get_logger().error(f"PLC word read failed: {exc}")
-            self._record_plc_error(f"word read failed: {exc}")
             self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
             return
 
@@ -571,7 +540,6 @@ class XgbRos2ModbusNode(Node):
             self._plc.heartbeat()
         except PLCError as exc:
             self.get_logger().error(f"PLC watchdog heartbeat failed: {exc}")
-            self._record_plc_error(f"watchdog heartbeat failed: {exc}")
             self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
 
     def estop_poll_timer_callback(self) -> None:
@@ -588,7 +556,6 @@ class XgbRos2ModbusNode(Node):
             estop_pressed = self._plc.read_estop()
         except PLCError as exc:
             self.get_logger().error(f"PLC E-stop input read failed: {exc}")
-            self._record_plc_error(f"E-stop input read failed: {exc}")
             self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
             return
 
@@ -615,7 +582,6 @@ class XgbRos2ModbusNode(Node):
             self._plc.write_coil(address, value)
         except PLCError as exc:
             self.get_logger().error(f"{label} control failed: {exc}")
-            self._record_plc_error(f"{label} control failed: {exc}")
             self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
             return False
 
@@ -726,7 +692,6 @@ class XgbRos2ModbusNode(Node):
             self._plc.write_start_coils(value)
         except PLCError as exc:
             self.get_logger().error(f"M coil batch control failed: {exc}")
-            self._record_plc_error(f"M coil batch control failed: {exc}")
             self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
             return False
 
@@ -757,7 +722,6 @@ class XgbRos2ModbusNode(Node):
             )
         except PLCError as exc:
             self.get_logger().error(f"PLC word write failed: {exc}")
-            self._record_plc_error(f"word write failed: {exc}")
             self._set_and_publish_system_state(SystemState.ERROR, apply_outputs=False)
             return
 

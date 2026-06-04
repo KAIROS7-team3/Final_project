@@ -40,7 +40,6 @@ parameter 로드, topic 변환, `/plc/status` publish를 담당하는 wrapper다
 | `watchdog_period_s` | `0.25` | heartbeat 주기. 활성화 시 `0.25` 이하 유지 |
 | `enable_estop_poll` | `false` | PLC E-stop input polling 사용 여부 |
 | `estop_poll_period_s` | `0.1` | E-stop input polling 주기 |
-| `db_path` | `robot_arm.db` | PLC actuator/read 실패를 기록할 DB 경로 |
 
 운영 배포 단계에서는 udev rule로 PLC serial 장치를 `/dev/plc`로 고정하는 것을
 목표로 한다. 현재 개발/검증 기본값은 실제 성공한 `/dev/ttyUSB0`이다.
@@ -190,9 +189,6 @@ ros2 launch plc plc.launch.py \
 E-stop input이 감지되면 노드는 `/plc/status`에 `system_state: e_stop`,
 `led_color: red`, `led_mode: solid`를 발행하고 `/plc/e_stop`에 `true`를 발행한다.
 E-stop latch 중에는 PLC 출력 변경 요청을 거부하며, 자동 복구하지 않는다.
-PLC actuator/read 실패는 `db_path`가 존재하는 경우 `system_events`에
-`event_type=plc_error`, `severity=error`로 기록한다.
-
 상위 안전 계층 검증용 echo:
 
 ```bash
@@ -228,14 +224,6 @@ pulse 시간을 현장에서 늘려 확인하려면:
 
 ```bash
 ros2 launch plc plc.launch.py port:=/dev/ttyUSB0 baudrate:=115200 device_id:=1 pulse_duration_s:=0.5
-```
-
-운영 DB 경로를 명시하려면:
-
-```bash
-ros2 launch plc plc.launch.py \
-  port:=/dev/ttyUSB0 \
-  db_path:=$HOME/Final_Project/robot_arm.db
 ```
 
 ## 기본 테스트

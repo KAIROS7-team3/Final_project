@@ -4,7 +4,6 @@ import sys
 import types
 import threading
 from pathlib import Path
-import sqlite3
 
 from plc_core.client import PLCStatus
 from plc_core.config import ModbusPLCConfig
@@ -193,10 +192,9 @@ def make_node(
     *,
     connected: bool = True,
     fail_write: bool = False,
-    db_path: str = "missing.db",
 ) -> XgbRos2ModbusNode:
     node = XgbRos2ModbusNode.__new__(XgbRos2ModbusNode)
-    node._config = types.SimpleNamespace(modbus=make_config(), db_path=db_path)
+    node._config = types.SimpleNamespace(modbus=make_config())
     node._plc = FakePLC(connected=connected, fail_write=fail_write)
     node._estop_latched = threading.Event()
     node._estop_pub = FakePublisher()
@@ -295,25 +293,3 @@ def test_read_timer_does_not_reconnect_when_disconnected() -> None:
 
     assert ("connect", {}) not in node._plc.calls
 
-
-def test_plc_actuator_failure_records_db_system_event(tmp_path) -> None:
-    db_path = tmp_path / "robot_arm.db"
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            "CREATE TABLE system_events ("
-            "event_type TEXT NOT NULL, "
-            "track TEXT, "
-            "severity TEXT NOT NULL, "
-            "notes TEXT)"
-        )
-    node = make_node(fail_write=True, db_path=str(db_path))
-
-    assert node._write_coil_raw(0, True, "M0000") is False
-
-    with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT event_type, severity, notes FROM system_events"
-        ).fetchone()
-    assert row[0] == "plc_error"
-    assert row[1] == "error"
-    assert "M0000 control failed" in row[2]
