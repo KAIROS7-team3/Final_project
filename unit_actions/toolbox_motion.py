@@ -3,6 +3,13 @@
 공구함 서랍 열기/닫기 + 공구 접근 Step 시퀀스.
 출처: TaskWriter toolboxapproach_box1.tw / toolboxapproach_box2.tw (e0509 실측)
 
+⚠️ 스코프: 데모 / Track B Phase 1 한정.
+  - 아래 모든 좌표·속도·펄스 상수는 `.tw` 파일에서 디코딩한 **실측 하드코딩 값**이다.
+  - 운영자 튜닝 대상이 아닌 demonstration 재현용이므로, config/*.yaml 분리(E-4)는
+    의도적으로 보류한다. 실제 운영용 fetch/return unit action으로 일반화할 때
+    웨이포인트·임계값을 config로 이관할 것.
+  - 따라서 이 파일을 프로덕션 fetch/return의 기반으로 그대로 확장하지 말 것.
+
 단위 주의:
   - 여기서 정의된 모든 좌표·속도는 DSR 네이티브 단위 (mm, deg, mm/s, deg/s).
   - ArmInterface (m/rad) 와는 다름 — unit_action_server.py 래퍼에서 변환 필요.
@@ -52,7 +59,10 @@ ACC_J: float = 20.0
 
 # ── 그리퍼 pulse 상수 ─────────────────────────────────────────────────────
 
-PULSE_OPEN:         int = 450   # gripper_release stroke (TW SubRoutine 실측)
+# 주의: 여기 PULSE_RELEASE=450 은 "공구를 놓기 위한 release stroke"(부분 개방)이며,
+#       hal/doosan/gripper_driver.py 의 PULSE_OPEN=0 (완전 개방)과 의미·값이 다르다.
+#       두 모듈의 pulse 상수를 혼용하지 말 것.
+PULSE_RELEASE:      int = 450   # gripper_release stroke (TW SubRoutine 실측) — 부분 개방
 PULSE_GRIP_BOX:     int = 600   # gripper_grap_boxhand stroke (TW SubRoutine 실측)
 PULSE_GRIP_SOCKET:  int = 650   # socket 파지 stroke (TW SubRoutine 실측)
 
@@ -168,7 +178,7 @@ def grip(pulse: int) -> Step:
 def wait_step(sec: float) -> Step:
     return Step(kind=StepKind.WAIT, sec=sec)
 
-GRIP_OPEN    = lambda: grip(PULSE_OPEN)
+GRIP_RELEASE = lambda: grip(PULSE_RELEASE)
 GRIP_BOX     = lambda: grip(PULSE_GRIP_BOX)
 GRIP_SOCKET  = lambda: grip(PULSE_GRIP_SOCKET)
 JOINT_HOME   = lambda: mj_abs(JOINT_HOME_DEG)
@@ -178,7 +188,7 @@ JOINT_HOME   = lambda: mj_abs(JOINT_HOME_DEG)
 
 def home_seq() -> list[Step]:
     """홈 자세 복귀 시퀀스."""
-    return [GRIP_OPEN(), JOINT_HOME()]
+    return [GRIP_RELEASE(), JOINT_HOME()]
 
 
 def _wp(layer: int, key: str) -> list:
@@ -194,13 +204,13 @@ def drawer_open_seq(layer: int) -> list[Step]:
     종료 후 팔은 LAYER{n}_INNER 위치에 있음.
     """
     return [
-        GRIP_OPEN(),
+        GRIP_RELEASE(),
         mj_abs(_wp(layer, "setup_j")),
         ml_abs(_wp(layer, "approach")),
         GRIP_BOX(),
         ml_abs(_wp(layer, "open")),
         ml_abs(_wp(layer, "silence")),
-        GRIP_OPEN(),
+        GRIP_RELEASE(),
         ml_abs(_wp(layer, "inner")),
     ]
 
@@ -213,13 +223,13 @@ def drawer_close_seq(layer: int) -> list[Step]:
     종료 후 팔은 LAYER{n}_CLOSE_END 위치에 있음.
     """
     return [
-        GRIP_OPEN(),
+        GRIP_RELEASE(),
         mj_abs(_wp(layer, "close_setup_j")),
         ml_abs(_wp(layer, "opendown")),
         GRIP_BOX(),
         ml_abs(_wp(layer, "open")),
         ml_abs(_wp(layer, "approach")),
-        GRIP_OPEN(),
+        GRIP_RELEASE(),
         ml_abs(_wp(layer, "close_end")),
     ]
 
@@ -252,14 +262,14 @@ def socket_fetch_seq() -> list[Step]:
     """
     return [
         JOINT_HOME(),
-        GRIP_OPEN(),
+        GRIP_RELEASE(),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_APPROACH_Z),
         GRIP_SOCKET(),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_BOTTOM),
-        GRIP_OPEN(),
+        GRIP_RELEASE(),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_CATCH_HOME_L),
     ]
@@ -273,14 +283,14 @@ def socket_return_seq() -> list[Step]:
     """
     return [
         JOINT_HOME(),
-        GRIP_OPEN(),
+        GRIP_RELEASE(),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_BOTTOM),
         GRIP_SOCKET(),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_APPROACH_Z),
-        GRIP_OPEN(),
+        GRIP_RELEASE(),
         ml_abs(SOCKET_APPROACH_XY),
         JOINT_HOME(),
     ]
