@@ -24,9 +24,9 @@ import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-from std_msgs.msg import String
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
 from dsr_msgs2.srv import SetCurrentTcp, ConfigCreateTcp
+from interfaces.srv import GripperSetPosition
 
 # unit_actions는 ros2_ws 밖에 있으므로 경로 추가
 sys.path.insert(0, '/home/kimsungyeoun/Final_project')
@@ -57,18 +57,19 @@ class ToolboxSeqRunner(Node):
         self._cb_group = ReentrantCallbackGroup()
 
         p = f'/{ns}'
-        self._movel_cli      = self.create_client(MoveLine,        f'{p}/motion/move_line',       callback_group=self._cb_group)
-        self._movej_cli      = self.create_client(MoveJoint,       f'{p}/motion/move_joint',      callback_group=self._cb_group)
-        self._stop_cli       = self.create_client(MoveStop,        f'{p}/motion/move_stop',       callback_group=self._cb_group)
-        self._set_tcp_cli    = self.create_client(SetCurrentTcp,   f'{p}/tcp/set_current_tcp',    callback_group=self._cb_group)
-        self._create_tcp_cli = self.create_client(ConfigCreateTcp, f'{p}/tcp/config_create_tcp',  callback_group=self._cb_group)
-        self._gripper_pub    = self.create_publisher(String, '/gripper/cmd_direct', 10)
+        self._movel_cli      = self.create_client(MoveLine,           f'{p}/motion/move_line',       callback_group=self._cb_group)
+        self._movej_cli      = self.create_client(MoveJoint,          f'{p}/motion/move_joint',      callback_group=self._cb_group)
+        self._stop_cli       = self.create_client(MoveStop,           f'{p}/motion/move_stop',       callback_group=self._cb_group)
+        self._set_tcp_cli    = self.create_client(SetCurrentTcp,      f'{p}/tcp/set_current_tcp',    callback_group=self._cb_group)
+        self._create_tcp_cli = self.create_client(ConfigCreateTcp,    f'{p}/tcp/config_create_tcp',  callback_group=self._cb_group)
+        self._gripper_cli    = self.create_client(GripperSetPosition, '/gripper/set_position',       callback_group=self._cb_group)
 
         self.get_logger().info(f'[runner] 서비스 대기 중...')
         for cli, name in [
             (self._movel_cli,   'move_line'),
             (self._movej_cli,   'move_joint'),
             (self._set_tcp_cli, 'set_current_tcp'),
+            (self._gripper_cli, 'gripper/set_position'),
         ]:
             if not cli.wait_for_service(timeout_sec=10.0):
                 self.get_logger().error(f'[runner] {name} 없음 — bringup 먼저 실행')
@@ -206,19 +207,22 @@ class ToolboxSeqRunner(Node):
 
     def _grip(self, step) -> bool:
         pulse = step.pulse if step.pulse is not None else 0
-        if pulse == 0:
-            cmd = 'open'
-        elif pulse <= 450:
-            # release 계열 (TW: gripper_release = stroke 450) — current 0으로 config 기본값 사용
-            cmd = f'custom {pulse} 0'
-        else:
-            # grip 계열 (TW: gripper_grap_boxhand = stroke 600) — current 400mA
-            cmd = f'custom {pulse} 400'
-        msg = String()
-        msg.data = cmd
-        self._gripper_pub.publish(msg)
-        self.get_logger().info(f'  gripper cmd: {cmd}')
-        time.sleep(0.5)
+        current = 400 if pulse > 450 else 0  # grip: 400mA, open/release: gripper_node 기본값
+
+        req = GripperSetPosition.Request()
+        req.position    = pulse
+        req.current     = current
+        req.timeout_sec = 0.0  # gripper_node 기본값 사용
+
+        fut = self._gripper_cli.call_async(req)
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+        res = fut.result()
+        if res is None or not res.success:
+            msg = res.message if res else 'timeout'
+            self.get_logger().error(f'  gripper set_position 실패: {msg}')
+            return False
+        self.get_logger().info(f'  gripper ok — pos={res.final_position} cur={res.final_current}')
+        time.sleep(0.3)  # 기계적 안착 대기
         return True
 
 
