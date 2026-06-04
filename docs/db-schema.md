@@ -65,7 +65,8 @@
 | `return` | 공구 반납 완료 | staging/외부 → 슬롯 |
 | `rejected` | DB Gate에서 차단된 명령 | 불가 명령 (S-2): missing/out/fod_alert 상태 공구 fetch 등 |
 | `error` | 하드웨어/소프트웨어 실패 | 모션/그리퍼/PLC 실패 (E-5) |
-| `fod_alert` | FOD 임계 초과 → 분실 알림 | 자동 (S-8) |
+| `timeout` | checkout 시간 초과 → `missing` 전이 (경보 전 단계) | 자동 (S-8): `out`/`staged` → `missing` |
+| `fod_alert` | FOD 임계(grace) 초과 → 분실 경보 | 자동 (S-8): `missing` → `fod_alert`, `system_events`에도 critical 기록 (E-5) |
 | `reconciled` | 부팅 시 YOLOv11s 스캔으로 상태 동기화 | 부팅 시 1회 (S-9) |
 
 ### 3.2 인덱스 권장
@@ -119,6 +120,7 @@ display_name = 'default operator'
 | `db_cache_fallback` | DB 연결 실패 → 캐시 사용 (S-2, 결정 #12) |
 | `db_cache_expired` | 캐시 TTL 초과 → 모든 명령 거부 (S-2) |
 | `calibration` | 캘리브레이션 시작/완료 |
+| `fod_alert` | FOD 경보(`tool_events`의 `missing → fod_alert`와 동반) | 자동 (S-8/E-5), severity=`critical` |
 
 ---
 

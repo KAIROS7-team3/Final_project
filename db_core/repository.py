@@ -6,6 +6,7 @@ ROS2 node는 이 repository를 통해서만 feasibility 확인과 상태 갱신�
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -14,12 +15,29 @@ from pathlib import Path
 
 from db_core.schema import SCHEMA_SQL
 
+logger = logging.getLogger(__name__)
+
 # DB Gate가 공식적으로 받아들이는 값만 상수로 고정한다.
 VALID_INTENTS = frozenset({"fetch", "return"})
 VALID_STATUSES = frozenset({"in_slot", "out", "staged", "missing", "fod_alert"})
 VALID_EVENT_TYPES = frozenset(
-    {"fetch", "return", "rejected", "error", "fod_alert", "reconciled"}
+    {"fetch", "return", "rejected", "error", "timeout", "fod_alert", "reconciled"}
 )
+# system_events 채널(운영자/PLC 가시성)이 허용하는 값. schema.py의 CHECK와 일치해야 한다.
+VALID_SYSTEM_EVENT_TYPES = frozenset(
+    {
+        "boot",
+        "boot_complete",
+        "reconciliation_mismatch",
+        "estop",
+        "estop_reset",
+        "db_cache_fallback",
+        "db_cache_expired",
+        "calibration",
+        "fod_alert",
+    }
+)
+VALID_SEVERITIES = frozenset({"info", "warning", "error", "critical"})
 VALID_TRACKS = frozenset({"A", "B", "C"})
 DEFAULT_OPERATOR_ID = "operator_01"
 DB_CACHE_TTL_SECONDS = 300.0
@@ -36,9 +54,10 @@ DEFAULT_BUSY_TIMEOUT_MS = 5000
 # 직행 전이(in_slot<->staged)는 pick/place 한 단계를 건너뛰므로 허용하지 않는다.
 # out에서의 목적지(staged=fetch place / in_slot=return place)로 방향을 구분한다.
 # (status_before, new_status) -> 허용 event_type.
-# missing/fod_alert 진입(out|staged -> missing, missing -> fod_alert)은
-# FOD monitor가 mark_checkout_timeouts에서 track=None으로 직접 기록하므로
-# 외부 호출 화이트리스트에는 포함하지 않는다 (S-8).
+# missing/fod_alert 진입(out|staged -> missing[event_type=timeout],
+# missing -> fod_alert[event_type=fod_alert])은 FOD monitor가
+# mark_checkout_timeouts에서 track=None으로 직접 기록하므로 외부 호출
+# 화이트리스트에는 포함하지 않는다 (S-8).
 _ALLOWED_TRANSITIONS: dict[tuple[str, str], frozenset[str]] = {
     ("in_slot", "out"): frozenset({"fetch"}),   # fetch pick: 슬롯에서 집어듦
     ("out", "staged"): frozenset({"fetch"}),    # fetch place: Staging Area에 거치
@@ -285,10 +304,14 @@ class ToolRepository:
                     continue
 
                 tool_id = str(row["tool_id"])
+                # out/staged -> missing 은 아직 경보 전(timeout) 단계이고,
+                # missing -> fod_alert 만 실제 FOD 경보다 (Finding 7). 이전에는
+                # 두 전이 모두 event_type='fod_alert'로 기록돼 로그에서 구분 불가했다.
+                event_type = "timeout" if new_status == "missing" else "fod_alert"
                 event_id = self._insert_tool_event(
                     conn=conn,
                     tool_id=tool_id,
-                    event_type="fod_alert",
+                    event_type=event_type,
                     track=None,
                     status_before=current_status,
                     status_after=new_status,
@@ -299,7 +322,75 @@ class ToolRepository:
                 updates.append(FodUpdate(tool_id, current_status, new_status))
             conn.commit()
 
+        # E-5: 운영자/PLC 가시 채널(system_events) 기록은 상태 전이가 "커밋된 뒤"
+        # 별도 트랜잭션으로 한다. 안전 우선순위상 FOD 경보(missing→fod_alert) 상태
+        # 전이는 가시성 기록의 성공 여부와 무관하게 반드시 커밋돼야 한다. 같은
+        # 트랜잭션에 두면 system_events insert 실패가 전이까지 롤백시켜, 경보돼야 할
+        # 공구가 missing에 머무는 fail-open이 된다(safety-reviewer HIGH). 따라서
+        # 가시성 쓰기 실패는 로그로만 남기고 이미 커밋된 전이는 보존한다.
+        for update in updates:
+            if update.new_status != "fod_alert":
+                continue
+            result = self.log_system_event(
+                event_type="fod_alert",
+                severity="critical",
+                track=None,
+                notes=(
+                    f"FOD alert: {update.tool_id} "
+                    f"{update.previous_status} -> fod_alert"
+                ),
+            )
+            if not result.success:
+                logger.error(
+                    "[ToolRepository] FOD escalation committed but system_events "
+                    "write failed for tool_id=%s: %s",
+                    update.tool_id,
+                    result.message,
+                )
+
         return updates
+
+    def log_system_event(
+        self,
+        event_type: str,
+        severity: str,
+        track: str | None = None,
+        notes: str = "",
+    ) -> UpdateResult:
+        """Append a system-level event to the operator/PLC visibility channel (E-5).
+
+        tools/tool_events 상태와 무관한 시스템 사건(부팅, e-stop, FOD 경보 등)을
+        기록한다. 정상 상태 전이는 update_tool_status를 쓰고, FOD 경보는
+        mark_checkout_timeouts가 상태 전이를 커밋한 뒤 본 메서드를 별도 트랜잭션으로
+        호출한다(전이가 가시성 쓰기에 의존하지 않도록). 이 메서드는 그 외 독립
+        시스템 이벤트용 공개 경로이기도 하다 (DBClient.log_system_event와 동등).
+        """
+
+        event_type = event_type.strip()
+        severity = severity.strip()
+        if event_type not in VALID_SYSTEM_EVENT_TYPES:
+            return UpdateResult(False, f"unsupported system event_type: {event_type}")
+        if severity not in VALID_SEVERITIES:
+            return UpdateResult(False, f"unsupported severity: {severity}")
+        if track is not None and track not in VALID_TRACKS:
+            return UpdateResult(False, f"unsupported track: {track}")
+
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            with self._connect() as conn:
+                conn.execute("BEGIN")
+                self._insert_system_event(
+                    conn=conn,
+                    event_type=event_type,
+                    severity=severity,
+                    track=track,
+                    notes=notes,
+                    timestamp=now,
+                )
+                conn.commit()
+        except sqlite3.Error as exc:
+            return UpdateResult(False, f"database error: {exc}")
+        return UpdateResult(True, "logged")
 
     def _connect(self) -> sqlite3.Connection:
         """Open SQLite with row access by column name and FK enforcement.
@@ -452,6 +543,23 @@ class ToolRepository:
             tuple(values[column] for column in insert_columns),
         )
         return int(cursor.lastrowid) if cursor.lastrowid else None
+
+    @staticmethod
+    def _insert_system_event(
+        conn: sqlite3.Connection,
+        event_type: str,
+        severity: str,
+        track: str | None,
+        notes: str,
+        timestamp: str,
+    ) -> None:
+        """Insert one system_events row (operator/PLC visibility channel)."""
+
+        conn.execute(
+            "INSERT INTO system_events (event_type, track, severity, notes, timestamp)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (event_type, track, severity, notes, timestamp),
+        )
 
     @staticmethod
     def _update_tool_row(
