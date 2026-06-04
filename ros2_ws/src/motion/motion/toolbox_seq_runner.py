@@ -34,8 +34,8 @@ from unit_actions.toolbox_motion import (
     StepKind,
     drawer_open_seq,
     drawer_close_seq,
-    socket_drop_seq,
-    socket_catch_seq,
+    socket_fetch_seq,
+    socket_return_seq,
 )
 
 DR_BASE       = 0
@@ -91,7 +91,7 @@ class ToolboxSeqRunner(Node):
         seq = self._resolve_sequence(self._seq_name)
         if seq is None:
             self.get_logger().error(f'[runner] 알 수 없는 sequence: {self._seq_name}')
-            self.get_logger().error('[runner] 사용 가능: open_0 close_0 open_1 close_1 socket_drop socket_catch')
+            self.get_logger().error('[runner] 사용 가능: open_0 close_0 open_1 close_1 socket_fetch socket_return')
             return
 
         self._set_tcp(self._tcp_name)
@@ -111,8 +111,8 @@ class ToolboxSeqRunner(Node):
             'close_0':      lambda: drawer_close_seq(0),
             'open_1':       lambda: drawer_open_seq(1),
             'close_1':      lambda: drawer_close_seq(1),
-            'socket_drop':  lambda: socket_drop_seq(),
-            'socket_catch': lambda: socket_catch_seq(),
+            'socket_fetch':  lambda: socket_fetch_seq(),
+            'socket_return': lambda: socket_return_seq(),
         }
         fn = mapping.get(name)
         return fn() if fn else None

@@ -239,7 +239,7 @@ def fetch_from_drawer_seq(layer: int) -> list[Step]:
     return drawer_open_seq(layer)
 
 
-def socket_drop_seq() -> list[Step]:
+def socket_fetch_seq() -> list[Step]:
     """소켓 공구함(bottom) → staging area 전달 시퀀스 (TW: box2_socket_drop_ver2).
 
     호출 전 팔이 홈 자세에 있어야 함.
@@ -260,7 +260,7 @@ def socket_drop_seq() -> list[Step]:
     ]
 
 
-def socket_catch_seq() -> list[Step]:
+def socket_return_seq() -> list[Step]:
     """staging area → 소켓 공구함(bottom) 반납 시퀀스 (TW: box2_socket_catch_ver2).
 
     호출 전 팔이 홈 자세에 있어야 함.
