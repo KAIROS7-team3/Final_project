@@ -2,9 +2,17 @@ from __future__ import annotations
 
 import sys
 import types
+import threading
+from pathlib import Path
+import sqlite3
 
+from plc_core.client import PLCStatus
 from plc_core.config import ModbusPLCConfig
 from plc_core.states import LEDColor, LEDMode, STATE_LED_MAP, SystemState
+
+PLC_PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+if str(PLC_PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PLC_PACKAGE_ROOT))
 
 
 if "rclpy" not in sys.modules:
@@ -25,9 +33,14 @@ if "rclpy" not in sys.modules:
 
     class _ReliabilityPolicy:
         BEST_EFFORT = object()
+        RELIABLE = object()
+
+    class _DurabilityPolicy:
+        TRANSIENT_LOCAL = object()
 
     rclpy_executors_module.ExternalShutdownException = _ExternalShutdownException
     rclpy_node_module.Node = _Node
+    rclpy_qos_module.DurabilityPolicy = _DurabilityPolicy
     rclpy_qos_module.QoSProfile = _QoSProfile
     rclpy_qos_module.ReliabilityPolicy = _ReliabilityPolicy
     sys.modules["rclpy"] = rclpy_module
@@ -79,42 +92,151 @@ class FakePublisher:
         self.messages.append(message)
 
 
-def test_error_and_estop_led_contract() -> None:
-    assert STATE_LED_MAP[SystemState.ERROR] == (LEDColor.RED, LEDMode.FLASH)
-    assert STATE_LED_MAP[SystemState.E_STOP] == (LEDColor.RED, LEDMode.SOLID)
+class FakeLogger:
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, str]] = []
+
+    def info(self, message: str) -> None:
+        self.messages.append(("info", message))
+
+    def warning(self, message: str) -> None:
+        self.messages.append(("warning", message))
+
+    def error(self, message: str) -> None:
+        self.messages.append(("error", message))
 
 
-def test_safety_hook_addresses_can_be_disabled() -> None:
-    config = ModbusPLCConfig(
+class FakeTimer:
+    def __init__(self, delay_s: float, callback) -> None:
+        self.delay_s = delay_s
+        self.callback = callback
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class FakePLC:
+    def __init__(self, *, connected: bool = True, fail_write: bool = False) -> None:
+        self.connected = connected
+        self.fail_write = fail_write
+        self.calls: list[tuple[str, object]] = []
+        self.current_state = SystemState.IDLE
+
+    def connect(self) -> bool:
+        self.calls.append(("connect", {}))
+        self.connected = True
+        return True
+
+    def write_coil(self, address: int, value: bool) -> None:
+        if self.fail_write:
+            from plc_core.modbus_client import PLCError
+
+            raise PLCError("simulated coil write failure")
+        self.calls.append(("write_coil", {"address": address, "value": value}))
+
+    def write_start_coils(self, value: bool) -> None:
+        self.calls.append(("write_start_coils", {"value": value}))
+
+    def set_system_state(
+        self,
+        state: SystemState,
+        *,
+        apply_outputs: bool,
+    ) -> PLCStatus:
+        self.calls.append(
+            (
+                "set_system_state",
+                {"state": state, "apply_outputs": apply_outputs},
+            )
+        )
+        self.current_state = state
+        return self.get_status()
+
+    def set_error(self, *, apply_outputs: bool = True) -> PLCStatus:
+        return self.set_system_state(SystemState.ERROR, apply_outputs=apply_outputs)
+
+    def get_status(self) -> PLCStatus:
+        color, mode = STATE_LED_MAP[self.current_state]
+        return PLCStatus(led_color=color, led_mode=mode, system_state=self.current_state)
+
+
+def make_config() -> ModbusPLCConfig:
+    return ModbusPLCConfig(
         port="/dev/ttyUSB0",
         baudrate=115200,
         parity="N",
         stopbits=1,
         bytesize=8,
         device_id=1,
-        start_coil_labels=("M0000",),
-        start_coil_addresses=(0,),
-        start_coil_outputs=("P0040",),
-        reset_coil_label="M0010",
-        reset_coil_address=16,
+        start_coil_labels=("M0000", "M0001", "M0002", "M0003", "M0004", "M0005"),
+        start_coil_addresses=(0, 1, 2, 3, 4, 5),
+        start_coil_outputs=("P0040", "P0041", "P0042", "P0043", "P0043", "P0044"),
+        reset_coil_label="M0100",
+        reset_coil_address=256,
         read_register_label="P020",
         read_register_address=0,
         write_register_label="P000",
         write_register_address=0,
         pulse_duration_s=0.2,
+        system_state_outputs={
+            SystemState.IDLE: (),
+            SystemState.MOVING: ("M0002",),
+            SystemState.E_STOP: ("M0003",),
+            SystemState.ERROR: ("M0004",),
+            SystemState.WATCHDOG: ("M0005",),
+        },
     )
+
+
+def make_node(
+    *,
+    connected: bool = True,
+    fail_write: bool = False,
+    db_path: str = "missing.db",
+) -> XgbRos2ModbusNode:
+    node = XgbRos2ModbusNode.__new__(XgbRos2ModbusNode)
+    node._config = types.SimpleNamespace(modbus=make_config(), db_path=db_path)
+    node._plc = FakePLC(connected=connected, fail_write=fail_write)
+    node._estop_latched = threading.Event()
+    node._estop_pub = FakePublisher()
+    node._status_pub = FakePublisher()
+    node._pulse_timers = []
+    node._logger = FakeLogger()
+    node.get_logger = lambda: node._logger
+
+    def create_timer(delay_s: float, callback) -> FakeTimer:
+        timer = FakeTimer(delay_s, callback)
+        node._pulse_timers.append(timer)
+        return timer
+
+    node.create_timer = create_timer
+    return node
+
+
+def test_error_and_estop_led_contract() -> None:
+    assert STATE_LED_MAP[SystemState.ERROR] == (LEDColor.RED, LEDMode.FLASH)
+    assert STATE_LED_MAP[SystemState.E_STOP] == (LEDColor.RED, LEDMode.SOLID)
+    assert STATE_LED_MAP[SystemState.WATCHDOG] == (LEDColor.YELLOW, LEDMode.FLASH)
+
+
+def test_safety_hook_addresses_can_be_disabled() -> None:
+    config = make_config()
 
     assert config.watchdog_coil_address is None
     assert config.estop_input_address is None
 
 
-def test_semantic_e_stop_maps_to_configured_error_output() -> None:
+def test_semantic_states_map_to_latest_ladder_outputs() -> None:
     outputs = ModbusPLCConfig.parse_system_state_outputs(
-        ("idle", "error", "e_stop"),
-        ("M0000", "M0003", "M0003"),
+        ("idle", "moving", "e_stop", "error", "watchdog"),
+        ("none", "M0002", "M0003", "M0004", "M0005"),
     )
 
+    assert outputs[SystemState.IDLE] == ()
     assert outputs[SystemState.E_STOP] == ("M0003",)
+    assert outputs[SystemState.ERROR] == ("M0004",)
+    assert outputs[SystemState.WATCHDOG] == ("M0005",)
 
 
 def test_publish_estop_uses_bool_topic_message() -> None:
@@ -125,3 +247,73 @@ def test_publish_estop_uses_bool_topic_message() -> None:
     node._publish_estop(False)
 
     assert [message.data for message in node._estop_pub.messages] == [True, False]
+
+
+def test_estop_latch_blocks_output_commands() -> None:
+    node = make_node()
+    node._estop_latched.set()
+
+    assert node._write_m_coil(0, True, "M0000") is False
+
+    assert ("write_coil", {"address": 0, "value": True}) not in node._plc.calls
+    assert node._estop_pub.messages[-1].data is True
+    assert node._status_pub.messages[-1].system_state == SystemState.E_STOP.value
+
+
+def test_system_state_estop_writes_direct_output_without_reset() -> None:
+    node = make_node()
+    message = types.SimpleNamespace(data="e_stop")
+
+    node.system_state_callback(message)
+
+    assert ("write_coil", {"address": 256, "value": True}) not in node._plc.calls
+    assert ("write_coil", {"address": 3, "value": True}) in node._plc.calls
+    assert node._estop_latched.is_set()
+    assert node._estop_pub.messages[-1].data is True
+    assert node._status_pub.messages[-1].system_state == SystemState.E_STOP.value
+
+
+def test_pulse_m_coil_schedules_release_without_blocking() -> None:
+    node = make_node()
+
+    node._pulse_m_coil(0, "M0000")
+
+    assert node._plc.calls[0] == ("write_coil", {"address": 0, "value": True})
+    assert ("write_coil", {"address": 0, "value": False}) not in node._plc.calls
+    assert node._pulse_timers
+
+    node._pulse_timers[-1].callback()
+
+    assert ("write_coil", {"address": 0, "value": False}) in node._plc.calls
+    assert node._status_pub.messages[-1].system_state == SystemState.IDLE.value
+
+
+def test_read_timer_does_not_reconnect_when_disconnected() -> None:
+    node = make_node(connected=False)
+
+    node.read_timer_callback()
+
+    assert ("connect", {}) not in node._plc.calls
+
+
+def test_plc_actuator_failure_records_db_system_event(tmp_path) -> None:
+    db_path = tmp_path / "robot_arm.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE system_events ("
+            "event_type TEXT NOT NULL, "
+            "track TEXT, "
+            "severity TEXT NOT NULL, "
+            "notes TEXT)"
+        )
+    node = make_node(fail_write=True, db_path=str(db_path))
+
+    assert node._write_coil_raw(0, True, "M0000") is False
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT event_type, severity, notes FROM system_events"
+        ).fetchone()
+    assert row[0] == "plc_error"
+    assert row[1] == "error"
+    assert "M0000 control failed" in row[2]

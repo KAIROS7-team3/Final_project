@@ -25,12 +25,12 @@ class ModbusPLCConfig:
     stopbits: int
     bytesize: int
     device_id: int
-    # M0000~M0003 같은 시작 버튼 coil을 label/address/output 세 배열로 관리한다.
+    # M0000~M0005 같은 시작 버튼 coil을 label/address/output 세 배열로 관리한다.
     # 세 배열은 같은 index끼리 하나의 PLC 회로를 뜻한다.
     start_coil_labels: tuple[str, ...]
     start_coil_addresses: tuple[int, ...]
     start_coil_outputs: tuple[str, ...]
-    # M0010은 현재 래더의 공통 NC reset 접점이다. ON pulse로 자기유지를 끊는다.
+    # M0100은 현재 래더의 reset 접점이다. ON pulse로 자기유지를 끊는다.
     reset_coil_label: str
     reset_coil_address: int
     # P word register는 bring-up 확인용 read/write 테스트 지점이다.
@@ -40,7 +40,7 @@ class ModbusPLCConfig:
     write_register_address: int
     # Start/reset coil은 latch가 아니라 push-button처럼 짧게 눌렀다 떼는 방식으로 쓴다.
     pulse_duration_s: float
-    # 현재 래더에는 watchdog/E-stop device가 없으므로 기본값은 None이다.
+    # M0005는 상태 출력용 watchdog 입력이다. heartbeat watchdog/E-stop hook은
     # 전용 래더를 추가한 뒤에만 주소를 채운다.
     watchdog_coil_label: str | None = None
     watchdog_coil_address: int | None = None
@@ -189,7 +189,7 @@ class ModbusPLCConfig:
     def m_topic_suffix(label: str) -> str:
         """XG5000 M label을 bring-up topic suffix로 변환한다.
 
-        예: `M0003` -> `3`, `M0010` -> `16`.
+        예: `M0003` -> `3`, `M0010` -> `16`, `M0100` -> `256`.
         """
 
         normalized = label.upper()

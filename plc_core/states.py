@@ -33,6 +33,7 @@ class SystemState(str, Enum):
     MOVING = "moving"
     ERROR = "error"
     E_STOP = "e_stop"
+    WATCHDOG = "watchdog"
 
 
 # PLCStatus.msg에 맞춘 상태 -> LED 표시 매핑.
@@ -45,4 +46,5 @@ STATE_LED_MAP: dict[SystemState, tuple[LEDColor, LEDMode]] = {
     SystemState.MOVING: (LEDColor.GREEN, LEDMode.SOLID),
     SystemState.ERROR: (LEDColor.RED, LEDMode.FLASH),
     SystemState.E_STOP: (LEDColor.RED, LEDMode.SOLID),
+    SystemState.WATCHDOG: (LEDColor.YELLOW, LEDMode.FLASH),
 }

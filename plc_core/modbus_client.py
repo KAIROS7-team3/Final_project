@@ -33,6 +33,7 @@ class ModbusPLCClient:
         self._config = config
         # ROS2 wrapper가 마지막으로 적용한 의미 상태를 /plc/status snapshot으로 재사용한다.
         self._current_state = SystemState.IDLE
+        self._watchdog_level = False
         # pymodbus serial client 생성만 여기서 하고, 실제 연결은 connect()에서 연다.
         self._client = client_factory(
             port=config.port,
@@ -125,7 +126,7 @@ class ModbusPLCClient:
         """M coil 1개에 값을 쓴다."""
 
         try:
-            # FC05 Write Single Coil. M0000~M0003 start와 M0010 reset pulse에 사용한다.
+            # FC05 Write Single Coil. M0000~M0005 start와 M0100 reset pulse에 사용한다.
             response = self._client.write_coil(
                 address=address,
                 value=bool(value),
@@ -167,7 +168,7 @@ class ModbusPLCClient:
 
         values = [bool(value)] * len(addresses)
         try:
-            # FC0F Write Multiple Coils. 현재 M0000~M0003이 연속이라 bring-up에 쓸 수 있다.
+            # FC0F Write Multiple Coils. 현재 M0000~M0005가 연속이라 bring-up에 쓸 수 있다.
             response = self._client.write_coils(
                 address=addresses[0],
                 values=values,
@@ -196,12 +197,14 @@ class ModbusPLCClient:
         self.pulse_coil(self._config.reset_coil_address, pulse_duration_s)
 
     def heartbeat(self) -> None:
-        """PLC watchdog heartbeat coil을 ON으로 쓴다."""
+        """PLC watchdog heartbeat coil을 매 호출마다 toggle한다."""
 
         if self._config.watchdog_coil_address is None:
             raise PLCError("watchdog coil address is not configured")
-        # 현재 래더에는 watchdog coil이 없다. 전용 coil이 설정된 경우에만 호출된다.
-        self.write_coil(self._config.watchdog_coil_address, True)
+        # M0005 상태 출력과 별개인 heartbeat coil이 설정된 경우에만 호출된다.
+        # 같은 값을 반복 write하면 PLC가 hung node와 정상 node를 구분하기 어렵다.
+        self._watchdog_level = not self._watchdog_level
+        self.write_coil(self._config.watchdog_coil_address, self._watchdog_level)
 
     def read_estop(self) -> bool:
         """PLC E-stop discrete input을 읽는다. True는 E-stop 감지를 뜻한다."""
@@ -227,7 +230,7 @@ class ModbusPLCClient:
         if apply_outputs:
             output_labels = self._config.output_labels_for_state(state)
             if reset_before_apply:
-                # 상태 전환 전 기존 자기유지 M0100~M0103을 끊기 위해 M0010을 먼저 pulse한다.
+                # 상태 전환 전 기존 자기유지 회로를 끊기 위해 M0100을 먼저 pulse한다.
                 self.reset_outputs()
             for label in output_labels:
                 # 상위 상태는 M label로 매핑되고, 여기서 실제 Modbus address로 변환된다.
@@ -242,9 +245,13 @@ class ModbusPLCClient:
         return self.set_system_state(SystemState.ERROR, apply_outputs=apply_outputs)
 
     def set_estop(self, *, apply_outputs: bool = True) -> PLCStatus:
-        """E-stop 상태를 적용한다."""
+        """E-stop 상태를 reset 선행 없이 즉시 적용한다."""
 
-        return self.set_system_state(SystemState.E_STOP, apply_outputs=apply_outputs)
+        return self.set_system_state(
+            SystemState.E_STOP,
+            apply_outputs=apply_outputs,
+            reset_before_apply=False,
+        )
 
     def get_status(self) -> PLCStatus:
         """마지막 semantic system state를 PLCStatus snapshot으로 반환한다."""
