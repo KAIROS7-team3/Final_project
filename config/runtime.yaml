@@ -20,6 +20,12 @@ db:
   # 두 노드의 busy_timeout_ms 파라미터 기본값과 동일하게 유지한다.
   busy_timeout_ms: 5000
 
+point_collect:
+  # point_collect.py 카메라 좌표 수집 도구 파라미터
+  image_width: 640
+  image_height: 480
+  depth_filter_size: 3   # median 필터 반경 → (2*size+1)² 영역
+
 calibration:
   # hand-eye 캘리브레이션 모션 파라미터 (handeye_calib_motion.py)
   #

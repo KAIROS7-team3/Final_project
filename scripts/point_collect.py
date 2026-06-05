@@ -12,19 +12,32 @@ point_collect.py — 핸드-아이 캘리브레이션용 카메라 좌표 수집
 ⚠️  pyrealsense2 직접 점유 — realsense_bringup ROS2 노드와 동시 실행 금지
 """
 import logging
+import os
 import pyrealsense2 as rs
 import numpy as np
 import cv2
+import yaml
 
 logging.basicConfig(level=logging.INFO, format='[%(name)s] %(levelname)s: %(message)s')
 logger = logging.getLogger('point_collect')
 
-WIDTH = 640
-HEIGHT = 480
-FILTER_SIZE = 3  # 평균 필터 반경 → (2*3+1)² = 7×7 영역
+_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'runtime.yaml')
+
+def _load_config() -> dict:
+    try:
+        with open(_CONFIG_PATH) as f:
+            return yaml.safe_load(f).get('point_collect', {})
+    except Exception as e:
+        logger.warning(f'config/runtime.yaml 로드 실패, 기본값 사용: {e}')
+        return {}
+
+_cfg = _load_config()
+WIDTH: int = int(_cfg.get('image_width', 640))
+HEIGHT: int = int(_cfg.get('image_height', 480))
+FILTER_SIZE: int = int(_cfg.get('depth_filter_size', 3))
 
 
-def get_average_depth(depth_frame, x: int, y: int, size: int = FILTER_SIZE) -> float:
+def get_median_depth(depth_frame, x: int, y: int, size: int = FILTER_SIZE) -> float:
     depths = []
     for dx in range(-size, size + 1):
         for dy in range(-size, size + 1):
@@ -34,7 +47,7 @@ def get_average_depth(depth_frame, x: int, y: int, size: int = FILTER_SIZE) -> f
             d = depth_frame.get_distance(px, py)
             if d > 0:
                 depths.append(d)
-    return float(np.mean(depths)) if depths else 0.0
+    return float(np.median(depths)) if depths else 0.0
 
 
 pipeline = rs.pipeline()
@@ -80,14 +93,14 @@ try:
 
         if clicked_point is not None:
             x, y = clicked_point
-            depth = get_average_depth(depth_frame, x, y)
+            depth = get_median_depth(depth_frame, x, y)
 
             if depth == 0:
                 logger.warning('Depth 값 없음 — 다른 위치 클릭')
                 clicked_point = None
                 continue
 
-            intrinsics = depth_frame.profile.as_video_stream_profile().intrinsics
+            intrinsics = color_frame.profile.as_video_stream_profile().intrinsics
             point_3d = rs.rs2_deproject_pixel_to_point(intrinsics, [x, y], depth)
             X, Y, Z = point_3d
 
@@ -96,9 +109,9 @@ try:
             idx = len(collected)
 
             logger.info(
-                '기준점 #%d | Pixel=(%d,%d) | Camera XYZ: X=%.4f m  Y=%.4f m  Z=%.4f m'
-                ' → DART에서 TCP를 이 위치로 이동 후 좌표 기록',
-                idx, x, y, X, Y, Z)
+                f'기준점 #{idx} | Pixel=({x},{y}) | Camera XYZ: '
+                f'X={X:.4f} m  Y={Y:.4f} m  Z={Z:.4f} m'
+                f' → DART에서 TCP를 이 위치로 이동 후 좌표 기록')
 
             cv2.circle(color_image, (x, y), 5, (0, 0, 255), -1)
             cv2.putText(color_image, f'#{idx}', (x + 6, y - 6),
@@ -117,4 +130,4 @@ finally:
         logger.info('=== 수집 완료 — 아래 값을 compute_hand_eye.py camera_points 에 입력 ===')
         for i, pt in enumerate(collected):
             X, Y, Z = pt['camera_xyz_m']
-            logger.info('  [%.4f, %.4f, %.4f],  # #%d', X, Y, Z, i + 1)
+            logger.info(f'  [{X:.4f}, {Y:.4f}, {Z:.4f}],  # #{i + 1}')
