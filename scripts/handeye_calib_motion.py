@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hand-eye 캘리브레이션용 로봇 자세 이동 스크립트 (v2 — J4/J5/J6 다양성 추가)
+Hand-eye 캘리브레이션용 로봇 자세 이동 스크립트 (v2 — J4/J5/J6 다양성 추가, 37자세)
 
 ⚠️ E-1 예외: Doosan MoveJoint API(dsr_msgs2.srv.MoveJoint)는 degree 입력을 요구하는
 하드웨어 경계 인터페이스다. CALIB_POSES와 vel/acc 단위가 degree/deg·s⁻¹인 이유.
@@ -120,12 +120,11 @@ class CalibMotionNode(Node):
         req.blend_type = 0
         req.sync_type = 0   # SYNC
         future = self.cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        result = future.result()
-        if result is None:
-            self.get_logger().error('move_joint 응답 없음 (서비스 다운 또는 타임아웃)')
+        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
+        if not future.done() or future.result() is None:
+            self.get_logger().error('move_joint 타임아웃 또는 응답 없음')
             return False
-        return bool(result.success)
+        return bool(future.result().success)
 
 
 def main() -> None:
@@ -141,18 +140,24 @@ def main() -> None:
     print('조작: Enter=샘플 저장 후 다음 | s=스킵 | q=종료 | Ctrl+C=즉시 종료')
     print('그룹 A(위치) / B(J4) / C(J5) / D(J6) / E(복합)\n')
 
+    GROUPS = [('A', 10), ('B', 8), ('C', 8), ('D', 6), ('E', 5)]
+    _boundaries: list[int] = []
+    _acc = 0
+    for _, count in GROUPS:
+        _acc += count
+        _boundaries.append(_acc)
+
+    def _label(idx: int) -> str:
+        offset = 0
+        for (name, _), boundary in zip(GROUPS, _boundaries):
+            if idx < boundary:
+                return f'{name}{idx - offset + 1}'
+            offset = boundary
+        return f'?{idx + 1}'
+
     try:
         for i, pose in enumerate(CALIB_POSES):
-            if i < 10:
-                label = f'A{i + 1}'
-            elif i < 18:
-                label = f'B{i - 9}'
-            elif i < 26:
-                label = f'C{i - 17}'
-            elif i < 32:
-                label = f'D{i - 25}'
-            else:
-                label = f'E{i - 31}'
+            label = _label(i)
 
             print(f'[{i + 1:02d}/{total}] {label}  자세: {pose}')
 
@@ -165,6 +170,7 @@ def main() -> None:
             cmd = input('  > ').strip().lower()
             if cmd == 'q':
                 print('사용자 종료.')
+                skipped += 1  # 이동은 완료됐으나 샘플 미저장
                 break
             if cmd == 's':
                 print('  → 스킵')
