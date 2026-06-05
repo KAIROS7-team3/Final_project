@@ -25,6 +25,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
+from std_msgs.msg import Bool
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
 from dsr_msgs2.srv import SetCurrentTcp, ConfigCreateTcp
 from interfaces.srv import GripperSetPosition
@@ -68,6 +69,7 @@ _add_unit_actions_to_path()
 
 from unit_actions.toolbox_motion import (
     StepKind,
+    VEL_L, ACC_L, VEL_R, ACC_R, VEL_J, ACC_J,
     home_seq,
     drawer_open_seq,
     drawer_close_seq,
@@ -116,6 +118,7 @@ class ToolboxSeqRunner(Node):
             self.get_logger().info(f'[runner] {name} 연결됨')
 
         self._seq_name = seq_name
+        self._is_moving_pub = self.create_publisher(Bool, '/motion/is_moving', 10)
         self._timer = self.create_timer(0.5, self._run_once, callback_group=self._cb_group)
         self._done = False
 
@@ -133,8 +136,10 @@ class ToolboxSeqRunner(Node):
 
         self._set_tcp(self._tcp_name)
 
+        self._is_moving_pub.publish(Bool(data=True))
         self.get_logger().info(f'[runner] 시퀀스 시작: {self._seq_name} ({len(seq)} steps)')
         ok = self._run_sequence(seq)
+        self._is_moving_pub.publish(Bool(data=False))
         if ok:
             self.get_logger().info(f'[runner] 시퀀스 완료: {self._seq_name}')
         else:
@@ -211,8 +216,10 @@ class ToolboxSeqRunner(Node):
     def _movel(self, step, mode: int) -> bool:
         req = MoveLine.Request()
         req.pos        = [float(v) for v in step.pose]
-        req.vel        = [step.vel or 250.0, step.vel or 76.5]
-        req.acc        = [step.acc or 1000.0, step.acc or 306.0]
+        req.vel        = [min(step.vel, VEL_L) if step.vel is not None else VEL_L,
+                          min(step.vel, VEL_R) if step.vel is not None else VEL_R]
+        req.acc        = [min(step.acc, ACC_L) if step.acc is not None else ACC_L,
+                          min(step.acc, ACC_R) if step.acc is not None else ACC_R]
         req.time       = 0.0
         req.radius     = 0.0
         req.ref        = DR_BASE
@@ -231,8 +238,8 @@ class ToolboxSeqRunner(Node):
     def _movej(self, step) -> bool:
         req = MoveJoint.Request()
         req.pos        = [float(v) for v in step.pose]
-        req.vel        = step.vel or 60.0
-        req.acc        = step.acc or 100.0
+        req.vel        = min(step.vel, VEL_J) if step.vel is not None else VEL_J
+        req.acc        = min(step.acc, ACC_J) if step.acc is not None else ACC_J
         req.time       = 0.0
         req.radius     = 0.0
         req.mode       = DR_MV_MOD_ABS
