@@ -74,6 +74,16 @@ robot_points_mm = [
 # ────────────────────────────────────────────────────────
 
 _CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'hand_eye.yaml')
+_RUNTIME_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'runtime.yaml')
+
+
+def _load_ransac_cfg() -> dict:
+    try:
+        with open(_RUNTIME_PATH) as f:
+            return yaml.safe_load(f).get('calibration', {})
+    except Exception as e:
+        logger.warning('config/runtime.yaml 로드 실패, 기본값 사용: %s', e)
+        return {}
 
 
 def compute_transform(src: np.ndarray, dst: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -98,18 +108,14 @@ def compute_transform(src: np.ndarray, dst: np.ndarray) -> tuple[np.ndarray, np.
 def _ransac_filter(
     cam: np.ndarray,
     rob: np.ndarray,
-    threshold_mm: float = 5.0,
-    min_inliers: int = 6,
-    iterations: int = 200,
+    threshold_mm: float,
+    min_inliers: int,
+    iterations: int,
 ) -> tuple[np.ndarray, np.ndarray, list[int]]:
-    """RANSAC으로 이상치 제거 후 최적 inlier 인덱스 반환.
-
-    threshold_mm: inlier 판정 오차 기준 [mm]
-    min_inliers: 유효 모델로 인정할 최소 inlier 수
-    """
+    """RANSAC으로 이상치 제거 후 최적 inlier 인덱스 반환."""
     rng = np.random.default_rng(42)
     n = len(cam)
-    best_inliers: list[int] = list(range(n))
+    best_inliers: list[int] = []
     best_error = float('inf')
 
     for _ in range(iterations):
@@ -132,6 +138,10 @@ def _ransac_filter(
             best_error = mean_err
             best_inliers = inliers
 
+    if not best_inliers:
+        logger.warning('RANSAC: 유효한 inlier 세트를 찾지 못함 — 전체 포인트로 폴백')
+        best_inliers = list(range(n))
+
     return cam[best_inliers], rob[best_inliers], best_inliers
 
 
@@ -147,8 +157,14 @@ def main() -> None:
     cam_all = np.array(camera_points, dtype=float)
     rob_all = np.array(robot_points_mm, dtype=float) / 1000.0  # mm → m
 
-    # RANSAC 이상치 제거
-    cam, rob, inlier_idx = _ransac_filter(cam_all, rob_all)
+    # RANSAC 이상치 제거 (파라미터: config/runtime.yaml calibration 섹션)
+    _cfg = _load_ransac_cfg()
+    cam, rob, inlier_idx = _ransac_filter(
+        cam_all, rob_all,
+        threshold_mm=float(_cfg.get('ransac_threshold_mm', 5.0)),
+        min_inliers=int(_cfg.get('ransac_min_inliers', 6)),
+        iterations=int(_cfg.get('ransac_iterations', 200)),
+    )
     outlier_idx = [i for i in range(len(cam_all)) if i not in inlier_idx]
     if outlier_idx:
         logger.warning('RANSAC 이상치 제거: %s번 포인트 제외', [i + 1 for i in outlier_idx])
@@ -166,10 +182,12 @@ def main() -> None:
         logger.info('  #%d (원본 #%d)  오차: %.2f mm', rank + 1, i + 1, err)
     logger.info('  평균 오차: %.2f mm  /  최대: %.2f mm', np.mean(errors), max(errors))
 
-    if max(errors) > 5:
-        logger.warning('최대 오차 5mm 초과 — 좌표 재확인 권장 (목표: 1~3mm)')
-    elif max(errors) > 3:
-        logger.warning('최대 오차 3mm 초과 — 추가 포인트 수집 권장')
+    warn_mm = float(_cfg.get('error_warn_mm', 5.0))
+    ok_mm = float(_cfg.get('error_ok_mm', 3.0))
+    if max(errors) > warn_mm:
+        logger.warning('최대 오차 %.1fmm 초과 — 좌표 재확인 권장 (목표: 1~3mm)', warn_mm)
+    elif max(errors) > ok_mm:
+        logger.warning('최대 오차 %.1fmm 초과 — 추가 포인트 수집 권장', ok_mm)
 
     # 4×4 행렬
     T = np.eye(4)
