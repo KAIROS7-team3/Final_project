@@ -362,16 +362,19 @@ class DashboardNode(Node):
             self._pub_intent("return")
             return {"ok": True}
 
+        # 아래 3개는 _call_trigger가 동기 블로킹(threading.Event.wait)이므로
+        # async def 대신 def로 선언 — FastAPI가 threadpool에서 실행해 이벤트 루프
+        # (WebSocket 브로드캐스트·MJPEG·기타 요청)를 막지 않는다.
         @app.post("/action/home")
-        async def action_home():
+        def action_home():
             return self._call_trigger(self._home_cli)
 
         @app.post("/action/estop")
-        async def action_estop():
+        def action_estop():
             return self._call_trigger(self._estop_cli)
 
         @app.post("/action/estop_reset")
-        async def action_estop_reset():
+        def action_estop_reset():
             return self._call_trigger(self._estop_reset_cli)
 
         @app.get("/api/db/tools")

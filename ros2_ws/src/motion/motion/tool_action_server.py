@@ -66,11 +66,19 @@ def _add_unit_actions_to_path() -> None:
 _add_unit_actions_to_path()
 
 from unit_actions.toolbox_motion import (  # noqa: E402
+    ACC_L,
+    ACC_R,
+    PULSE_RELEASE,
     StepKind,
+    VEL_L,
+    VEL_R,
     full_socket_fetch_seq,
     full_socket_return_seq,
     home_seq,
 )
+
+# 그리퍼 파지력 (TaskWriter SubRoutine 실측) — pulse > PULSE_RELEASE 일 때만 인가
+_GRIP_CURRENT: int = 400
 
 DR_BASE = 0
 DR_MV_MOD_ABS = 0
@@ -172,7 +180,6 @@ class ToolActionServer(Node):
         )
 
         # ── TCP 초기 설정 타이머 ──────────────────────────────────────────
-        self._tcp_ready = False
         self._tcp_timer = self.create_timer(
             2.0, self._tcp_setup_once, callback_group=self._normal_cbg
         )
@@ -205,7 +212,6 @@ class ToolActionServer(Node):
             else:
                 self.get_logger().warn("[TAS] set_current_tcp 미준비 — 건너뜀")
             time.sleep(0.3)
-            self._tcp_ready = True
         except Exception as exc:
             self.get_logger().warn(f"[TAS] TCP 설정 예외 (무시): {exc}")
 
@@ -450,8 +456,10 @@ class ToolActionServer(Node):
     def _movel(self, step, mode: int) -> bool:
         req = MoveLine.Request()
         req.pos = [float(v) for v in step.pose]
-        req.vel = [step.vel or 50.0, step.vel or 15.3]
-        req.acc = [step.acc or 200.0, step.acc or 61.2]
+        # MoveLine vel/acc는 [병진, 회전] 2원소. Step은 병진 스칼라만 보유하므로
+        # 회전 성분은 TaskWriter 실측 상수(VEL_R/ACC_R)로 고정한다.
+        req.vel = [step.vel or VEL_L, VEL_R]
+        req.acc = [step.acc or ACC_L, ACC_R]
         req.time = 0.0
         req.radius = 0.0
         req.ref = DR_BASE
@@ -492,7 +500,7 @@ class ToolActionServer(Node):
 
     def _grip(self, step) -> bool:
         pulse = step.pulse if step.pulse is not None else 0
-        current = 400 if pulse > 450 else 0
+        current = _GRIP_CURRENT if pulse > PULSE_RELEASE else 0
         req = GripperSetPosition.Request()
         req.position = pulse
         req.current = current
