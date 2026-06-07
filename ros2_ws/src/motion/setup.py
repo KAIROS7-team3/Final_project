@@ -30,6 +30,7 @@ setup(
             'rviz_joint_state_merger = motion.rviz_joint_state_merger_node:main',
             'toolbox_seq_runner = motion.toolbox_seq_runner:main',
             'home_on_start = motion.home_on_start:main',
+            'tool_action_server = motion.tool_action_server:main',
         ],
     },
 )

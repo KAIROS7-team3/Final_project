@@ -302,3 +302,59 @@ def return_to_drawer_seq(layer: int) -> list[Step]:
     drawer_close_seq()의 alias. 가독성용.
     """
     return drawer_close_seq(layer)
+
+
+def full_socket_fetch_seq() -> list[Step]:
+    """서랍 열기 → 소켓 파지 → 스테이징 거치 → 서랍 닫기 전체 시퀀스.
+
+    layer 1(2층 서랍) 사용. 데모 전용 — vision 미구현, 좌표 하드코딩.
+
+    흐름:
+      1. drawer_open_seq(1): home + 서랍 열기, 종료 위치=LAYER1_INNER
+      2. SOCKET_APPROACH_XY→Z: 소켓 슬롯 하강 후 파지
+      3. SOCKET_BOTTOM_XY→BOTTOM: 스테이징 거치
+      4. drawer_close_seq(1): joint 이동으로 시작하므로 직전 위치 무관
+      5. JOINT_HOME
+    """
+    return [
+        *drawer_open_seq(1),
+        ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_APPROACH_Z),
+        GRIP_SOCKET(),
+        ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_BOTTOM),
+        GRIP_RELEASE(),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_CATCH_HOME_L),
+        *drawer_close_seq(1),
+        JOINT_HOME(),
+    ]
+
+
+def full_socket_return_seq() -> list[Step]:
+    """서랍 열기 → 스테이징 픽업 → 서랍 슬롯 반납 → 서랍 닫기 전체 시퀀스.
+
+    layer 1(2층 서랍) 사용. 데모 전용 — vision 미구현, 좌표 하드코딩.
+
+    흐름:
+      1. drawer_open_seq(1): home + 서랍 열기, 종료 위치=LAYER1_INNER
+      2. SOCKET_BOTTOM_XY→BOTTOM: 스테이징에서 소켓 픽업
+      3. SOCKET_APPROACH_XY→Z: 서랍 슬롯 반납
+      4. drawer_close_seq(1): joint 이동으로 시작하므로 직전 위치 무관
+      5. JOINT_HOME
+    """
+    return [
+        *drawer_open_seq(1),
+        ml_abs(SOCKET_CATCH_HOME_L),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_BOTTOM),
+        GRIP_SOCKET(),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_APPROACH_Z),
+        GRIP_RELEASE(),
+        ml_abs(SOCKET_APPROACH_XY),
+        *drawer_close_seq(1),
+        JOINT_HOME(),
+    ]

@@ -1,0 +1,12 @@
+# 데모 카메라 udev 규칙
+# 적용: sudo cp config/99-demo-cameras.rules /etc/udev/rules.d/
+#       sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# 장치 확인: udevadm info -a -n /dev/videoN | grep -E 'idVendor|idProduct|serial'
+
+# Logitech C270 (idVendor=046d, idProduct=0825) → /dev/gripper_cam
+SUBSYSTEM=="video4linux", ATTR{name}=="UVC Camera (046d:0825)*", SYMLINK+="gripper_cam"
+
+# Intel RealSense D455f (idVendor=8086) UVC color stream → /dev/top_cam
+# D455f는 video 장치가 여러 개(color/depth/ir) 생성됨 — color 스트림만 별칭
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="8086", ATTR{name}=="Intel(R) RealSense*", ENV{ID_V4L_CAPABILITIES}==":capture:", SYMLINK+="top_cam"

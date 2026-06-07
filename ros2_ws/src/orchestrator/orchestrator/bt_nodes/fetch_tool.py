@@ -1,25 +1,47 @@
 """FetchTool 서브트리 — 공구함에서 공구를 꺼내 Staging Area에 거치한다."""
+from __future__ import annotations
+
+from typing import Any
+
 import py_trees
 
+from interfaces.action import PlaceAtStaging
+from orchestrator.bt_nodes.check_feasibility import CheckFeasibility
+from orchestrator.bt_nodes.run_action import RunAction
 
-def build_fetch_subtree() -> py_trees.behaviour.Behaviour:
+
+def build_fetch_subtree(
+    feasibility_client: Any,
+    place_at_staging_client: Any,
+) -> py_trees.behaviour.Behaviour:
     """FetchTool 서브트리를 조립해 루트 노드를 반환한다.
 
-    서브트리 구조 (Phase 5a에서 구현):
+    서브트리 구조:
         Sequence("FetchTool")
-        ├── CheckFeasibility
-        ├── ScanWorkspace          ← vision에서 tool_pose 획득
-        ├── MoveToPose(approach)
-        ├── Grasp
-        ├── PlaceAtStaging
-        └── MoveToHome
+        ├── CheckFeasibility_fetch   ← /db/CheckToolFeasibility (S-2)
+        └── RunAction_PlaceAtStaging ← motion tool_action_server
 
-    Returns:
-        py_trees.behaviour.Behaviour: 서브트리 루트.
+    Args:
+        feasibility_client: /db/CheckToolFeasibility rclpy Client.
+        place_at_staging_client: place_at_staging rclpy ActionClient.
     """
-    # TODO(Phase 5a): 실제 서브트리 조립
-    root = py_trees.composites.Sequence(name="FetchTool", memory=False)
-    root.add_child(
-        py_trees.behaviours.Failure(name="TODO:FetchTool(Phase5a)")
-    )
+    def _build_goal(tool_id: str) -> PlaceAtStaging.Goal:
+        goal = PlaceAtStaging.Goal()
+        goal.tool_id = tool_id
+        return goal
+
+    root = py_trees.composites.Sequence(name="FetchTool", memory=True)
+    root.add_children([
+        CheckFeasibility(
+            name="CheckFeasibility_fetch",
+            service_client=feasibility_client,
+            intent_override="fetch",
+        ),
+        RunAction(
+            name="RunAction_PlaceAtStaging",
+            action_client=place_at_staging_client,
+            build_goal_fn=_build_goal,
+            timeout_sec=180.0,
+        ),
+    ])
     return root
