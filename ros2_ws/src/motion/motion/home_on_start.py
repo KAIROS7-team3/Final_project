@@ -58,7 +58,10 @@ class HomeOnStart(Node):
         if res and res.success:
             self.get_logger().info('[home] 홈 이동 완료')
         else:
-            self.get_logger().warn('[home] 홈 이동 응답 없음 (virtual 에뮬레이터 정상)')
+            # E-5: 실패는 error 레벨로 기록. virtual 모드에서는 success=False가 정상이므로
+            # shutdown은 하지 않으나, real 모드 실패 시 운영자가 인지할 수 있도록 한다.
+            self.get_logger().error('[home] 홈 이동 실패 또는 응답 없음 (virtual 모드라면 정상)')
+        rclpy.shutdown()
 
 
 def main(args=None) -> None:
