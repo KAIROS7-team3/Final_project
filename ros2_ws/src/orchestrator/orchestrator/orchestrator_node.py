@@ -96,6 +96,8 @@ class OrchestratorNode(Node):
             feasibility_client=self._feasibility_cli,
             return_to_slot_client=self._return_cli,
         )
+        self._fetch_tree.setup(timeout=5)
+        self._return_tree.setup(timeout=5)
 
         # ── 상태 ─────────────────────────────────────────────────────────
         self._active_tool_id: str = ""
@@ -103,6 +105,7 @@ class OrchestratorNode(Node):
         self._is_moving: bool = False
         self._bt_lock = threading.Lock()
         self._pending_s7_logs = 0
+        self._s7_log_lock = threading.Lock()  # MTE에서 _pending_s7_logs 보호
 
         # ── /plc/system_state 발행자 ──────────────────────────────────────
         self._plc_pub = self.create_publisher(String, "/plc/system_state", 1)
@@ -184,7 +187,6 @@ class OrchestratorNode(Node):
                 intent_type, tool_id,
             )
             self._set_plc("moving")
-            tree.setup(timeout=5)
             status = tree.tick_once()
 
             if status == py_trees.common.Status.SUCCESS:
@@ -253,15 +255,16 @@ class OrchestratorNode(Node):
         try:
             if not self._log_event_cli.service_is_ready():
                 return
-            if self._pending_s7_logs >= _MAX_PENDING_S7_LOGS:
-                return
+            with self._s7_log_lock:
+                if self._pending_s7_logs >= _MAX_PENDING_S7_LOGS:
+                    return
+                self._pending_s7_logs += 1
             req = LogEvent.Request()
             req.tool_id = msg.tool_id
             req.event_type = "rejected"
             req.track = ""
             req.notes = f"S-7: robot moving; intent={msg.intent_type}"
             future = self._log_event_cli.call_async(req)
-            self._pending_s7_logs += 1
             future.add_done_callback(self._on_log_event_done)
         except Exception as exc:
             self.get_logger().warning(
@@ -269,7 +272,8 @@ class OrchestratorNode(Node):
             )
 
     def _on_log_event_done(self, future) -> None:
-        self._pending_s7_logs = max(0, self._pending_s7_logs - 1)
+        with self._s7_log_lock:
+            self._pending_s7_logs = max(0, self._pending_s7_logs - 1)
         try:
             result = future.result()
         except Exception as exc:

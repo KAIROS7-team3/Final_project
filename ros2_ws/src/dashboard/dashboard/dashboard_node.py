@@ -11,6 +11,7 @@ DB 상태 / 이벤트 로그 탭. 위젯별 독립 health 표시 — 일부 소�
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sqlite3
@@ -246,22 +247,20 @@ class DashboardNode(Node):
         dead: list[WebSocket] = []
         with self._ws_lock:
             clients = list(self._ws_clients)
+        if self._web_loop is None:
+            return
         for ws in clients:
-            try:
-                import asyncio
-                loop = asyncio.get_event_loop()
-                loop.call_soon_threadsafe(
-                    asyncio.ensure_future, ws.send_text(payload)
-                )
-            except Exception:
-                dead.append(ws)
-        if dead:
-            with self._ws_lock:
-                for ws in dead:
-                    try:
-                        self._ws_clients.remove(ws)
-                    except ValueError:
-                        pass
+            fut = asyncio.run_coroutine_threadsafe(ws.send_text(payload), self._web_loop)
+
+            def _on_done(f, _ws=ws):
+                if f.exception() is not None:
+                    with self._ws_lock:
+                        try:
+                            self._ws_clients.remove(_ws)
+                        except ValueError:
+                            pass
+
+            fut.add_done_callback(_on_done)
 
     # ── 버튼 액션 ────────────────────────────────────────────────────────────
 
@@ -289,10 +288,10 @@ class DashboardNode(Node):
     # ── FastAPI 웹서버 ────────────────────────────────────────────────────────
 
     def _start_web(self) -> None:
-        import asyncio
         app = self._build_app()
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        self._web_loop = loop  # ROS2 타이머에서 run_coroutine_threadsafe로 접근
         config = uvicorn.Config(app, host=_HOST, port=_PORT,
                                 loop="asyncio", log_level="warning")
         server = uvicorn.Server(config)
