@@ -197,12 +197,18 @@ def _wp(layer: int, key: str) -> list:
     return _LAYER_WP[layer][key]
 
 
-def drawer_open_seq(layer: int) -> list[Step]:
+def drawer_open_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """서랍 열기 시퀀스 (TW: toolboxapproach_box{n}_open.tw 기준).
 
     layer: 0 = 1층, 1 = 2층
-    종료 후 팔은 LAYER{n}_INNER 위치에 있음.
+    tool_pose: 비전에서 받은 공구 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 INNER 웨이포인트 사용.
+    종료 후 팔은 tool_pose 또는 LAYER{n}_INNER 위치에 있음.
     """
+    inner = tool_pose if tool_pose is not None else _wp(layer, "inner")
     return [
         GRIP_RELEASE(),
         mj_abs(_wp(layer, "setup_j")),
@@ -211,17 +217,23 @@ def drawer_open_seq(layer: int) -> list[Step]:
         ml_abs(_wp(layer, "open")),
         ml_abs(_wp(layer, "silence")),
         GRIP_RELEASE(),
-        ml_abs(_wp(layer, "inner")),
+        ml_abs(inner),
     ]
 
 
-def drawer_close_seq(layer: int) -> list[Step]:
+def drawer_close_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """서랍 닫기 시퀀스 (TW: toolboxapproach_box{n}_close.tw 기준).
 
     layer: 0 = 1층, 1 = 2층
     drawer_open_seq() 이후 호출 전제 (팔이 INNER에 있는 상태).
-    종료 후 팔은 LAYER{n}_CLOSE_END 위치에 있음.
+    tool_pose: 공구 반납 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 CLOSE_END 웨이포인트 사용.
+    종료 후 팔은 tool_pose 또는 LAYER{n}_CLOSE_END 위치에 있음.
     """
+    close_end = tool_pose if tool_pose is not None else _wp(layer, "close_end")
     return [
         GRIP_RELEASE(),
         mj_abs(_wp(layer, "close_setup_j")),
@@ -230,28 +242,39 @@ def drawer_close_seq(layer: int) -> list[Step]:
         ml_abs(_wp(layer, "open")),
         ml_abs(_wp(layer, "approach")),
         GRIP_RELEASE(),
-        ml_abs(_wp(layer, "close_end")),
+        ml_abs(close_end),
     ]
 
 
-def approach_tool_seq(layer: int) -> list[Step]:
+def approach_tool_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """서랍이 이미 열린 상태에서 공구 접근 위치로만 이동.
 
     drawer_open_seq() 후 팔이 이미 inner 위치에 있으면 불필요.
     서랍 열기 없이 inner 위치만 필요할 때 단독 사용.
+    tool_pose: 비전에서 받은 공구 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 INNER 웨이포인트 사용.
     """
+    inner = tool_pose if tool_pose is not None else _wp(layer, "inner")
     return [
         mj_abs(_wp(layer, "setup_j")),
-        ml_abs(_wp(layer, "inner")),
+        ml_abs(inner),
     ]
 
 
-def fetch_from_drawer_seq(layer: int) -> list[Step]:
+def fetch_from_drawer_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """서랍 열기 → 공구 접근까지 전체 시퀀스 (공구 파지는 caller가 수행).
 
     drawer_open_seq()의 alias. 가독성용.
+    tool_pose: 비전에서 받은 공구 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 INNER 웨이포인트 사용.
     """
-    return drawer_open_seq(layer)
+    return drawer_open_seq(layer, tool_pose=tool_pose)
 
 
 def socket_fetch_seq() -> list[Step]:
@@ -267,6 +290,38 @@ def socket_fetch_seq() -> list[Step]:
         ml_abs(SOCKET_APPROACH_Z),
         GRIP_SOCKET(),
         ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_BOTTOM),
+        GRIP_RELEASE(),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_CATCH_HOME_L),
+    ]
+
+
+def vision_fetch_seq(vision_x: float, vision_y: float, vision_z: float) -> list[Step]:
+    """비전 좌표 기반 공구 fetch 시퀀스.
+
+    socket_fetch_seq()와 동일한 11단계 구조.
+    3·4·6번 스텝 좌표를 비전 카메라에서 받은 x, y, z로 대체.
+
+    vision_x, vision_y, vision_z: RealSense가 반환한 DSR BASE 좌표계 좌표 (mm).
+    호출 전 팔이 홈 자세에 있어야 함.
+    종료 후 팔은 SOCKET_CATCH_HOME_L 위치.
+    """
+    approach_z_fixed = SOCKET_APPROACH_XY[2]
+    rx_xy, ry_xy, rz_xy = SOCKET_APPROACH_XY[3], SOCKET_APPROACH_XY[4], SOCKET_APPROACH_XY[5]
+    rx_z,  ry_z,  rz_z  = SOCKET_APPROACH_Z[3],  SOCKET_APPROACH_Z[4],  SOCKET_APPROACH_Z[5]
+
+    approach_xy  = [vision_x, vision_y, approach_z_fixed, rx_xy, ry_xy, rz_xy]
+    approach_xyz = [vision_x, vision_y, vision_z,         rx_z,  ry_z,  rz_z]
+
+    return [
+        JOINT_HOME(),
+        GRIP_RELEASE(),
+        ml_abs(approach_xy),           # ③ x,y 비전 / z 고정
+        ml_abs(approach_xyz),          # ④ x,y,z 비전
+        GRIP_SOCKET(),
+        ml_abs(approach_xy),           # ⑥ x,y 비전 / z 고정 (③과 동일)
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_BOTTOM),
         GRIP_RELEASE(),
@@ -296,9 +351,57 @@ def socket_return_seq() -> list[Step]:
     ]
 
 
-def return_to_drawer_seq(layer: int) -> list[Step]:
+def vision_return_seq(
+    bottom_x: float, bottom_y: float, bottom_z: float,
+    slot_x: float,   slot_y: float,   slot_z: float,
+) -> list[Step]:
+    """비전 좌표 기반 공구 return 시퀀스.
+
+    socket_return_seq()와 동일한 11단계 구조.
+    bottom 좌표(staging area): 3·4·6번 스텝에 사용.
+    slot 좌표(공구함 반납 위치): 7·8·10번 스텝에 사용.
+
+    bottom_x/y/z: 스테이징 영역 비전 좌표 (mm, DSR BASE 좌표계).
+    slot_x/y/z:   공구함 슬롯 비전 좌표 (mm, DSR BASE 좌표계).
+    호출 전 팔이 홈 자세에 있어야 함.
+    종료 후 팔은 JOINT_HOME 자세.
+    """
+    bottom_z_fixed = SOCKET_BOTTOM_XY[2]
+    rx_bt, ry_bt, rz_bt = SOCKET_BOTTOM_XY[3], SOCKET_BOTTOM_XY[4], SOCKET_BOTTOM_XY[5]
+    rx_bt_z, ry_bt_z, rz_bt_z = SOCKET_BOTTOM[3], SOCKET_BOTTOM[4], SOCKET_BOTTOM[5]
+
+    slot_z_fixed = SOCKET_APPROACH_XY[2]
+    rx_sl, ry_sl, rz_sl = SOCKET_APPROACH_XY[3], SOCKET_APPROACH_XY[4], SOCKET_APPROACH_XY[5]
+    rx_sl_z, ry_sl_z, rz_sl_z = SOCKET_APPROACH_Z[3], SOCKET_APPROACH_Z[4], SOCKET_APPROACH_Z[5]
+
+    bottom_xy  = [bottom_x, bottom_y, bottom_z_fixed, rx_bt,   ry_bt,   rz_bt]
+    bottom_xyz = [bottom_x, bottom_y, bottom_z,       rx_bt_z, ry_bt_z, rz_bt_z]
+    slot_xy    = [slot_x,   slot_y,   slot_z_fixed,   rx_sl,   ry_sl,   rz_sl]
+    slot_xyz   = [slot_x,   slot_y,   slot_z,         rx_sl_z, ry_sl_z, rz_sl_z]
+
+    return [
+        JOINT_HOME(),
+        GRIP_RELEASE(),
+        ml_abs(bottom_xy),             # ③ bottom x,y 비전 / z 고정
+        ml_abs(bottom_xyz),            # ④ bottom x,y,z 비전
+        GRIP_SOCKET(),
+        ml_abs(bottom_xy),             # ⑥ bottom x,y 비전 / z 고정 (③과 동일)
+        ml_abs(slot_xy),               # ⑦ slot x,y 비전 / z 고정
+        ml_abs(slot_xyz),              # ⑧ slot x,y,z 비전
+        GRIP_RELEASE(),
+        ml_abs(slot_xy),               # ⑩ slot x,y 비전 / z 고정 (⑦과 동일)
+        JOINT_HOME(),
+    ]
+
+
+def return_to_drawer_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """공구 반납 후 서랍 닫기 전체 시퀀스 (공구 release는 caller가 수행).
 
     drawer_close_seq()의 alias. 가독성용.
+    tool_pose: 공구 반납 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 CLOSE_END 웨이포인트 사용.
     """
-    return drawer_close_seq(layer)
+    return drawer_close_seq(layer, tool_pose=tool_pose)
