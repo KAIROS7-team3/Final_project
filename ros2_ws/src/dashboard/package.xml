@@ -12,6 +12,7 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>interfaces</exec_depend>
   <exec_depend>std_srvs</exec_depend>
+  <!-- pip 의존성 (rosdep 미지원): fastapi uvicorn opencv-python-headless pyrealsense2(선택) -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
