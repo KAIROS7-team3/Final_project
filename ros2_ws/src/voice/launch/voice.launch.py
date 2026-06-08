@@ -61,6 +61,7 @@ def generate_launch_description() -> LaunchDescription:
                 "gemma_model_id",
                 default_value="~/models/gemma/gemma-3-1b-it",
             ),
+            DeclareLaunchArgument("gemma_prompt_template_path", default_value=""),
             DeclareLaunchArgument("gemma_device", default_value="auto"),
             DeclareLaunchArgument(
                 "gemma_confidence_threshold",
@@ -142,6 +143,9 @@ def generate_launch_description() -> LaunchDescription:
                             value_type=bool,
                         ),
                         "gemma_model_id": LaunchConfiguration("gemma_model_id"),
+                        "prompt_template_path": LaunchConfiguration(
+                            "gemma_prompt_template_path"
+                        ),
                         "gemma_device": LaunchConfiguration("gemma_device"),
                         "gemma_confidence_threshold": ParameterValue(
                             LaunchConfiguration("gemma_confidence_threshold"),

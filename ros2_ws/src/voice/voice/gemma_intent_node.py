@@ -35,6 +35,7 @@ class GemmaIntentNode(Node):
             "gemma_model_id",
             "~/models/gemma/gemma-3-1b-it",
         )
+        self.declare_parameter("prompt_template_path", "")
         self.declare_parameter("gemma_device", "auto")
         self.declare_parameter("gemma_confidence_threshold", 0.75)
         self.declare_parameter("gemma_max_new_tokens", 128)
@@ -60,6 +61,9 @@ class GemmaIntentNode(Node):
         self._classifier = GemmaIntentClassifier(
             GemmaConfig(
                 model_id=self.get_parameter("gemma_model_id")
+                .get_parameter_value()
+                .string_value,
+                prompt_template_path=self.get_parameter("prompt_template_path")
                 .get_parameter_value()
                 .string_value,
                 device=self.get_parameter("gemma_device")

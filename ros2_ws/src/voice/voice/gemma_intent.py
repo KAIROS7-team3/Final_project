@@ -119,7 +119,7 @@ def load_prompt_template(prompt_template_path: str | Path | None = None) -> str:
     """외부 텍스트 파일에서 Gemma 프롬프트 템플릿을 읽는다."""
 
     path = (
-        Path(prompt_template_path)
+        Path(prompt_template_path).expanduser()
         if prompt_template_path
         else DEFAULT_PROMPT_TEMPLATE_PATH
     )

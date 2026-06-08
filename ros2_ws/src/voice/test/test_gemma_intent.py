@@ -38,6 +38,20 @@ def test_load_prompt_template_reads_external_file() -> None:
     assert "JSON 객체 하나만 출력" in template
 
 
+def test_load_prompt_template_uses_custom_file(tmp_path) -> None:
+    custom_path = tmp_path / "custom_prompt.txt"
+    custom_path.write_text(
+        "규칙:\n__TOOL_CATALOG__\n입력: __RAW_TEXT__\n",
+        encoding="utf-8",
+    )
+
+    template = load_prompt_template(str(custom_path))
+
+    assert "규칙:" in template
+    assert "__TOOL_CATALOG__" in template
+    assert "__RAW_TEXT__" in template
+
+
 def test_resolve_model_id_path_expands_tilde() -> None:
     resolved = resolve_model_id_path("~/models/gemma/gemma-3-1b-it")
 
