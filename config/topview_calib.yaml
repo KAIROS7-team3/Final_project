@@ -1,0 +1,27 @@
+schema_version: 1
+transformation:
+  rotation:
+    x: 0.6781767094548695
+    y: 0.7347466273211506
+    z: -0.007626903049704411
+    w: -0.012867584972721762
+  translation:
+    x: 0.5918829333265921
+    y: 0.0610776655410238
+    z: 0.9995564564810522
+metadata:
+  calibration_date: '2026-06-08'
+  sample_count: 10
+  method: calibrateHandEye_PARK
+  axb_mean_mm: 41.05
+  axb_max_mm: 67.24
+  cam_tilt_deg: 1.71
+  cam_height_m: 0.9996
+  tool: compute_fk_and_calibrate.py
+  frames:
+    from: camera_color_optical_frame
+    to: base_link
+  physical_notes:
+    base_frame_height_mm: 25
+    cam_height_from_table_mm: 945
+    cam_height_from_base_link_mm: 920
