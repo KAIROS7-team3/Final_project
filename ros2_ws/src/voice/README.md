@@ -53,6 +53,8 @@ python3 -m pip install -U openai-whisper
 
 Gemma 모델은 Hugging Face에서 승인 후 내려받아 로컬에 둔다. 이 패키지는
 기본적으로 `~/models/gemma/gemma-3-1b-it`를 찾도록 설정되어 있다.
+프롬프트 템플릿은 [`voice/gemma_prompt.txt`](./voice/gemma_prompt.txt)에 따로
+두었고, 여기만 수정하면 Gemma 지시문을 조정할 수 있다.
 
 ```bash
 hf auth login

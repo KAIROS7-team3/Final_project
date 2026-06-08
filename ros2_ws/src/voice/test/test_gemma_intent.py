@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from voice.gemma_intent import (
+    DEFAULT_PROMPT_TEMPLATE_PATH,
     GemmaConfig,
     GemmaIntentClassifier,
     GemmaIntentResult,
     build_prompt,
+    load_prompt_template,
     parse_gemma_output,
     resolve_model_id_path,
 )
@@ -26,6 +28,14 @@ def test_build_prompt_contains_raw_text_and_tool_catalog() -> None:
     assert "스패너 가져와" in prompt
     assert "spanner_16mm" in prompt
     assert "JSON 객체 하나만 출력" in prompt
+
+
+def test_load_prompt_template_reads_external_file() -> None:
+    template = load_prompt_template(DEFAULT_PROMPT_TEMPLATE_PATH)
+
+    assert "__TOOL_CATALOG__" in template
+    assert "__RAW_TEXT__" in template
+    assert "JSON 객체 하나만 출력" in template
 
 
 def test_resolve_model_id_path_expands_tilde() -> None:
