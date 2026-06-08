@@ -130,7 +130,7 @@ ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: watchdog}"
 `watchdog`이다.
 노드는 일반 상태 적용 전 `M0100` reset coil을 pulse해 기존 래치 출력을 끊고,
 `system_state_output_labels`에 연결된 M coil을 push-button처럼 pulse한다.
-`idle`은 출력 coil 없이 reset만 수행한다.
+`idle`은 `M0000`을 pulse해서 초록 상태를 유지하고, reset도 함께 수행한다.
 `e_stop`은 reset을 선행하지 않고 `M0003`을 직접 ON 하며, latch 상태에서 자동
 복구하지 않는다.
 
@@ -138,7 +138,7 @@ ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: watchdog}"
 
 | 상태 | 출력 coil | 연결 출력 |
 |------|-----------|-----------|
-| `idle` | `none` | reset only |
+| `idle` | `M0000` | `P0040` |
 | `listening` | `M0001` | `P0041` |
 | `inferring` | `M0001` | `P0041` |
 | `moving` | `M0002` | `P0042` |
@@ -330,7 +330,7 @@ ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: error}"
 ```
 
 확인 포인트:
-- `idle`은 reset만 수행하고 별도 출력 coil pulse가 없다.
+- `idle`은 `M0000` pulse로 `P0040`이 반응하고, reset도 함께 수행한다.
 - `moving`은 `M0002` pulse로 `P0042`가 반응해야 한다.
 - `error`는 `M0004` pulse로 `P0043`가 반응해야 한다.
 

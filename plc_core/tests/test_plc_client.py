@@ -12,9 +12,9 @@ def plc():
 
 
 class TestSetState:
-    def test_idle_sets_white_solid(self, plc):
+    def test_idle_sets_green_solid(self, plc):
         status = plc.set_state(SystemState.IDLE)
-        assert status.led_color == LEDColor.WHITE
+        assert status.led_color == LEDColor.GREEN
         assert status.led_mode == LEDMode.SOLID
 
     def test_error_sets_red_flash(self, plc):

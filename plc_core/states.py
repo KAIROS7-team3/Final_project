@@ -40,7 +40,7 @@ class SystemState(str, Enum):
 # 실제 PLC bit/register encoding은 현장 배선에 따라 바뀔 수 있지만, 상위 상태가
 # 어떤 색/패턴으로 보일지는 여기서 한 번에 확인할 수 있게 둔다.
 STATE_LED_MAP: dict[SystemState, tuple[LEDColor, LEDMode]] = {
-    SystemState.IDLE: (LEDColor.WHITE, LEDMode.SOLID),
+    SystemState.IDLE: (LEDColor.GREEN, LEDMode.SOLID),
     SystemState.LISTENING: (LEDColor.GREEN, LEDMode.PULSE),
     SystemState.INFERRING: (LEDColor.GREEN, LEDMode.FLASH),
     SystemState.MOVING: (LEDColor.GREEN, LEDMode.SOLID),
