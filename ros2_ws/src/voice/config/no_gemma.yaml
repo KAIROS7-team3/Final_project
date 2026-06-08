@@ -1,0 +1,15 @@
+voice:
+  ros__parameters:
+    require_wake_word: false
+    wake_words:
+      - 로봇
+    whisper_no_speech_threshold: 0.6
+    whisper_logprob_threshold: -1.0
+    whisper_compression_ratio_threshold: 2.4
+    reject_hallucinated_transcripts: true
+    gemma_model_id: gemma-4-local
+    gemma_device: auto
+    gemma_confidence_threshold: 0.75
+    gemma_max_new_tokens: 128
+    gemma_temperature: 0.0
+    gemma_warmup: true

@@ -7,11 +7,11 @@ STT 원문을 프로젝트 표준 `Intent` 메시지로 바꾼다.
 
 ```text
 PyAudio microphone -> whisper_node -> /voice/raw_text
-/voice/raw_text -> rule_intent_node -> DB Gate -> /voice/intent
+/voice/raw_text -> gemma_intent_node -> DB Gate -> /voice/intent
 ```
 
 `whisper_node`는 원문 텍스트만 publish한다. `fetch`/`return` 가능 여부와
-DB Gate 통과 여부는 `rule_intent_node`와 `db` 패키지가 담당한다.
+DB Gate 통과 여부는 `gemma_intent_node`와 `db` 패키지가 담당한다.
 
 ## 필요한 라이브러리
 
@@ -138,9 +138,35 @@ CUDA를 사용할 수 없거나 GPU 메모리를 다른 모델이 사용 중일 
 
 ## Intent 노드 실행
 
-`rule_intent_node`는 현재 Gemma 4 없이 deterministic parser를 사용한다.
-`fetch`와 `return` 명령은 `/voice/intent`로 publish되기 전에 `db` 패키지의
-`/db/CheckToolFeasibility` 서비스를 통과해야 한다.
+`gemma_intent_node`는 Track A/B의 기본 intent 경로다. Gemma 4 로컬 추론으로
+`fetch`/`return`/`cancel`/`unknown`을 분류하고, `fetch`와 `return`은
+`db` 패키지의 `/db/CheckToolFeasibility` 서비스를 통과해야 한다.
+
+## Voice launch
+
+Whisper STT와 Gemma intent 노드를 한 번에 띄우려면 아래 launch를 사용한다.
+DB feasibility gate는 별도 `db_service_node`가 필요하므로, DB 서비스는
+다른 터미널이나 상위 launch에서 먼저 실행한다.
+
+```bash
+cd /home/thomas/Final_Project/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch voice voice.launch.py
+```
+
+자주 조정하는 값:
+
+```bash
+ros2 launch voice voice.launch.py \
+  enable_microphone:=false \
+  whisper_device:=cpu \
+  require_wake_word:=true \
+  gemma_device:=auto
+```
+
+`enable_microphone:=false`로 두면 실제 마이크 대신 `/voice/raw_text`를 직접
+발행해서 intent 분류를 시험할 수 있다.
 
 Terminal 1 - DB 서비스 실행:
 
@@ -152,8 +178,9 @@ ros2 run db db_service_node --ros-args \
 Terminal 2 - intent 노드 실행:
 
 ```bash
-ros2 run voice rule_intent_node --ros-args \
-  -p require_wake_word:=false
+ros2 run voice gemma_intent_node --ros-args \
+  -p require_wake_word:=true \
+  -p wake_words:='["코봇"]'
 ```
 
 Terminal 3 - 파싱된 intent 확인:
@@ -190,10 +217,16 @@ confidence: 0.65
 - `max_utterance_seconds`: 기본값 `4.0`
 - `silence_threshold`: 기본값 `0.02`
 
-`rule_intent_node`:
+`gemma_intent_node`:
 
-- `require_wake_word`: 기본값 `false`
-- `wake_words`: 기본값 `["로봇"]`
+- `require_wake_word`: 기본값 `true`
+- `wake_words`: 기본값 `["코봇", "코 봇", "코버", "코 버", "고봇", "고 봇", "고버", "고 버", "코벗", "코 벗", "고벗", "고 벗", "코보트", "코 보트", "고보트", "고 보트"]`
+- `gemma_model_id`: 기본값 `gemma-4-local`
+- `gemma_device`: `auto`, `cuda`, `cpu`
+- `gemma_confidence_threshold`: 기본값 `0.75`
+- `gemma_max_new_tokens`: 기본값 `128`
+- `gemma_temperature`: 기본값 `0.0`
+- `gemma_warmup`: 기본값 `true`
 
 ## 오디오 샘플 회귀 테스트
 

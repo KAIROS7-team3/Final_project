@@ -149,14 +149,14 @@ ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: watchdog}"
 현장 래더에서 출력 의미가 바뀌면
 `ros2_ws/src/plc/config/xgb_plc.yaml`의 `system_state_output_labels`만 조정한다.
 
-VOICE/DB 연동 흐름에서는 다음처럼 사용한다.
+상위 음성/오케스트레이션 흐름에서는 다음처럼 사용한다.
 
 | 상태 | 주 발행자 | 의미 |
 |------|-----------|------|
 | `listening` | `voice/whisper_node` | STT 원문이 들어와 음성 입력을 처리 중 |
-| `inferring` | `voice/rule_intent_node` | 명령 파싱과 DB Gate 확인 중 |
-| `moving` | `db/intent_status_simulator_node` 또는 motion/orchestrator | 명령이 승인되어 동작 진행 중 |
-| `idle` | `db/intent_status_simulator_node` 또는 motion/orchestrator | 동작/처리 완료 후 대기 |
+| `inferring` | `voice`의 intent 분류 노드 | 명령 파싱과 DB Gate 확인 중 |
+| `moving` | `motion/orchestrator` | 명령이 승인되어 동작 진행 중 |
+| `idle` | `motion/orchestrator` | 동작/처리 완료 후 대기 |
 | `error` | `voice`, `db`, `plc_node` | DB Gate 거부, 서비스 실패, PLC 통신 실패 등 |
 | `e_stop` | plc_node | 비상 정지 상태 latch 및 출력 |
 | `watchdog` | plc_node | watchdog 이상 상태 latch 및 출력 |
@@ -246,7 +246,7 @@ source install/setup.bash
 ros2 launch plc plc.launch.py port:=/dev/ttyUSB0 baudrate:=115200 device_id:=1
 ```
 
-`/dev/ttyUSB0`가 아닌 경우 실제 장치로 바꾼다. 데모 중에 watchdog이나 E-stop
+`/dev/ttyUSB0`가 아닌 경우 실제 장치로 바꾼다. 필요 시 watchdog이나 E-stop
 감시를 끄려면 `enable_watchdog:=false` 또는 `enable_estop_poll:=false`를 명시한다.
 DB를 다른 위치로 쓰려면 `db_path:=/absolute/path/to/robot_arm.db`를 같이 넘긴다.
 
@@ -321,7 +321,7 @@ ros2 topic pub --once /plc_reset std_msgs/msg/Bool "{data: true}"
 
 ### 5. semantic 상태 확인
 
-PLC가 받는 의미 단위 상태도 데모에서 확인한다.
+PLC가 받는 의미 단위 상태도 smoke test에서 확인한다.
 
 ```bash
 ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: idle}"

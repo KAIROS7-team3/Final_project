@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = "voice"
@@ -9,6 +11,8 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
+        (f"share/{package_name}/config", ["config/gemma.yaml"]),
+        (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -20,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "whisper_node = voice.whisper_node:main",
+            "gemma_intent_node = voice.gemma_intent_node:main",
             "rule_intent_node = voice.rule_intent_node:main",
         ],
     },
