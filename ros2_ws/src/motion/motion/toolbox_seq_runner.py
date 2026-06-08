@@ -96,7 +96,7 @@ _LATCHED_QOS = QoSProfile(
 # 실제 비전 좌표 수신 후 config/toolbox.yaml 이관 예정 (E-4)
 _VIS_X_MIN, _VIS_X_MAX = 50.0,  800.0
 _VIS_Y_MIN, _VIS_Y_MAX = -600.0, 600.0
-_VIS_Z_MIN, _VIS_Z_MAX = 0.0,    700.0
+_VIS_Z_MIN, _VIS_Z_MAX = -5.0,   700.0
 
 # S-2: DB gate 적용 대상 시퀀스
 _FETCH_SEQS  = {'vision_fetch', 'socket_fetch'}

@@ -326,7 +326,8 @@ def vision_fetch_seq(vision_x: float, vision_y: float, vision_z: float) -> list[
         ml_abs(SOCKET_BOTTOM),
         GRIP_RELEASE(),
         ml_abs(SOCKET_BOTTOM_XY),
-        ml_abs(SOCKET_CATCH_HOME_L),
+        # ml_abs(SOCKET_CATCH_HOME_L),  # Staging 대기 포즈 — 필요 시 활성화
+        JOINT_HOME(),
     ]
 
 
