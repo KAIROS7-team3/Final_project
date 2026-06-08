@@ -67,6 +67,8 @@ hf download google/gemma-3-1b-it \
 
 다운로드가 끝나면 launch에서 별도 경로를 넘기지 않아도 된다. 다른 경로를
 쓰고 싶으면 `gemma_model_id:=/your/path`처럼 넘기면 된다.
+프롬프트 템플릿 파일을 바꾸고 싶으면 `gemma_prompt_template_path:=/your/prompt.txt`
+를 함께 넘기면 된다.
 
 ## 마이크 확인
 
@@ -181,7 +183,8 @@ ros2 launch voice voice.launch.py \
   enable_microphone:=false \
   whisper_device:=cpu \
   require_wake_word:=true \
-  gemma_device:=auto
+  gemma_device:=auto \
+  gemma_prompt_template_path:=/home/thomas/Final_Project/ros2_ws/src/voice/voice/gemma_prompt.txt
 ```
 
 `enable_microphone:=false`로 두면 실제 마이크 대신 `/voice/raw_text`를 직접
