@@ -7,12 +7,13 @@ package_name = "plc"
 setup(
     name=package_name,
     version="0.1.0",
-    packages=find_packages(exclude=["test", "test.*"]) + ["plc_core"],
-    package_dir={"plc_core": "../../../plc_core"},
+    packages=find_packages(exclude=["test", "test.*"]),
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/config", glob("config/*.yaml")),
+        (f"share/{package_name}/environment", glob("environment/*.dsv")),
+        (f"share/{package_name}/environment", glob("environment/*.sh")),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["setuptools", "pymodbus"],
