@@ -218,6 +218,41 @@ def drawer_open_seq(
         ml_abs(_wp(layer, "silence")),
         GRIP_RELEASE(),
         ml_abs(inner),
+        JOINT_HOME(),
+    ]
+
+
+def vision_drawer_open_seq(
+    layer: int,
+    approach_x: float,
+    approach_y: float,
+    approach_z: float,
+) -> list[Step]:
+    """비전 손잡이 좌표 기반 서랍 열기 시퀀스.
+
+    ③ APPROACH : (approach_x, approach_y, approach_z+3)
+    ⑤ OPEN     : (approach_x, 하드코딩 Y,  approach_z)
+    ⑥ SILENCE  : (approach_x, 하드코딩 Y,  approach_z-9)
+    ⑧ INNER    : (approach_x, 하드코딩 Y,  approach_z-9)
+    회전(rx, ry, rz) = [90, 90, 90] 고정.
+    """
+    rx, ry, rz = 90.0, 90.0, 90.0
+
+    approach = [approach_x, approach_y,               approach_z + 3, rx, ry, rz]
+    open_pos = [approach_x, _wp(layer, "open")[1],    approach_z,     rx, ry, rz]
+    silence  = [approach_x, _wp(layer, "silence")[1], approach_z - 9, rx, ry, rz]
+    inner    = [approach_x, _wp(layer, "inner")[1],   approach_z - 9, rx, ry, rz]
+
+    return [
+        GRIP_RELEASE(),
+        mj_abs(_wp(layer, "setup_j")),
+        ml_abs(approach),
+        GRIP_BOX(),
+        ml_abs(open_pos),
+        ml_abs(silence),
+        GRIP_RELEASE(),
+        ml_abs(inner),
+        JOINT_HOME(),
     ]
 
 
@@ -243,6 +278,7 @@ def drawer_close_seq(
         ml_abs(_wp(layer, "approach")),
         GRIP_RELEASE(),
         ml_abs(close_end),
+        JOINT_HOME(),
     ]
 
 

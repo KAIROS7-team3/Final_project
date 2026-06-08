@@ -76,6 +76,7 @@ from unit_actions.toolbox_motion import (
     socket_return_seq,
     vision_fetch_seq,
     vision_return_seq,
+    vision_drawer_open_seq,
 )
 from db_core.client import DBClient, DBError, DBCacheExpiredError
 from plc_core.client import PLCClient
@@ -123,6 +124,9 @@ class ToolboxSeqRunner(Node):
         self.declare_parameter('slot_x_mm', 0.0)
         self.declare_parameter('slot_y_mm', 0.0)
         self.declare_parameter('slot_z_mm', 0.0)
+        self.declare_parameter('approach_x_mm', 0.0)
+        self.declare_parameter('approach_y_mm', 0.0)
+        self.declare_parameter('approach_z_mm', 0.0)
         # S-5/E-4: 속도·가속도 상한 — config/robot_poses.yaml motion_limits 값으로 오버라이드 가능
         self.declare_parameter('vel_l', VEL_L)
         self.declare_parameter('acc_l', ACC_L)
@@ -142,9 +146,12 @@ class ToolboxSeqRunner(Node):
         self._bottom_x = self.get_parameter('bottom_x_mm').get_parameter_value().double_value
         self._bottom_y = self.get_parameter('bottom_y_mm').get_parameter_value().double_value
         self._bottom_z = self.get_parameter('bottom_z_mm').get_parameter_value().double_value
-        self._slot_x   = self.get_parameter('slot_x_mm').get_parameter_value().double_value
-        self._slot_y   = self.get_parameter('slot_y_mm').get_parameter_value().double_value
-        self._slot_z   = self.get_parameter('slot_z_mm').get_parameter_value().double_value
+        self._slot_x     = self.get_parameter('slot_x_mm').get_parameter_value().double_value
+        self._slot_y     = self.get_parameter('slot_y_mm').get_parameter_value().double_value
+        self._slot_z     = self.get_parameter('slot_z_mm').get_parameter_value().double_value
+        self._approach_x = self.get_parameter('approach_x_mm').get_parameter_value().double_value
+        self._approach_y = self.get_parameter('approach_y_mm').get_parameter_value().double_value
+        self._approach_z = self.get_parameter('approach_z_mm').get_parameter_value().double_value
         self._vel_l = self.get_parameter('vel_l').get_parameter_value().double_value
         self._acc_l = self.get_parameter('acc_l').get_parameter_value().double_value
         self._vel_r = self.get_parameter('vel_r').get_parameter_value().double_value
@@ -245,7 +252,8 @@ class ToolboxSeqRunner(Node):
             self.get_logger().error(f'[runner] 알 수 없는 sequence: {self._seq_name}')
             self.get_logger().error(
                 '[runner] 사용 가능: home open_0 close_0 open_1 close_1 '
-                'socket_fetch socket_return vision_fetch vision_return'
+                'socket_fetch socket_return vision_fetch vision_return '
+                'vision_open_0 vision_open_1'
             )
             rclpy.shutdown()
             return
@@ -366,6 +374,12 @@ class ToolboxSeqRunner(Node):
                 self._bottom_x, self._bottom_y, self._bottom_z,
                 self._slot_x,   self._slot_y,   self._slot_z,
             )
+
+        if name in ('vision_open_0', 'vision_open_1'):
+            if not self._check_vision_coords('approach', self._approach_x, self._approach_y, self._approach_z):
+                return None
+            layer = 0 if name == 'vision_open_0' else 1
+            return vision_drawer_open_seq(layer, self._approach_x, self._approach_y, self._approach_z)
 
         mapping = {
             'home':          lambda: home_seq(),
