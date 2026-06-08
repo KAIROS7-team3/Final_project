@@ -179,8 +179,10 @@ def generate_launch_description() -> LaunchDescription:
         executable="home_on_start",
         name="home_on_start",
         output="screen",
-        parameters=[{"robot_ns": LaunchConfiguration("name")}],
-        condition=IfCondition(PythonExpression(["'", mode, "' == 'virtual'"])),
+        parameters=[
+            {"robot_ns": LaunchConfiguration("name")},
+            {"mode": LaunchConfiguration("mode")},
+        ],
     )
 
     delay_after_controller = RegisterEventHandler(
@@ -190,7 +192,7 @@ def generate_launch_description() -> LaunchDescription:
                 gripper_service_node,
                 joint_state_merger_node,
                 rviz_node,
-                # virtual 모드에서만: controller 준비 후 3초 대기 → 홈 자세 이동
+                # virtual: TCP 설정 + 홈 이동 / real: TCP 설정만
                 TimerAction(period=3.0, actions=[home_on_start_node]),
             ],
         )

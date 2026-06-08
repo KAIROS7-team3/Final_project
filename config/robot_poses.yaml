@@ -59,6 +59,12 @@ motion_limits:
   vel_j_deg_s: 12.0     # 관절 속도 상한
   acc_j_deg_s2: 20.0    # 관절 가속도 상한
 
+# ── TCP 설정 (E-4) ───────────────────────────────────────────────────────────
+# 단위: DSR 네이티브 (mm, deg) — ConfigCreateTcp pos 배열 [x, y, z, rx, ry, rz]
+tcp:
+  name: GripperDA_v1
+  offset_mm: [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]   # flange → tool tip
+
 # 안전 제약 (safety.md S-5):
 # - 모든 포즈는 e0509 operational range 내
 # - 소프트 리밋이 하드웨어 리밋보다 항상 좁아야 함
