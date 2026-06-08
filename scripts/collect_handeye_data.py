@@ -65,6 +65,11 @@ MARKER_SIZE_M: float = float(_calib.get('aruco_marker_size_m', 0.065))
 ARUCO_DICT_ID: int = int(_calib.get('aruco_dict_id', cv2.aruco.DICT_4X4_50))
 ARUCO_TARGET_ID: int = int(_calib.get('aruco_target_id', 0))
 MIN_SAMPLES: int = int(_calib.get('min_sample_count', 15))
+
+# 수집 품질 필터 — compute_handeye_opencv.py와 동일 기준 적용
+MAX_FACE_ANGLE_DEG: float = 22.0  # 마커가 카메라에 대해 기울어진 최대 각도
+MIN_MARKER_DIST_M:  float = 0.30  # 마커-카메라 최소 거리
+MAX_MARKER_DIST_M:  float = 0.85  # 마커-카메라 최대 거리
 BASE_FRAME: str = str(_calib.get('base_frame', 'base_link'))
 GRIPPER_FRAME: str = str(_calib.get('gripper_frame', 'link_6'))
 
@@ -80,50 +85,53 @@ IMG_H: int = _cam_info['height']
 # ── 캘리브레이션 자세 (handeye_calib_motion.py와 동일) ─────────────────────────
 # ⚠️ E-1 예외: Doosan MoveJoint API는 degree 입력 (하드웨어 경계 인터페이스)
 CALIB_POSES: list[list[float]] = [
-    # ── 그룹 A: 위치 다양성 (J1~J3 sweep) ──────────────────────────────────
-    [   0.0,   0.0,  90.0,   0.0,  90.0,   0.0],  # A1  홈
-    [  30.0,   0.0,  90.0,   0.0,  90.0,   0.0],  # A2
-    [  60.0,   0.0,  90.0,   0.0,  90.0,   0.0],  # A3
-    [ -30.0,   0.0,  90.0,   0.0,  90.0,   0.0],  # A4
-    [ -60.0,   0.0,  90.0,   0.0,  90.0,   0.0],  # A5
-    [   0.0, -20.0,  90.0,   0.0,  90.0,   0.0],  # A6
-    [   0.0, -35.0,  90.0,   0.0,  90.0,   0.0],  # A7
-    [   0.0,   0.0,  75.0,   0.0,  90.0,   0.0],  # A8
-    [   0.0,   0.0, 105.0,   0.0,  90.0,   0.0],  # A9
-    [  30.0, -20.0,  80.0,   0.0,  90.0,   0.0],  # A10
-    # ── 그룹 B: J4 변화 (팔뚝 축 회전) ────────────────────────────────────
-    [   0.0,   0.0,  90.0,  30.0,  90.0,   0.0],  # B1
-    [   0.0,   0.0,  90.0, -30.0,  90.0,   0.0],  # B2
-    [   0.0,   0.0,  90.0,  50.0,  90.0,   0.0],  # B3
-    [   0.0,   0.0,  90.0, -50.0,  90.0,   0.0],  # B4
-    [  30.0,   0.0,  90.0,  35.0,  90.0,   0.0],  # B5
-    [ -30.0,   0.0,  90.0, -35.0,  90.0,   0.0],  # B6
-    [   0.0, -20.0,  90.0,  30.0,  90.0,   0.0],  # B7
-    [   0.0, -20.0,  90.0, -30.0,  90.0,   0.0],  # B8
-    # ── 그룹 C: J5 변화 (손목 상하 꺾임) ──────────────────────────────────
-    [   0.0,   0.0,  90.0,   0.0,  75.0,   0.0],  # C1
-    [   0.0,   0.0,  90.0,   0.0, 105.0,   0.0],  # C2
-    [   0.0,   0.0,  90.0,   0.0,  70.0,   0.0],  # C3
-    [   0.0,   0.0,  90.0,   0.0, 110.0,   0.0],  # C4
-    [  30.0,   0.0,  90.0,   0.0,  75.0,   0.0],  # C5
-    [ -30.0,   0.0,  90.0,   0.0, 105.0,   0.0],  # C6
-    [   0.0, -20.0,  90.0,   0.0,  75.0,   0.0],  # C7
-    [   0.0, -20.0,  90.0,   0.0, 105.0,   0.0],  # C8
-    # ── 그룹 D: J6 변화 (툴 축 회전) ──────────────────────────────────────
-    [   0.0,   0.0,  90.0,   0.0,  90.0,  30.0],  # D1
-    [   0.0,   0.0,  90.0,   0.0,  90.0, -30.0],  # D2
-    [   0.0,   0.0,  90.0,   0.0,  90.0,  50.0],  # D3
-    [   0.0,   0.0,  90.0,   0.0,  90.0, -50.0],  # D4
-    [  30.0,   0.0,  90.0,   0.0,  90.0,  30.0],  # D5
-    [ -30.0,   0.0,  90.0,   0.0,  90.0, -30.0],  # D6
-    # ── 그룹 E: J4+J5+J6 복합 ──────────────────────────────────────────────
-    [   0.0,   0.0,  90.0,  30.0,  75.0,  30.0],  # E1
-    [   0.0,   0.0,  90.0, -30.0, 105.0, -30.0],  # E2
-    [  30.0, -20.0,  90.0,  25.0,  80.0,  20.0],  # E3
-    [ -30.0, -20.0,  90.0, -25.0, 100.0, -20.0],  # E4
-    [   0.0, -30.0,  85.0,  20.0,  80.0,  20.0],  # E5
+    # ── 직접교시 샘플 기반 자세 (TFcalibration.tw 2~10번 참조) ────────────────
+    # ⚠️ J1 안전 제한 ±30° 적용 (TW 9번·10번 J1 31.x → 30.0 클램프)
+    # 마커 위치: link_6 옆면 (탑뷰 카메라 방향) — 프리뷰에서 미감지 시 S 스킵
+
+    # ── 그룹 R: 실측 기준 자세 9개 (TW 2~10번) ──────────────────────────────
+    [  -5.76,  39.57,  65.88,  85.36,  92.78, -119.27],  # R1  TW2
+    [  30.00,  38.15,  68.98, -77.75,  92.78,  111.28],  # R2  TW3 (J1 클램프)
+    [   5.67,   9.03,  51.71,  11.84,  59.95,   -9.10],  # R3  TW4
+    [   9.28,  41.84, 107.92,  11.85, -65.48,   -9.10],  # R4  TW5
+    [  -9.90,  44.54, 102.82, -67.54, -65.48,   18.22],  # R5  TW6
+    [  22.91,  44.74,  86.97, -67.36,  85.49,  121.39],  # R6  TW7
+    [   0.79,  16.51,  69.24, -89.98,  85.49,   82.78],  # R7  TW8
+    [  30.00,  14.48,  69.25, -89.98,  40.66,   82.78],  # R8  TW9 (J1 클램프)
+    [  30.00,  18.40, 101.34, -72.60,  40.66,   82.78],  # R9  TW10 (J1 클램프)
+
+    # ── 그룹 V: 기준 자세 변형 (±5~10° 퍼터베이션) ─────────────────────────
+    # R1 변형
+    [  -5.76,  30.00,  65.88,  85.36,  92.78, -119.27],  # V01 R1 J2-10
+    [  -5.76,  39.57,  73.00,  80.00,  92.78, -119.27],  # V02 R1 J3+7/J4-5
+    [  -5.76,  39.57,  65.88,  85.36,  83.00, -119.27],  # V03 R1 J5-10
+    # R2 변형
+    [  20.00,  38.15,  68.98, -77.75,  92.78,  111.28],  # V04 R2 J1-10
+    [  30.00,  30.00,  68.98, -77.75,  92.78,  111.28],  # V05 R2 J2-8
+    [  30.00,  38.15,  76.00, -70.00,  92.78,  111.28],  # V06 R2 J3+7/J4+8
+    # R3 변형
+    [   5.67,   9.03,  51.71,  11.84,  68.00,   -9.10],  # V07 R3 J5+8
+    [  -5.00,   9.03,  51.71,  11.84,  59.95,   -9.10],  # V08 R3 J1-11
+    [   5.67,  17.00,  58.00,  11.84,  59.95,   -9.10],  # V09 R3 J2+8/J3+6
+    # R4 변형
+    [   9.28,  41.84, 107.92,  11.85, -55.00,   -9.10],  # V10 R4 J5+10
+    [   9.28,  33.00, 100.00,  11.85, -65.48,   -9.10],  # V11 R4 J2-9/J3-8
+    [  18.00,  41.84, 107.92,  11.85, -65.48,   -9.10],  # V12 R4 J1+9
+    # R5 변형
+    [   0.00,  44.54, 102.82, -67.54, -65.48,   18.22],  # V13 R5 J1+10
+    [  -9.90,  36.00,  95.00, -67.54, -65.48,   18.22],  # V14 R5 J2-9/J3-8
+    [  -9.90,  44.54, 102.82, -57.00, -55.00,   18.22],  # V15 R5 J4+11/J5+10
+    # R6 변형
+    [  13.00,  44.74,  86.97, -67.36,  85.49,  121.39],  # V16 R6 J1-10
+    [  22.91,  36.00,  79.00, -67.36,  85.49,  121.39],  # V17 R6 J2-9/J3-8
+    [  22.91,  44.74,  86.97, -57.00,  75.00,  121.39],  # V18 R6 J4+10/J5-10
+    # R7 변형
+    [  10.00,  16.51,  69.24, -89.98,  85.49,   82.78],  # V19 R7 J1+9
+    [   0.79,  25.00,  76.00, -82.00,  85.49,   82.78],  # V20 R7 J2+9/J3+7/J4+8
+    # R8 변형
+    [  20.00,  14.48,  69.25, -89.98,  40.66,   82.78],  # V21 R8 J1-10
 ]
-HOME: list[float] = CALIB_POSES[0]
+HOME: list[float] = [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]
 
 # ── ArUco 마커 3D 기준점 (마커 평면, 마커 중심 원점) ──────────────────────────
 def _make_obj_pts(size_m: float) -> np.ndarray:
@@ -228,9 +236,18 @@ def detect_aruco(
     cv2.drawFrameAxes(display, CAMERA_MATRIX, DIST_COEFFS,
                       rvec, tvec, MARKER_SIZE_M * 0.5)
     dist_m = float(np.linalg.norm(t_target2cam))
-    label = f'ID={ids.flatten()[target_idx]}  dist={dist_m:.3f}m'
+
+    # 마커 기울기 계산 (카메라 정면 기준)
+    cos_a = abs(float(R_target2cam[2, 2]))
+    face_angle = float(np.degrees(np.arccos(np.clip(cos_a, 0.0, 1.0))))
+
+    qual_ok = (face_angle <= MAX_FACE_ANGLE_DEG
+               and MIN_MARKER_DIST_M <= dist_m <= MAX_MARKER_DIST_M)
+    qual_color = (0, 255, 0) if qual_ok else (0, 165, 255)
+    qual_tag   = 'OK' if qual_ok else f'BAD(ang={face_angle:.0f}deg,dist={dist_m:.2f}m)'
+    label = f'ID={ids.flatten()[target_idx]}  dist={dist_m:.3f}m  [{qual_tag}]'
     cv2.putText(display, label, (10, 40),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.9, qual_color, 2)
     cv2.putText(display, 'SPACE:save  S:skip  Q:quit', (10, IMG_H - 15),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 1)
 
@@ -279,10 +296,14 @@ def main() -> None:
             if quit_flag:
                 break
 
-            print(f'[{i+1:02d}/{total}] 이동 중... {pose}')
+            # 홈 복귀 후 목표 자세 이동 (안전한 중간 경유점)
+            print(f'[{i+1:02d}/{total}] 홈 복귀 중...')
+            node.move_to(HOME)
 
+            print(f'[{i+1:02d}/{total}] 이동 중... {pose}')
             if not node.move_to(pose):
-                logger.warning('이동 실패 — 자동 스킵')
+                logger.warning('이동 실패 — 홈 복귀 후 스킵')
+                node.move_to(HOME)
                 skipped += 1
                 continue
 
@@ -307,16 +328,26 @@ def main() -> None:
             while not action:
                 rclpy.spin_once(node, timeout_sec=0)
 
-                frames = pipeline.poll_for_frames()
-                if frames and frames.get_color_frame():
-                    color_img = np.asanyarray(frames.get_color_frame().get_data())
-                    last_R_t2c, last_t_t2c, display = detect_aruco(color_img)
+                try:
+                    frames = pipeline.wait_for_frames(timeout_ms=200)
+                    if frames and frames.get_color_frame():
+                        color_img = np.asanyarray(frames.get_color_frame().get_data())
+                        last_R_t2c, last_t_t2c, display = detect_aruco(color_img)
 
-                    sample_n = len(R_g2b_list)
-                    cv2.putText(display, f'Pose {i+1}/{total}  Saved:{sample_n}',
-                                (10, IMG_H - 45),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 1)
-                    cv2.imshow('ArUco Preview', display)
+                        sample_n = len(R_g2b_list)
+                        cv2.putText(display, f'Pose {i+1}/{total}  Saved:{sample_n}',
+                                    (10, IMG_H - 45),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 1)
+                        cv2.imshow('ArUco Preview', display)
+                except RuntimeError:
+                    logger.warning('카메라 프레임 끊김 — 재연결 시도...')
+                    try:
+                        pipeline.stop()
+                        pipeline.start(rs_cfg)
+                        last_R_t2c = None
+                        logger.info('카메라 재연결 완료')
+                    except Exception as e:
+                        logger.error('카메라 재연결 실패: %s', e)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord(' '):
@@ -328,6 +359,7 @@ def main() -> None:
 
             if action == 'quit':
                 print('사용자 종료.')
+                node.move_to(HOME)
                 quit_flag = True
                 break
 
@@ -342,11 +374,29 @@ def main() -> None:
                 skipped += 1
                 continue
 
+            # 품질 검사 — 기울기·거리 기준
+            dist_now = float(last_t_t2c[2])
+            cos_a_now = abs(float(last_R_t2c[2, 2]))
+            face_ang_now = float(np.degrees(np.arccos(np.clip(cos_a_now, 0.0, 1.0))))
+            if face_ang_now > MAX_FACE_ANGLE_DEG:
+                logger.warning(
+                    '마커 기울기 %.1fdeg > %.0fdeg — 평판 베이스에 마커 재부착 필요. 스킵.',
+                    face_ang_now, MAX_FACE_ANGLE_DEG)
+                skipped += 1
+                continue
+            if not (MIN_MARKER_DIST_M <= dist_now <= MAX_MARKER_DIST_M):
+                logger.warning(
+                    '마커 거리 %.3fm (허용 %.2f~%.2fm) — 스킵.',
+                    dist_now, MIN_MARKER_DIST_M, MAX_MARKER_DIST_M)
+                skipped += 1
+                continue
+
             R_g2b_list.append(R_g2b)
             t_g2b_list.append(t_g2b)
             R_t2c_list.append(last_R_t2c)
             t_t2c_list.append(last_t_t2c)
-            print(f'  ✓ 저장 완료 (누적 {len(R_g2b_list)}쌍)')
+            print(f'  ✓ 저장 (누적 {len(R_g2b_list)}쌍)'
+                  f'  기울기={face_ang_now:.1f}deg  거리={dist_now:.3f}m')
 
     except KeyboardInterrupt:
         print('\nCtrl+C — 종료합니다.')
