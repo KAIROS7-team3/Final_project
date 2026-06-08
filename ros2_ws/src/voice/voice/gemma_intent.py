@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -93,7 +94,7 @@ class GemmaBackend(Protocol):
 class GemmaConfig:
     """Gemma 추론 설정."""
 
-    model_id: str = "/home/thomas/models/gemma/gemma-3-1b-it"
+    model_id: str = "~/models/gemma/gemma-3-1b-it"
     device: str = "auto"
     confidence_threshold: float = 0.75
     max_new_tokens: int = 128
@@ -141,6 +142,12 @@ def build_prompt(raw_text: str) -> str:
         f"공구 카탈로그:\n{tool_catalog_lines}\n\n"
         f"입력 발화: {raw_text.strip()}\n"
     )
+
+
+def resolve_model_id_path(model_id: str) -> str:
+    """Gemma 모델 경로의 `~`를 실제 홈 디렉터리로 확장한다."""
+
+    return str(Path(model_id).expanduser())
 
 
 def parse_gemma_output(output: str) -> GemmaIntentResult:
@@ -252,8 +259,9 @@ class GemmaIntentClassifier:
             raise GemmaLoadError("torch is required for Gemma runtime") from exc
 
         resolved_device = _resolve_device(self.config.device, torch)
+        model_id = resolve_model_id_path(self.config.model_id)
         return _TransformersGemmaBackend(
-            model_id=self.config.model_id,
+            model_id=model_id,
             device=resolved_device,
             max_new_tokens=self.config.max_new_tokens,
             temperature=self.config.temperature,

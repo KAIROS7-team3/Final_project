@@ -33,7 +33,7 @@ class GemmaIntentNode(Node):
         self.declare_parameter("wake_words", list(DEFAULT_WAKE_WORDS))
         self.declare_parameter(
             "gemma_model_id",
-            "/home/thomas/models/gemma/gemma-3-1b-it",
+            "~/models/gemma/gemma-3-1b-it",
         )
         self.declare_parameter("gemma_device", "auto")
         self.declare_parameter("gemma_confidence_threshold", 0.75)

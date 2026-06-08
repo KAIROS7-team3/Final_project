@@ -49,6 +49,21 @@ python3 -m pip install -U openai-whisper
 `pyaudio`를 apt가 아니라 pip로 설치할 경우에도 `portaudio19-dev`를 먼저
 설치해야 한다.
 
+## Gemma 설치
+
+Gemma 모델은 Hugging Face에서 승인 후 내려받아 로컬에 둔다. 이 패키지는
+기본적으로 `~/models/gemma/gemma-3-1b-it`를 찾도록 설정되어 있다.
+
+```bash
+hf auth login
+mkdir -p ~/models/gemma
+hf download google/gemma-3-1b-it \
+  --local-dir ~/models/gemma/gemma-3-1b-it
+```
+
+다운로드가 끝나면 launch에서 별도 경로를 넘기지 않아도 된다. 다른 경로를
+쓰고 싶으면 `gemma_model_id:=/your/path`처럼 넘기면 된다.
+
 ## 마이크 확인
 
 Linux에서 입력 장치가 보이는지 확인한다.
@@ -221,7 +236,7 @@ confidence: 0.65
 
 - `require_wake_word`: 기본값 `true`
 - `wake_words`: 기본값 `["코봇", "코 봇", "코버", "코 버", "고봇", "고 봇", "고버", "고 버", "코벗", "코 벗", "고벗", "고 벗", "코보트", "코 보트", "고보트", "고 보트"]`
-- `gemma_model_id`: 기본값 `/home/thomas/models/gemma/gemma-3-1b-it`
+- `gemma_model_id`: 기본값 `~/models/gemma/gemma-3-1b-it`
 - `gemma_device`: `auto`, `cuda`, `cpu`
 - `gemma_confidence_threshold`: 기본값 `0.75`
 - `gemma_max_new_tokens`: 기본값 `128`

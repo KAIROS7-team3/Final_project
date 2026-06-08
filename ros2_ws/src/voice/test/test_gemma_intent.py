@@ -6,6 +6,7 @@ from voice.gemma_intent import (
     GemmaIntentResult,
     build_prompt,
     parse_gemma_output,
+    resolve_model_id_path,
 )
 
 
@@ -25,6 +26,13 @@ def test_build_prompt_contains_raw_text_and_tool_catalog() -> None:
     assert "스패너 가져와" in prompt
     assert "spanner_16mm" in prompt
     assert "JSON 객체 하나만 출력" in prompt
+
+
+def test_resolve_model_id_path_expands_tilde() -> None:
+    resolved = resolve_model_id_path("~/models/gemma/gemma-3-1b-it")
+
+    assert resolved.endswith("/models/gemma/gemma-3-1b-it")
+    assert resolved.startswith("/")
 
 
 def test_parse_gemma_output_accepts_fenced_json_and_aliases() -> None:

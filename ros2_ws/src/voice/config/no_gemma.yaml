@@ -7,7 +7,7 @@ voice:
     whisper_logprob_threshold: -1.0
     whisper_compression_ratio_threshold: 2.4
     reject_hallucinated_transcripts: true
-    gemma_model_id: /home/thomas/models/gemma/gemma-3-1b-it
+    gemma_model_id: ~/models/gemma/gemma-3-1b-it
     gemma_device: auto
     gemma_confidence_threshold: 0.75
     gemma_max_new_tokens: 128
