@@ -476,6 +476,45 @@ launch를 실행한 터미널에서 `Ctrl+C`를 누른다. 노드는 종료 시 
 
 ## 문제 해결
 
+### 노트북에서 PLC USB-RS485 장치 인식 확인
+
+PLC 본체 자체가 USB로 보이는 것은 아니고, 보통 노트북에는 USB-RS485 어댑터가
+`ttyUSB` 장치로 올라온다. 케이블을 연결한 뒤 아래 순서로 확인한다.
+
+장치 목록 확인:
+
+```bash
+lsusb
+```
+
+최근 커널 로그 확인:
+
+```bash
+dmesg | tail -n 30
+```
+
+serial 장치 파일 확인:
+
+```bash
+ls /dev/ttyUSB*
+```
+
+장치 메타데이터 확인:
+
+```bash
+udevadm info --query=all --name=/dev/ttyUSB0 | grep -E "DEVNAME|ID_VENDOR_ID|ID_MODEL_ID|ID_SERIAL"
+```
+
+현재 사용자 권한 확인:
+
+```bash
+groups
+```
+
+정상이라면 `dmesg`에 USB serial attach 로그가 보이고, `/dev/ttyUSB0` 또는
+`/dev/ttyUSB1` 같은 장치가 생성되어야 한다. 장치 번호가 다르면 launch에서
+`port:=/dev/ttyUSB1`처럼 실제 값으로 넘긴다.
+
 ### `/dev/ttyUSB0`가 없음
 
 ```bash
