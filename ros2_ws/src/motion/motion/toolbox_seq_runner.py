@@ -77,6 +77,7 @@ from unit_actions.toolbox_motion import (
     vision_fetch_seq,
     vision_return_seq,
     vision_drawer_open_seq,
+    vision_drawer_close_seq,
 )
 from db_core.client import DBClient, DBError, DBCacheExpiredError
 from plc_core.client import PLCClient
@@ -253,7 +254,7 @@ class ToolboxSeqRunner(Node):
             self.get_logger().error(
                 '[runner] 사용 가능: home open_0 close_0 open_1 close_1 '
                 'socket_fetch socket_return vision_fetch vision_return '
-                'vision_open_0 vision_open_1'
+                'vision_open_0 vision_open_1 vision_close_0 vision_close_1'
             )
             rclpy.shutdown()
             return
@@ -380,6 +381,12 @@ class ToolboxSeqRunner(Node):
                 return None
             layer = 0 if name == 'vision_open_0' else 1
             return vision_drawer_open_seq(layer, self._approach_x, self._approach_y, self._approach_z)
+
+        if name in ('vision_close_0', 'vision_close_1'):
+            if not self._check_vision_coords('approach', self._approach_x, self._approach_y, self._approach_z):
+                return None
+            layer = 0 if name == 'vision_close_0' else 1
+            return vision_drawer_close_seq(layer, self._approach_x, self._approach_y, self._approach_z)
 
         mapping = {
             'home':          lambda: home_seq(),

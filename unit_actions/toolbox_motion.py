@@ -282,6 +282,40 @@ def drawer_close_seq(
     ]
 
 
+def vision_drawer_close_seq(
+    layer: int,
+    approach_x: float,
+    approach_y: float,
+    approach_z: float,
+) -> list[Step]:
+    """비전 손잡이 좌표 기반 서랍 닫기 시퀀스.
+
+    ③ OPENDOWN : (approach_x, 하드코딩 Y,  approach_z-9)
+    ⑤ OPEN     : (approach_x, 하드코딩 Y,  approach_z)
+    ⑥ APPROACH : (approach_x, approach_y,  approach_z+3)
+    ⑧ CLOSE_END: (approach_x, 하드코딩 Y,  approach_z)
+    회전(rx, ry, rz) = [90, 90, 90] 고정.
+    """
+    rx, ry, rz = 90.0, 90.0, 90.0
+
+    opendown  = [approach_x, _wp(layer, "opendown")[1],  approach_z - 9, rx, ry, rz]
+    open_pos  = [approach_x, _wp(layer, "open")[1],      approach_z,     rx, ry, rz]
+    approach  = [approach_x, approach_y,                  approach_z + 3, rx, ry, rz]
+    close_end = [approach_x, _wp(layer, "close_end")[1], approach_z,     rx, ry, rz]
+
+    return [
+        GRIP_RELEASE(),
+        mj_abs(_wp(layer, "close_setup_j")),
+        ml_abs(opendown),
+        GRIP_BOX(),
+        ml_abs(open_pos),
+        ml_abs(approach),
+        GRIP_RELEASE(),
+        ml_abs(close_end),
+        JOINT_HOME(),
+    ]
+
+
 def approach_tool_seq(
     layer: int,
     tool_pose: Optional[list] = None,
