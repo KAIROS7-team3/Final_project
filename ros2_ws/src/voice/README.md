@@ -138,7 +138,7 @@ CUDA를 사용할 수 없거나 GPU 메모리를 다른 모델이 사용 중일 
 
 ## Intent 노드 실행
 
-`gemma_intent_node`는 Track A/B의 기본 intent 경로다. Gemma 4 로컬 추론으로
+`gemma_intent_node`는 Track A/B의 기본 intent 경로다. 로컬 Gemma 모델로
 `fetch`/`return`/`cancel`/`unknown`을 분류하고, `fetch`와 `return`은
 `db` 패키지의 `/db/CheckToolFeasibility` 서비스를 통과해야 한다.
 
@@ -221,7 +221,7 @@ confidence: 0.65
 
 - `require_wake_word`: 기본값 `true`
 - `wake_words`: 기본값 `["코봇", "코 봇", "코버", "코 버", "고봇", "고 봇", "고버", "고 버", "코벗", "코 벗", "고벗", "고 벗", "코보트", "코 보트", "고보트", "고 보트"]`
-- `gemma_model_id`: 기본값 `gemma-4-local`
+- `gemma_model_id`: 기본값 `/home/thomas/models/gemma/gemma-3-1b-it`
 - `gemma_device`: `auto`, `cuda`, `cpu`
 - `gemma_confidence_threshold`: 기본값 `0.75`
 - `gemma_max_new_tokens`: 기본값 `128`

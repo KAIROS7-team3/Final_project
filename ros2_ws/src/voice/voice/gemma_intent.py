@@ -93,7 +93,7 @@ class GemmaBackend(Protocol):
 class GemmaConfig:
     """Gemma 추론 설정."""
 
-    model_id: str = "gemma-4-local"
+    model_id: str = "/home/thomas/models/gemma/gemma-3-1b-it"
     device: str = "auto"
     confidence_threshold: float = 0.75
     max_new_tokens: int = 128

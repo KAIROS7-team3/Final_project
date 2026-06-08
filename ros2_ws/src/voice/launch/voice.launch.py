@@ -59,7 +59,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("require_wake_word", default_value="true"),
             DeclareLaunchArgument(
                 "gemma_model_id",
-                default_value="gemma-4-local",
+                default_value="/home/thomas/models/gemma/gemma-3-1b-it",
             ),
             DeclareLaunchArgument("gemma_device", default_value="auto"),
             DeclareLaunchArgument(
