@@ -212,6 +212,8 @@ def make_node(
         modbus=make_config(),
         watchdog_period_s=0.1,
         watchdog_timeout_s=0.5,
+        connect_retry_count=1,
+        connect_retry_backoff_s=0.1,
         db_path="robot_arm.db",
     )
     node._plc = FakePLC(connected=connected, fail_write=fail_write)
@@ -421,3 +423,29 @@ def test_read_timer_does_not_reconnect_when_disconnected() -> None:
     node.read_timer_callback()
 
     assert ("connect", {}) not in node._plc.calls
+
+
+def test_connect_with_retry_sets_idle_outputs_on_startup() -> None:
+    node = make_node()
+
+    assert node._connect_with_retry() is True
+    assert ("connect", {}) in node._plc.calls
+    assert (
+        "set_system_state",
+        {"state": SystemState.IDLE, "apply_outputs": False},
+    ) in node._plc.calls
+    assert node._status_pub.messages[-1].system_state == SystemState.IDLE.value
+    assert node._pulse_timers
+
+    node._pulse_timers[0].callback()
+
+    assert ("write_coil", {"address": 256, "value": False}) in node._plc.calls
+    assert ("write_coil", {"address": 0, "value": True}) in node._plc.calls
+
+    while node._pulse_timers:
+        node._pulse_timers[0].callback()
+
+    assert node._plc.calls[-1] == (
+        "write_coil",
+        {"address": 0, "value": False},
+    )
