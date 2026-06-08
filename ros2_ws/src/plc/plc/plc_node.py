@@ -187,7 +187,7 @@ class XgbRos2ModbusNode(Node):
         )
         self.declare_parameter(
             "system_state_output_labels",
-            ["none", "M0001", "M0001", "M0002", "M0003", "M0004", "M0005"],
+            ["M0000", "M0001", "M0001", "M0002", "M0003", "M0004", "M0005"],
         )
         self.declare_parameter("read_period_s", 1.0)
         self.declare_parameter("connect_retry_count", 3)

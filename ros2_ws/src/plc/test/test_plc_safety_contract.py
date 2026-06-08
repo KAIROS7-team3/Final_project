@@ -193,7 +193,7 @@ def make_config() -> ModbusPLCConfig:
         watchdog_coil_label="M0050",
         watchdog_coil_address=80,
         system_state_outputs={
-            SystemState.IDLE: (),
+            SystemState.IDLE: ("M0000",),
             SystemState.MOVING: ("M0002",),
             SystemState.E_STOP: ("M0003",),
             SystemState.ERROR: ("M0004",),
@@ -251,10 +251,10 @@ def test_watchdog_hook_targets_dedicated_m050_coil() -> None:
 def test_semantic_states_map_to_latest_ladder_outputs() -> None:
     outputs = ModbusPLCConfig.parse_system_state_outputs(
         ("idle", "moving", "e_stop", "error", "watchdog"),
-        ("none", "M0002", "M0003", "M0004", "M0005"),
+        ("M0000", "M0002", "M0003", "M0004", "M0005"),
     )
 
-    assert outputs[SystemState.IDLE] == ()
+    assert outputs[SystemState.IDLE] == ("M0000",)
     assert outputs[SystemState.E_STOP] == ("M0003",)
     assert outputs[SystemState.ERROR] == ("M0004",)
     assert outputs[SystemState.WATCHDOG] == ("M0005",)
