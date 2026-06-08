@@ -319,7 +319,7 @@ class XgbRos2ModbusNode(Node):
                     )
                     self._set_and_publish_system_state(
                         SystemState.IDLE,
-                        apply_outputs=False,
+                        apply_outputs=True,
                     )
                     return True
             except PLCError as exc:
@@ -363,7 +363,7 @@ class XgbRos2ModbusNode(Node):
                 self.get_logger().info("PLC reconnect succeeded")
                 self._set_and_publish_system_state(
                     SystemState.IDLE,
-                    apply_outputs=False,
+                    apply_outputs=True,
                 )
         except PLCError as exc:
             self.get_logger().warning(f"PLC reconnect failed: {exc}")

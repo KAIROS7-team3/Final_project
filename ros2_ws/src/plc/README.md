@@ -133,6 +133,8 @@ ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: watchdog}"
 `idle`은 `M0000`을 pulse해서 초록 상태를 유지하고, reset도 함께 수행한다.
 `e_stop`은 reset을 선행하지 않고 `M0003`을 직접 ON 하며, latch 상태에서 자동
 복구하지 않는다.
+PLC 노드가 연결에 성공하면 기동 직후에도 `idle`을 한 번 적용해서 초록 상태를
+바로 보이게 한다.
 
 기본 매핑:
 
