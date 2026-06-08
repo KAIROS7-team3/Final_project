@@ -29,6 +29,13 @@ def test_wake_word_gate_accepts_common_short_variants() -> None:
     assert result.command_text == "스패너 반납"
 
 
+def test_wake_word_gate_keeps_glued_command_after_prefix() -> None:
+    result = apply_wake_word_gate("코봇스패너 가져와", ["코봇"], True)
+
+    assert result.accepted is True
+    assert result.command_text == "스패너 가져와"
+
+
 def test_wake_word_gate_rejects_missing_prefix() -> None:
     result = apply_wake_word_gate("스패너 가져와", ["로봇"], True)
 

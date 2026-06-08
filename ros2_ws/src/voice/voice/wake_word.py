@@ -104,12 +104,28 @@ def _strip_wake_word_prefix(text: str, wake_word: str) -> str:
         remainder = stripped_text[len(stripped_wake_word) :]
         return remainder.lstrip(" \t\n\r,，.。!?！？-")
 
+    remainder = stripped_text[len(stripped_wake_word) :]
+    remainder = remainder.lstrip(" \t\n\r,，.。!?！？-")
+    return _strip_spurious_leading_token(remainder)
+
+
+def _strip_spurious_leading_token(text: str) -> str:
+    """wake word 뒤에 붙은 한 글자짜리 오인식 잔여물을 걷어낸다."""
+
+    stripped_text = text.lstrip()
+    if not stripped_text:
+        return ""
+
     index = 0
     while index < len(stripped_text) and _is_token_char(stripped_text[index]):
         index += 1
-    while index < len(stripped_text) and not _is_token_char(stripped_text[index]):
-        index += 1
-    return stripped_text[index:].strip()
+    leading_token = stripped_text[:index]
+    if 0 < len(leading_token) <= 1:
+        while index < len(stripped_text) and not _is_token_char(stripped_text[index]):
+            index += 1
+        return stripped_text[index:].lstrip(" \t\n\r,，.。!?！？-")
+
+    return stripped_text
 
 
 def _is_token_char(character: str) -> bool:
