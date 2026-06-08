@@ -230,7 +230,8 @@ def vision_drawer_open_seq(
 ) -> list[Step]:
     """비전 손잡이 좌표 기반 서랍 열기 시퀀스.
 
-    ③ APPROACH : (approach_x, approach_y, approach_z+3)
+    ②-1 PRE_APPROACH              : (approach_x, 하드코딩 Y, approach_z)
+    ③ APPROACH : (approach_x, approach_y+40, approach_z)
     ⑤ OPEN     : (approach_x, 하드코딩 Y,  approach_z)
     ⑥ SILENCE  : (approach_x, 하드코딩 Y,  approach_z-9)
     ⑧ INNER    : (approach_x, 하드코딩 Y,  approach_z-9)
@@ -238,14 +239,16 @@ def vision_drawer_open_seq(
     """
     rx, ry, rz = 90.0, 90.0, 90.0
 
-    approach = [approach_x, approach_y,               approach_z + 3, rx, ry, rz]
-    open_pos = [approach_x, _wp(layer, "open")[1],    approach_z,     rx, ry, rz]
-    silence  = [approach_x, _wp(layer, "silence")[1], approach_z - 9, rx, ry, rz]
-    inner    = [approach_x, _wp(layer, "inner")[1],   approach_z - 9, rx, ry, rz]
+    pre_approach = [approach_x, _wp(layer, "approach")[1], approach_z,     rx, ry, rz]
+    approach     = [approach_x, approach_y + 40,            approach_z,      rx, ry, rz]
+    open_pos     = [approach_x, _wp(layer, "open")[1],     approach_z,     rx, ry, rz]
+    silence      = [approach_x, _wp(layer, "silence")[1],  approach_z - 9, rx, ry, rz]
+    inner        = [approach_x, _wp(layer, "inner")[1],    approach_z - 9, rx, ry, rz]
 
     return [
         GRIP_RELEASE(),
         mj_abs(_wp(layer, "setup_j")),
+        ml_abs(pre_approach),
         ml_abs(approach),
         GRIP_BOX(),
         ml_abs(open_pos),
@@ -290,22 +293,25 @@ def vision_drawer_close_seq(
 ) -> list[Step]:
     """비전 손잡이 좌표 기반 서랍 닫기 시퀀스.
 
-    ③ OPENDOWN : (approach_x, 하드코딩 Y,  approach_z-9)
+    ②-1 PRE_APPROACH : (approach_x, 하드코딩 Y, approach_z)
+    ③ OPENDOWN       : (approach_x, 하드코딩 Y, approach_z-9)
     ⑤ OPEN     : (approach_x, 하드코딩 Y,  approach_z)
-    ⑥ APPROACH : (approach_x, approach_y,  approach_z+3)
+    ⑥ APPROACH : (approach_x, approach_y+40, approach_z)
     ⑧ CLOSE_END: (approach_x, 하드코딩 Y,  approach_z)
     회전(rx, ry, rz) = [90, 90, 90] 고정.
     """
     rx, ry, rz = 90.0, 90.0, 90.0
 
-    opendown  = [approach_x, _wp(layer, "opendown")[1],  approach_z - 9, rx, ry, rz]
-    open_pos  = [approach_x, _wp(layer, "open")[1],      approach_z,     rx, ry, rz]
-    approach  = [approach_x, approach_y,                  approach_z + 3, rx, ry, rz]
-    close_end = [approach_x, _wp(layer, "close_end")[1], approach_z,     rx, ry, rz]
+    pre_approach = [approach_x, _wp(layer, "opendown")[1], approach_z,     rx, ry, rz]
+    opendown     = [approach_x, _wp(layer, "opendown")[1], approach_z - 9, rx, ry, rz]
+    open_pos     = [approach_x, _wp(layer, "open")[1],     approach_z,     rx, ry, rz]
+    approach     = [approach_x, approach_y + 40,            approach_z,     rx, ry, rz]
+    close_end    = [approach_x, _wp(layer, "close_end")[1],approach_z,     rx, ry, rz]
 
     return [
         GRIP_RELEASE(),
         mj_abs(_wp(layer, "close_setup_j")),
+        ml_abs(pre_approach),
         ml_abs(opendown),
         GRIP_BOX(),
         ml_abs(open_pos),
