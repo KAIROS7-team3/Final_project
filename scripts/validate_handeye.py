@@ -53,7 +53,7 @@ def cam_to_base(pt_cam: np.ndarray, R: np.ndarray, t: np.ndarray) -> np.ndarray:
     return R @ pt_cam + t
 
 
-def build_camera(w: int = 1280, h: int = 720, fps: int = 30):
+def build_camera(w: int = 1280, h: int = 800, fps: int = 30):
     pipeline = rs.pipeline()
     cfg = rs.config()
     cfg.enable_stream(rs.stream.color, w, h, rs.format.bgr8, fps)
@@ -206,7 +206,7 @@ def main() -> None:
                 print(f'  위치 (base_link): x={x:+7.1f}  y={y:+7.1f}  z={z:+7.1f}  mm')
                 print(f'  방향 (DART ZYZ):  a={a:+7.1f}  b={b:+7.1f}  c={c:+7.1f}  deg')
                 print(f'  → DART MoveL: [{x:.1f}, {y:.1f}, {z:.1f}, {a:.1f}, {b:.1f}, {c:.1f}]')
-                print(f'  → 검증용 (Z+150 여유): [{x:.1f}, {y:.1f}, {z+150:.1f}, {a:.1f}, {b:.1f}, {c:.1f}]')
+                print(f'  → 검증용 (Z+160 여유): [{x:.1f}, {y:.1f}, {z+160:.1f}, {a:.1f}, {b:.1f}, {c:.1f}]')
                 print('  TCP 이동 후 실측 거리를 입력하세요.')
 
     finally:
