@@ -187,7 +187,7 @@ class XgbRos2ModbusNode(Node):
         )
         self.declare_parameter(
             "system_state_output_labels",
-            ["none", "M0001", "M0001", "M0002", "M0003", "M0004", "M0005"],
+            ["M0000", "M0001", "M0001", "M0002", "M0003", "M0004", "M0005"],
         )
         self.declare_parameter("read_period_s", 1.0)
         self.declare_parameter("connect_retry_count", 3)
@@ -317,9 +317,11 @@ class XgbRos2ModbusNode(Node):
                         f"baudrate={self._config.modbus.baudrate} "
                         f"device_id={self._config.modbus.device_id}"
                     )
+                    # This is a comms-health snapshot only; boot reconciliation
+                    # still gates fetch/return until the real system state is known.
                     self._set_and_publish_system_state(
                         SystemState.IDLE,
-                        apply_outputs=False,
+                        apply_outputs=True,
                     )
                     return True
             except PLCError as exc:
@@ -361,9 +363,12 @@ class XgbRos2ModbusNode(Node):
         try:
             if self._plc.connect():
                 self.get_logger().info("PLC reconnect succeeded")
+                # A disconnect makes the local PLC snapshot stale, so reconnect
+                # reasserts IDLE/green and lets the next reconciliation pass
+                # rebuild the authoritative state.
                 self._set_and_publish_system_state(
                     SystemState.IDLE,
-                    apply_outputs=False,
+                    apply_outputs=True,
                 )
         except PLCError as exc:
             self.get_logger().warning(f"PLC reconnect failed: {exc}")
