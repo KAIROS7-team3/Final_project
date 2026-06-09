@@ -19,6 +19,7 @@ toolbox_motion.py 시퀀스를 virtual/real 모드에서 실행하는 테스트 
 import logging
 import os
 import sys
+import threading
 import time
 from typing import Optional
 
@@ -28,8 +29,10 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import Bool
+from geometry_msgs.msg import PointStamped
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
 from dsr_msgs2.srv import SetCurrentTcp, ConfigCreateTcp
+from dsr_msgs2.srv import GetCurrentPosx
 from interfaces.srv import GripperSetPosition
 
 
@@ -78,6 +81,13 @@ from unit_actions.toolbox_motion import (
     vision_return_seq,
     vision_drawer_open_seq,
     vision_drawer_close_seq,
+)
+from unit_actions.visual_servoing import (
+    HandlePose,
+    HandleServoController,
+    ServoConfig,
+    ServoState,
+    VelocityCommand as VSVelocityCommand,
 )
 from db_core.client import DBClient, DBError, DBCacheExpiredError
 from plc_core.client import PLCClient
@@ -164,9 +174,16 @@ class ToolboxSeqRunner(Node):
 
         # S-3: E-stop 수신 플래그 — _on_estop 콜백과 _run_sequence 모두 접근
         self._estop_triggered: bool = False
+        # S-3: VS에 주입할 Event — _on_estop에서 set()
+        self._estop_event: threading.Event = threading.Event()
 
         # S-7: 기동 전 is_moving 상태 — Transient Local 구독으로 다른 노드의 retained 값 수신
         self._prev_is_moving: bool = False
+
+        # VS: 손잡이 TF 좌표 — /vision/handle_pose 구독으로 갱신
+        # 토픽명·메시지 타입은 비전팀과 확인 필요 (현재 geometry_msgs/PointStamped 가정)
+        self._latest_handle: HandlePose = HandlePose()
+        self._handle_lock: threading.Lock = threading.Lock()
 
         p = f'/{ns}'
         self._movel_cli      = self.create_client(MoveLine,           f'{p}/motion/move_line',       callback_group=self._cb_group)
@@ -175,6 +192,8 @@ class ToolboxSeqRunner(Node):
         self._set_tcp_cli    = self.create_client(SetCurrentTcp,      f'{p}/tcp/set_current_tcp',    callback_group=self._cb_group)
         self._create_tcp_cli = self.create_client(ConfigCreateTcp,    f'{p}/tcp/config_create_tcp',  callback_group=self._cb_group)
         self._gripper_cli    = self.create_client(GripperSetPosition, '/gripper/set_position',       callback_group=self._cb_group)
+        # VS: 현재 EE 포즈 조회 (DSR BASE 좌표계)
+        self._get_posx_cli   = self.create_client(GetCurrentPosx,     f'{p}/aux_control/get_current_posx', callback_group=self._cb_group)
 
         self.get_logger().info('[runner] 서비스 대기 중...')
         for cli, name in [
@@ -203,6 +222,13 @@ class ToolboxSeqRunner(Node):
             callback_group=self._cb_group,
         )
 
+        # VS: 손잡이 TF 좌표 구독 — 비전 노드가 robot base frame (m) 으로 발행
+        # 토픽명은 비전팀 확정 후 /vision/handle_pose 에서 변경 가능
+        self._handle_sub = self.create_subscription(
+            PointStamped, '/vision/handle_pose', self._on_handle_pose, 10,
+            callback_group=self._cb_group,
+        )
+
         # S-2: DB 클라이언트 — fetch/return 실행 전 feasibility 판정
         self._db: DBClient | None = None
         try:
@@ -227,12 +253,22 @@ class ToolboxSeqRunner(Node):
         self._prev_is_moving = msg.data
 
     def _on_estop(self, msg: Bool) -> None:
-        """S-3: E-stop 수신 — 플래그 세팅 + DSR move_stop 즉시 요청."""
+        """S-3: E-stop 수신 — 플래그 세팅 + Event set + DSR move_stop 즉시 요청."""
         if msg.data and not self._estop_triggered:
             self._estop_triggered = True
+            self._estop_event.set()   # VS 루프에 즉시 전달
             self.get_logger().error('[runner] E-stop 수신 — 모션 즉시 중단 요청')
             if self._stop_cli.service_is_ready():
                 self._stop_cli.call_async(MoveStop.Request())
+
+    def _on_handle_pose(self, msg: PointStamped) -> None:
+        """VS: 비전 노드가 발행하는 손잡이 중심 좌표 수신 (robot base frame, m → mm 변환)."""
+        with self._handle_lock:
+            self._latest_handle = HandlePose(
+                x=msg.point.x * 1000.0,   # m → mm
+                z=msg.point.z * 1000.0,
+                valid=True,
+            )
 
     # ── 메인 실행 ─────────────────────────────────────────────────────────
 
@@ -377,16 +413,12 @@ class ToolboxSeqRunner(Node):
             )
 
         if name in ('vision_open_0', 'vision_open_1'):
-            if not self._check_vision_coords('approach', self._approach_x, self._approach_y, self._approach_z):
-                return None
             layer = 0 if name == 'vision_open_0' else 1
-            return vision_drawer_open_seq(layer, self._approach_x, self._approach_y, self._approach_z)
+            return vision_drawer_open_seq(layer)
 
         if name in ('vision_close_0', 'vision_close_1'):
-            if not self._check_vision_coords('approach', self._approach_x, self._approach_y, self._approach_z):
-                return None
             layer = 0 if name == 'vision_close_0' else 1
-            return vision_drawer_close_seq(layer, self._approach_x, self._approach_y, self._approach_z)
+            return vision_drawer_close_seq(layer)
 
         mapping = {
             'home':          lambda: home_seq(),
@@ -427,6 +459,8 @@ class ToolboxSeqRunner(Node):
         elif step.kind == StepKind.WAIT:
             time.sleep(step.sec or 0.5)
             return True
+        elif step.kind == StepKind.VISUAL_SERVO_XZ:
+            return self._exec_visual_servo()
         self.get_logger().warn(f'  알 수 없는 StepKind: {step.kind}')
         return False
 
@@ -524,6 +558,94 @@ class ToolboxSeqRunner(Node):
         self.get_logger().info(f'  gripper ok — pos={res.final_position} cur={res.final_current}')
         time.sleep(0.1)
         return True
+
+    # ── Visual Servoing ───────────────────────────────────────────────────────
+
+    def _exec_visual_servo(self) -> bool:
+        """VISUAL_SERVO_XZ 스텝 실행 — HandleServoController 루프."""
+        cfg_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            '../../../../config/visual_servo.yaml',
+        )
+        try:
+            cfg = ServoConfig.load_from_yaml(cfg_path)
+        except Exception as e:
+            self.get_logger().error(f'  visual_servo.yaml 로드 실패: {e}')
+            return False
+
+        ctrl = HandleServoController(
+            cfg=cfg,
+            get_handle=self._get_latest_handle,
+            get_ee_pose=self._get_ee_pose_mm,
+            estop_event=self._estop_event,
+        )
+
+        _DT = 0.033  # 30 Hz
+        self.get_logger().info('  [VS] 시작')
+
+        while not ctrl.is_terminal():
+            if self._estop_triggered:
+                return False
+
+            cmd = ctrl.tick()
+
+            if cmd.stop:
+                time.sleep(_DT)
+                continue
+
+            if cmd.vx != 0.0 or cmd.vz != 0.0:
+                ok = self._movel_delta(cmd.vx, cmd.vz, _DT)
+                if not ok:
+                    self.get_logger().error('  [VS] movel_delta 실패')
+                    return False
+
+            time.sleep(_DT)
+
+        if ctrl.state == ServoState.DONE:
+            self.get_logger().info('  [VS] XZ 정렬 완료')
+            return True
+
+        self.get_logger().error(f'  [VS] 실패: {ctrl.state.name}')
+        return False
+
+    def _get_latest_handle(self) -> HandlePose:
+        """스레드 안전하게 최신 손잡이 좌표 반환."""
+        with self._handle_lock:
+            return HandlePose(
+                x=self._latest_handle.x,
+                z=self._latest_handle.z,
+                valid=self._latest_handle.valid,
+            )
+
+    def _get_ee_pose_mm(self) -> tuple[float, float, float]:
+        """현재 EE 포즈 (DSR BASE 좌표계, mm) 반환."""
+        req = GetCurrentPosx.Request()
+        req.ref = DR_BASE
+        fut = self._get_posx_cli.call_async(req)
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=2.0)
+        res = fut.result()
+        if res is None or not res.success:
+            self.get_logger().warn('  [VS] get_current_posx 실패 — (0,0,0) 반환')
+            return (0.0, 0.0, 0.0)
+        pos = res.task_pos_info[0].data  # [x, y, z, rx, ry, rz]
+        return (pos[0], pos[1], pos[2])
+
+    def _movel_delta(self, vx: float, vz: float, dt: float) -> bool:
+        """속도(mm/s) × dt(s) = 위치 delta(mm) 로 변환해 RELATIVE MoveL 실행."""
+        req = MoveLine.Request()
+        req.pos        = [vx * dt, 0.0, vz * dt, 0.0, 0.0, 0.0]
+        req.vel        = [self._vel_l, self._vel_r]
+        req.acc        = [self._acc_l, self._acc_r]
+        req.time       = 0.0
+        req.radius     = 0.0
+        req.ref        = DR_BASE
+        req.mode       = DR_MV_MOD_REL
+        req.blend_type = 0
+        req.sync_type  = 0
+        fut = self._movel_cli.call_async(req)
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=1.0)
+        res = fut.result()
+        return res is not None and res.success
 
 
 def main(args=None) -> None:

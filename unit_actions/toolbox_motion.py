@@ -26,12 +26,13 @@ from typing import Optional
 # ── StepKind / Step (chamjo motion_library.py 동일 패턴) ──────────────────
 
 class StepKind(Enum):
-    MOVE_L_ABS = auto()
-    MOVE_L_REL = auto()
-    MOVE_J_ABS = auto()
-    MOVE_J_REL = auto()
-    GRIP       = auto()
-    WAIT       = auto()
+    MOVE_L_ABS     = auto()
+    MOVE_L_REL     = auto()
+    MOVE_J_ABS     = auto()
+    MOVE_J_REL     = auto()
+    GRIP           = auto()
+    WAIT           = auto()
+    VISUAL_SERVO_XZ = auto()   # 손잡이 XZ 정렬 VS — runner에서 HandleServoController 실행
 
 
 @dataclass
@@ -222,40 +223,25 @@ def drawer_open_seq(
     ]
 
 
-def vision_drawer_open_seq(
-    layer: int,
-    approach_x: float,
-    approach_y: float,
-    approach_z: float,
-) -> list[Step]:
-    """비전 손잡이 좌표 기반 서랍 열기 시퀀스.
+def vision_drawer_open_seq(layer: int) -> list[Step]:
+    """손잡이 XZ Visual Servoing 포함 서랍 열기 시퀀스.
 
-    ②-1 PRE_APPROACH              : (approach_x, 하드코딩 Y, approach_z)
-    ③ APPROACH : (approach_x, approach_y+40, approach_z)
-    ⑤ OPEN     : (approach_x, 하드코딩 Y,  approach_z)
-    ⑥ SILENCE  : (approach_x, 하드코딩 Y,  approach_z-9)
-    ⑧ INNER    : (approach_x, 하드코딩 Y,  approach_z-9)
-    회전(rx, ry, rz) = [90, 90, 90] 고정.
+    ③ APPROACH까지 하드코딩 웨이포인트로 이동 후 VS로 XZ 정렬.
+    VS(DETECT→ALIGN_XZ) 완료 후 GRIP_BOX → 서랍 당기기.
+
+    layer: 0 = 1층, 1 = 2층
     """
-    rx, ry, rz = 90.0, 90.0, 90.0
-
-    pre_approach = [approach_x, _wp(layer, "approach")[1], approach_z,     rx, ry, rz]
-    approach     = [approach_x, approach_y + 40,            approach_z,      rx, ry, rz]
-    open_pos     = [approach_x, _wp(layer, "open")[1],     approach_z,     rx, ry, rz]
-    silence      = [approach_x, _wp(layer, "silence")[1],  approach_z - 9, rx, ry, rz]
-    inner        = [approach_x, _wp(layer, "inner")[1],    approach_z - 9, rx, ry, rz]
-
     return [
-        GRIP_RELEASE(),
-        mj_abs(_wp(layer, "setup_j")),
-        ml_abs(pre_approach),
-        ml_abs(approach),
-        GRIP_BOX(),
-        ml_abs(open_pos),
-        ml_abs(silence),
-        GRIP_RELEASE(),
-        ml_abs(inner),
-        JOINT_HOME(),
+        GRIP_RELEASE(),                            # ①
+        mj_abs(_wp(layer, "setup_j")),             # ②
+        ml_abs(_wp(layer, "approach")),            # ③ 하드코딩 APPROACH — 손잡이 정면
+        Step(kind=StepKind.VISUAL_SERVO_XZ),       # ④⑤ VS: DETECT → ALIGN_XZ
+        GRIP_BOX(),                                # ⑥
+        ml_abs(_wp(layer, "open")),                # ⑦ 서랍 당김
+        ml_abs(_wp(layer, "silence")),             # ⑧ Z 9mm 하강
+        GRIP_RELEASE(),                            # ⑨
+        ml_abs(_wp(layer, "inner")),               # ⑩
+        JOINT_HOME(),                              # ⑪
     ]
 
 
@@ -285,40 +271,25 @@ def drawer_close_seq(
     ]
 
 
-def vision_drawer_close_seq(
-    layer: int,
-    approach_x: float,
-    approach_y: float,
-    approach_z: float,
-) -> list[Step]:
-    """비전 손잡이 좌표 기반 서랍 닫기 시퀀스.
+def vision_drawer_close_seq(layer: int) -> list[Step]:
+    """손잡이 XZ Visual Servoing 포함 서랍 닫기 시퀀스.
 
-    ②-1 PRE_APPROACH : (approach_x, 하드코딩 Y, approach_z)
-    ③ OPENDOWN       : (approach_x, 하드코딩 Y, approach_z-9)
-    ⑤ OPEN     : (approach_x, 하드코딩 Y,  approach_z)
-    ⑥ APPROACH : (approach_x, approach_y+40, approach_z)
-    ⑧ CLOSE_END: (approach_x, 하드코딩 Y,  approach_z)
-    회전(rx, ry, rz) = [90, 90, 90] 고정.
+    ③ OPENDOWN까지 하드코딩 웨이포인트로 이동 후 VS로 XZ 정렬.
+    VS 완료 후 GRIP_BOX → 서랍 밀기.
+
+    layer: 0 = 1층, 1 = 2층
     """
-    rx, ry, rz = 90.0, 90.0, 90.0
-
-    pre_approach = [approach_x, _wp(layer, "opendown")[1], approach_z,     rx, ry, rz]
-    opendown     = [approach_x, _wp(layer, "opendown")[1], approach_z - 9, rx, ry, rz]
-    open_pos     = [approach_x, _wp(layer, "open")[1],     approach_z,     rx, ry, rz]
-    approach     = [approach_x, approach_y + 40,            approach_z,     rx, ry, rz]
-    close_end    = [approach_x, _wp(layer, "close_end")[1],approach_z,     rx, ry, rz]
-
     return [
-        GRIP_RELEASE(),
-        mj_abs(_wp(layer, "close_setup_j")),
-        ml_abs(pre_approach),
-        ml_abs(opendown),
-        GRIP_BOX(),
-        ml_abs(open_pos),
-        ml_abs(approach),
-        GRIP_RELEASE(),
-        ml_abs(close_end),
-        JOINT_HOME(),
+        GRIP_RELEASE(),                            # ①
+        mj_abs(_wp(layer, "close_setup_j")),       # ②
+        ml_abs(_wp(layer, "opendown")),            # ③ 하드코딩 OPENDOWN — 손잡이 정면
+        Step(kind=StepKind.VISUAL_SERVO_XZ),       # ④⑤ VS: DETECT → ALIGN_XZ
+        GRIP_BOX(),                                # ⑥
+        ml_abs(_wp(layer, "open")),                # ⑦
+        ml_abs(_wp(layer, "approach")),            # ⑧ 서랍 밀기
+        GRIP_RELEASE(),                            # ⑨
+        ml_abs(_wp(layer, "close_end")),           # ⑩
+        JOINT_HOME(),                              # ⑪
     ]
 
 
