@@ -91,17 +91,17 @@ tool_transfer_bot/                                 # Git Repository 루트
         ├── assets/                               # USD 모델 및 기구학 파라미터
         │   ├── __init__.py
         │   ├── doosan_e0509.py                   # 관절 한계, Stiffness, Damping 설정
-        │   ├── environments.py                   # 서랍장 + 9종 공구 + Staging Area USD 경로 설정
+        │   ├── environments.py                   # 서랍장 + 6종 공구 + Staging Area USD 경로 설정
         │   └── usd/                              # 실제 USD 모델 파일
         │       ├── toolbox.usd                   # 서랍장 (Prismatic joint 포함)
         │       ├── staging_area.usd              # Staging Area
-        │       └── tools/                        # 9종 공구 개별 USD
-        │           ├── driver_1.usd
-        │           ├── driver_2.usd
-        │           ├── driver_3.usd
-        │           ├── wrench_1.usd
-        │           ├── ...
-        │           └── plier_3.usd
+        │       └── tools/                        # 6종 공구 개별 USD
+        │           ├── screwdriver.usd
+        │           ├── utility_knife.usd
+        │           ├── ratchet_wrench.usd
+        │           ├── multi_tool.usd
+        │           ├── spanner_16mm.usd
+        │           └── socket_19mm.usd
         │
         ├── tasks/                                # 4개 Sub-task 환경 명세
         │   ├── __init__.py
@@ -111,7 +111,7 @@ tool_transfer_bot/                                 # Git Repository 루트
         │   │                                     #   ActionsCfg / RewardsCfg / EventCfg
         │   │                                     #   TerminationsCfg ← time_out + task_success
         │   │                                     #   CurriculumCfg   ← DR 단계적 확대 (선택)
-        │   │                                     #   target_tool_id (9,) One-hot
+        │   │                                     #   target_tool_id (6,) One-hot
         │   ├── mdp/                              # 공통 MDP 함수
         │   │   ├── __init__.py
         │   │   ├── drawer_rewards.py             # approach_ee_handle, align_ee_handle,
@@ -193,7 +193,7 @@ class BaseEnvCfg(ManagerBasedRLEnvCfg):
     observations: ObservationsCfg # Teacher/Student가 각각 오버라이드
     curriculum:   CurriculumCfg   # DR 단계적 확대 (선택 — Task 2 수렴 실패 시 활성화)
     # Goal-Conditioning
-    # target_tool_id (9,) One-hot → ObservationsCfg 내 공통 포함
+    # target_tool_id (6,) One-hot → ObservationsCfg 내 공통 포함
 ```
 
 **RewardsCfg 패턴 (RewTerm 사용):**
@@ -282,7 +282,7 @@ top_cam   (H×W×(3×k)) → CNN Encoder → latent_top   (128,)
                                              ↑
 wrist_cam (H×W×(3×k)) → CNN Encoder → latent_wrist (128,)
                                              ↑
-proprioception (joint_angles(6) + ee_pos/quat + gripper_joint_pos(1) + target_tool_id(9))
+proprioception (joint_angles(6) + ee_pos/quat + gripper_joint_pos(1) + target_tool_id(6))
 
 k = 3~4 (Frame Stacking)
 ```
@@ -306,7 +306,7 @@ k = 3~4 (Frame Stacking)
 | object_pos (3,) | YOLO + D455f depth |
 | object_quat (4,) | depth 포인트클라우드 or 탑뷰 회전각 |
 | target_pos / target_quat | 사전 측정 고정값 |
-| target_tool_id (9,) | BT에서 주입 |
+| target_tool_id (6,) | BT에서 주입 |
 
 Student 없이 Teacher를 그대로 실제에 배포한다. `scripts/play.py`가 이 경로를 담당한다.
 
