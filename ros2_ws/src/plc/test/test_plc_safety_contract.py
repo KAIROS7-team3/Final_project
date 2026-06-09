@@ -241,16 +241,15 @@ def test_error_and_estop_led_contract() -> None:
     assert STATE_LED_MAP[SystemState.E_STOP] == (LEDColor.RED, LEDMode.SOLID)
     assert STATE_LED_MAP[SystemState.WATCHDOG] == (LEDColor.WHITE, LEDMode.FLASH)
     assert STATE_LED_MAP[SystemState.LISTENING] == (LEDColor.YELLOW, LEDMode.PULSE)
-    assert STATE_LED_MAP[SystemState.MOVING] == (LEDColor.RED, LEDMode.SOLID)
+    assert STATE_LED_MAP[SystemState.MOVING] == (LEDColor.RED, LEDMode.PULSE)
 
 
-def test_pythonpath_environment_hooks_point_to_workspace_root() -> None:
+def test_pythonpath_environment_hook_points_to_workspace_root() -> None:
     environment_dir = PLC_PACKAGE_ROOT / "environment"
 
-    dsv_text = (environment_dir / "plc_core_pythonpath.dsv").read_text(encoding="utf-8")
     sh_text = (environment_dir / "plc_core_pythonpath.sh").read_text(encoding="utf-8")
 
-    assert dsv_text.strip() == "prepend-non-duplicate;PYTHONPATH;../.."
+    assert not (environment_dir / "plc_core_pythonpath.dsv").exists()
     assert '${AMENT_CURRENT_PREFIX}/../..' in sh_text
     assert '${AMENT_CURRENT_PREFIX}/../../..' not in sh_text
 

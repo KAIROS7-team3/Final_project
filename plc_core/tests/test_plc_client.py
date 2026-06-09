@@ -33,11 +33,11 @@ class TestSetState:
         assert status.led_mode == LEDMode.SOLID
         assert status.system_state == SystemState.E_STOP
 
-    def test_moving_sets_red_solid(self, plc):
+    def test_moving_sets_red_pulse(self, plc):
         plc.set_state(SystemState.MOVING)
         status = plc.get_status()
         assert status.led_color == LEDColor.RED
-        assert status.led_mode == LEDMode.SOLID
+        assert status.led_mode == LEDMode.PULSE
 
     def test_watchdog_sets_white_flash(self, plc):
         status = plc.set_state(SystemState.WATCHDOG)

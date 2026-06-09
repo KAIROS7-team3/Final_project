@@ -41,7 +41,7 @@ parameter 로드, topic 변환, `/plc/status` publish를 담당하는 wrapper다
 | `watchdog_timeout_s` | `0.5` | heartbeat stall 허용 한계 |
 | `enable_estop_poll` | `false` | PLC E-stop input polling 사용 여부 |
 | `estop_poll_period_s` | `0.1` | E-stop input polling 주기 |
-| `db_path` | `robot_arm.db` | PLC 실패를 기록할 SQLite DB 경로 (절대 경로 권장: `db_path:=/path/to/robot_arm.db`) |
+| `db_path` | `robot_arm.db` | PLC 실패를 기록할 SQLite DB 경로 (예: `db_path:=../robot_arm.db`) |
 
 운영 배포 단계에서는 udev rule로 PLC serial 장치를 `/dev/plc`로 고정하는 것을
 목표로 한다. 현재 개발/검증 기본값은 실제 성공한 `/dev/ttyUSB0`이다.
@@ -134,7 +134,9 @@ ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: watchdog}"
 `e_stop`은 reset을 선행하지 않고 `M0003`을 직접 ON 하며, latch 상태에서 자동
 복구하지 않는다.
 PLC 노드가 연결에 성공하면 기동 직후에도 `idle`을 한 번 적용해서 초록 상태를
-바로 보이게 한다.
+바로 보이게 한다. 이때의 green/idle은 PLC 통신 건강 상태를 보여 주는
+스냅샷이고, 상위 orchestrator는 부팅 reconciliation이 끝나기 전까지 fetch/return
+명령을 계속 막는다.
 
 기본 매핑:
 
@@ -155,7 +157,7 @@ LED 표시:
 | `idle` | green | solid |
 | `listening` | yellow | pulse |
 | `inferring` | green | flash |
-| `moving` | red | solid |
+| `moving` | red | pulse |
 | `e_stop` | red | solid |
 | `error` | red | flash, 1s on / 1s off |
 | `watchdog` | white | flash |
@@ -262,7 +264,7 @@ ros2 launch plc plc.launch.py port:=/dev/ttyUSB0 baudrate:=115200 device_id:=1
 
 `/dev/ttyUSB0`가 아닌 경우 실제 장치로 바꾼다. 데모 중에 watchdog이나 E-stop
 감시를 끄려면 `enable_watchdog:=false` 또는 `enable_estop_poll:=false`를 명시한다.
-DB를 다른 위치로 쓰려면 `db_path:=/absolute/path/to/robot_arm.db`를 같이 넘긴다.
+DB를 다른 위치로 쓰려면 `db_path:=../robot_arm.db`처럼 상대 경로를 같이 넘긴다.
 
 #### watchdog on smoke test
 

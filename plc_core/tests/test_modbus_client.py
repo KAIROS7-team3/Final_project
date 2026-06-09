@@ -289,7 +289,7 @@ def test_set_system_state_resets_then_pulses_configured_output(
 
     assert status.system_state == SystemState.MOVING
     assert status.led_color == LEDColor.RED
-    assert status.led_mode == LEDMode.SOLID
+    assert status.led_mode == LEDMode.PULSE
     assert fake_client.calls[-4:] == [
         ("write_coil", {"address": 256, "value": True, "device_id": 1}),
         ("write_coil", {"address": 256, "value": False, "device_id": 1}),
