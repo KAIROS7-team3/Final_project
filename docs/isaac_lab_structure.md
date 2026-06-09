@@ -46,7 +46,7 @@ teacher_env_cfg.py
 
 student_env_cfg.py
   └── ObservationsCfg → Dual-Cam Frame Stacking + proprioception + target_tool_id
-                        proprioception = joint_angles(6) + ee_pos/quat + gripper_joint_pos(1) + target_tool_id(9)
+                        proprioception = joint_angles(6) + ee_pos/quat + gripper_joint_pos(1) + target_tool_id(6)
                         + 비전 DR (EventCfg 확장)
 ```
 
