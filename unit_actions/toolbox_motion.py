@@ -26,13 +26,17 @@ from typing import Optional
 # ── StepKind / Step (chamjo motion_library.py 동일 패턴) ──────────────────
 
 class StepKind(Enum):
-    MOVE_L_ABS     = auto()
-    MOVE_L_REL     = auto()
-    MOVE_J_ABS     = auto()
-    MOVE_J_REL     = auto()
-    GRIP           = auto()
-    WAIT           = auto()
+    MOVE_L_ABS      = auto()
+    MOVE_L_REL      = auto()
+    MOVE_J_ABS      = auto()
+    MOVE_J_REL      = auto()
+    GRIP            = auto()
+    WAIT            = auto()
     VISUAL_SERVO_XZ = auto()   # 손잡이 XZ 정렬 VS — runner에서 HandleServoController 실행
+    MOVE_L_TOP_XY   = auto()   # 탑뷰 XY + 고정 Z 이동 — runner가 /vision/tool_top_pose 좌표 사용
+    VISUAL_SERVO_XY = auto()   # 공구 XY 정렬 VS — runner에서 ToolServoController 실행
+    MOVE_L_TOOL_XYZ = auto()   # 그리퍼 캠 XYZ 하강 — runner가 /vision/tool_gripper_pose 좌표 사용
+    MOVE_L_SLOT_XY  = auto()   # 탑뷰 slot XY + 고정 Z 이동 — runner가 /vision/slot_top_pose 좌표 사용
 
 
 @dataclass
@@ -126,6 +130,13 @@ LAYER1_CLOSE_END:      list = [380.61, 291.56, 115.7,  89.99, 89.99, 90.0]
 
 # layer_height_z 실측: 115.68 - 65.45 ≈ 50 mm (toolbox.yaml layer_height_z 갱신 필요)
 LAYER_HEIGHT_Z_MM: float = 115.68 - 65.45   # ≈ 50.23 mm
+
+
+# ── 공구 접근 고정 파라미터 (MOVE_L_TOP_XY / MOVE_L_TOOL_XYZ 스텝에서 사용) ──────────────
+# ⚠️ 현재 소켓 TW 실측값 기반 — 비전팀 확정 후 공구별 조정 + config/toolbox.yaml 이관 예정 (E-4)
+TOOL_APPROACH_Z_MM: float = 234.0           # 공구 위 대기 높이 (mm)
+TOOL_APPROACH_ORI:  list  = [53.23, 180.0, -38.07]   # approach 자세 (rx,ry,rz, deg)
+TOOL_DESCENT_ORI:   list  = [48.74, -180.0, -42.55]  # 하강 자세 (rx,ry,rz, deg)
 
 
 # ── socket 공구 위치 (toolboxapproach_box2_socket_*.tw 실측값, DSR BASE 좌표계, mm/deg) ──
@@ -345,36 +356,38 @@ def socket_fetch_seq() -> list[Step]:
     ]
 
 
-def vision_fetch_seq(vision_x: float, vision_y: float, vision_z: float) -> list[Step]:
-    """비전 좌표 기반 공구 fetch 시퀀스.
+def vision_fetch_seq() -> list[Step]:
+    """탑뷰 XY + 그리퍼 캠 VS 기반 공구 fetch 시퀀스 (12단계).
 
-    socket_fetch_seq()와 동일한 11단계 구조.
-    3·4·6번 스텝 좌표를 비전 카메라에서 받은 x, y, z로 대체.
+    ① JOINT_HOME
+    ② GRIP_RELEASE
+    ③ MOVE_L_TOP_XY   — runner가 /vision/tool_top_pose XY + TOOL_APPROACH_Z_MM 로 이동
+    ④ VISUAL_SERVO_XY — 그리퍼 캠 /vision/tool_gripper_pose 구독, XY P제어 수렴
+    ⑤ MOVE_L_TOOL_XYZ — VS 완료 후 그리퍼 캠 XYZ 로 공구 위치로 하강
+    ⑥ GRIP_SOCKET
+    ⑦ MOVE_L_TOP_XY   — 다시 TOOL_APPROACH_Z_MM 높이로 상승 (③과 동일)
+    ⑧ MoveL → SOCKET_BOTTOM_XY  (staging 위)
+    ⑨ MoveL → SOCKET_BOTTOM     (staging 하강)
+    ⑩ GRIP_RELEASE
+    ⑪ MoveL → SOCKET_BOTTOM_XY  (staging 위)
+    ⑫ JOINT_HOME
 
-    vision_x, vision_y, vision_z: RealSense가 반환한 DSR BASE 좌표계 좌표 (mm).
     호출 전 팔이 홈 자세에 있어야 함.
-    종료 후 팔은 SOCKET_CATCH_HOME_L 위치.
+    좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리 (파라미터 불필요).
     """
-    approach_z_fixed = SOCKET_APPROACH_XY[2]
-    rx_xy, ry_xy, rz_xy = SOCKET_APPROACH_XY[3], SOCKET_APPROACH_XY[4], SOCKET_APPROACH_XY[5]
-    rx_z,  ry_z,  rz_z  = SOCKET_APPROACH_Z[3],  SOCKET_APPROACH_Z[4],  SOCKET_APPROACH_Z[5]
-
-    approach_xy  = [vision_x, vision_y, approach_z_fixed, rx_xy, ry_xy, rz_xy]
-    approach_xyz = [vision_x, vision_y, vision_z,         rx_z,  ry_z,  rz_z]
-
     return [
-        JOINT_HOME(),
-        GRIP_RELEASE(),
-        ml_abs(approach_xy),           # ③ x,y 비전 / z 고정
-        ml_abs(approach_xyz),          # ④ x,y,z 비전
-        GRIP_SOCKET(),
-        ml_abs(approach_xy),           # ⑥ x,y 비전 / z 고정 (③과 동일)
-        ml_abs(SOCKET_BOTTOM_XY),
-        ml_abs(SOCKET_BOTTOM),
-        GRIP_RELEASE(),
-        ml_abs(SOCKET_BOTTOM_XY),
-        # ml_abs(SOCKET_CATCH_HOME_L),  # Staging 대기 포즈 — 필요 시 활성화
-        JOINT_HOME(),
+        JOINT_HOME(),                           # ①
+        GRIP_RELEASE(),                         # ②
+        Step(kind=StepKind.MOVE_L_TOP_XY),      # ③ 탑뷰 XY + 고정 Z
+        Step(kind=StepKind.VISUAL_SERVO_XY),    # ④ 그리퍼 캠 XY VS
+        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑤ 그리퍼 캠 XYZ 하강
+        GRIP_SOCKET(),                          # ⑥
+        Step(kind=StepKind.MOVE_L_TOP_XY),      # ⑦ 상승 (③과 동일)
+        ml_abs(SOCKET_BOTTOM_XY),              # ⑧ staging 위
+        ml_abs(SOCKET_BOTTOM),                 # ⑨ staging 하강
+        GRIP_RELEASE(),                        # ⑩
+        ml_abs(SOCKET_BOTTOM_XY),             # ⑪ staging 위
+        JOINT_HOME(),                          # ⑫
     ]
 
 
@@ -399,46 +412,40 @@ def socket_return_seq() -> list[Step]:
     ]
 
 
-def vision_return_seq(
-    bottom_x: float, bottom_y: float, bottom_z: float,
-    slot_x: float,   slot_y: float,   slot_z: float,
-) -> list[Step]:
-    """비전 좌표 기반 공구 return 시퀀스.
+def vision_return_seq() -> list[Step]:
+    """탑뷰 XY + 그리퍼 캠 VS 기반 공구 return 시퀀스 (13단계).
 
-    socket_return_seq()와 동일한 11단계 구조.
-    bottom 좌표(staging area): 3·4·6번 스텝에 사용.
-    slot 좌표(공구함 반납 위치): 7·8·10번 스텝에 사용.
+    ① JOINT_HOME
+    ② GRIP_RELEASE
+    ③ MOVE_L_TOP_XY   — 탑뷰 /vision/tool_top_pose XY + 고정 Z (staging 위)
+    ④ VISUAL_SERVO_XY — 그리퍼 캠 XY VS → staging 공구 정밀 정렬
+    ⑤ MOVE_L_TOOL_XYZ — 그리퍼 캠 XYZ 로 staging 공구 위치로 하강
+    ⑥ GRIP_SOCKET
+    ⑦ MOVE_L_TOP_XY   — staging 위로 상승 (③과 동일)
+    ⑧ MOVE_L_SLOT_XY  — 탑뷰 /vision/slot_top_pose XY + 고정 Z (slot 위)
+    ⑨ VISUAL_SERVO_XY — 그리퍼 캠 XY VS → slot 위치 정밀 정렬
+    ⑩ MOVE_L_TOOL_XYZ — 그리퍼 캠 XYZ 로 slot 위치로 하강
+    ⑪ GRIP_RELEASE
+    ⑫ MOVE_L_SLOT_XY  — slot 위로 상승 (⑧과 동일)
+    ⑬ JOINT_HOME
 
-    bottom_x/y/z: 스테이징 영역 비전 좌표 (mm, DSR BASE 좌표계).
-    slot_x/y/z:   공구함 슬롯 비전 좌표 (mm, DSR BASE 좌표계).
     호출 전 팔이 홈 자세에 있어야 함.
-    종료 후 팔은 JOINT_HOME 자세.
+    좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리 (파라미터 불필요).
     """
-    bottom_z_fixed = SOCKET_BOTTOM_XY[2]
-    rx_bt, ry_bt, rz_bt = SOCKET_BOTTOM_XY[3], SOCKET_BOTTOM_XY[4], SOCKET_BOTTOM_XY[5]
-    rx_bt_z, ry_bt_z, rz_bt_z = SOCKET_BOTTOM[3], SOCKET_BOTTOM[4], SOCKET_BOTTOM[5]
-
-    slot_z_fixed = SOCKET_APPROACH_XY[2]
-    rx_sl, ry_sl, rz_sl = SOCKET_APPROACH_XY[3], SOCKET_APPROACH_XY[4], SOCKET_APPROACH_XY[5]
-    rx_sl_z, ry_sl_z, rz_sl_z = SOCKET_APPROACH_Z[3], SOCKET_APPROACH_Z[4], SOCKET_APPROACH_Z[5]
-
-    bottom_xy  = [bottom_x, bottom_y, bottom_z_fixed, rx_bt,   ry_bt,   rz_bt]
-    bottom_xyz = [bottom_x, bottom_y, bottom_z,       rx_bt_z, ry_bt_z, rz_bt_z]
-    slot_xy    = [slot_x,   slot_y,   slot_z_fixed,   rx_sl,   ry_sl,   rz_sl]
-    slot_xyz   = [slot_x,   slot_y,   slot_z,         rx_sl_z, ry_sl_z, rz_sl_z]
-
     return [
-        JOINT_HOME(),
-        GRIP_RELEASE(),
-        ml_abs(bottom_xy),             # ③ bottom x,y 비전 / z 고정
-        ml_abs(bottom_xyz),            # ④ bottom x,y,z 비전
-        GRIP_SOCKET(),
-        ml_abs(bottom_xy),             # ⑥ bottom x,y 비전 / z 고정 (③과 동일)
-        ml_abs(slot_xy),               # ⑦ slot x,y 비전 / z 고정
-        ml_abs(slot_xyz),              # ⑧ slot x,y,z 비전
-        GRIP_RELEASE(),
-        ml_abs(slot_xy),               # ⑩ slot x,y 비전 / z 고정 (⑦과 동일)
-        JOINT_HOME(),
+        JOINT_HOME(),                           # ①
+        GRIP_RELEASE(),                         # ②
+        Step(kind=StepKind.MOVE_L_TOP_XY),      # ③ staging 탑뷰 XY + 고정 Z
+        Step(kind=StepKind.VISUAL_SERVO_XY),    # ④ staging 그리퍼 캠 XY VS
+        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑤ staging 그리퍼 캠 XYZ 하강
+        GRIP_SOCKET(),                          # ⑥
+        Step(kind=StepKind.MOVE_L_TOP_XY),      # ⑦ staging 위로 상승
+        Step(kind=StepKind.MOVE_L_SLOT_XY),     # ⑧ slot 탑뷰 XY + 고정 Z
+        Step(kind=StepKind.VISUAL_SERVO_XY),    # ⑨ slot 그리퍼 캠 XY VS
+        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑩ slot 그리퍼 캠 XYZ 하강
+        GRIP_RELEASE(),                         # ⑪
+        Step(kind=StepKind.MOVE_L_SLOT_XY),     # ⑫ slot 위로 상승
+        JOINT_HOME(),                           # ⑬
     ]
 
 

@@ -1,22 +1,20 @@
 """visual_servoing.py
 ─────────────────────
-서랍 손잡이 XZ 정렬 Visual Servoing (Track B, Phase 1).
+Visual Servoing 제어기 모음 (Track B, Phase 1).
 
-비전 노드가 TF를 통해 손잡이 중심 좌표를 robot base frame (mm) 으로 제공한다는 전제.
-그리퍼가 Y 방향으로 손잡이를 향하므로 XZ만 보정하고 Y는 고정.
+HandleServoController — 서랍 손잡이 XZ 정렬 (vision_open / vision_close)
+  그리퍼가 Y 방향으로 손잡이를 향하므로 XZ만 보정, Y 고정.
+  제어식: vx = Kp×err_x, vz = Kp×err_z, vy = 0
 
-상태 기계:
-  DETECT   → 손잡이 TF 좌표 N프레임 연속 수신 대기
-  ALIGN_XZ → XZ 오차 P제어 (vy=0 고정)
-  DONE     → 정렬 완료, 호출자가 GRIP_BOX 실행
-  ERROR    → 타임아웃 / 소실 → 호출자가 홈 복귀 + PLC + DB 처리
+ToolServoController   — 공구 접근 XY 정렬 (vision_fetch)
+  그리퍼가 Z 방향으로 공구 위에서 하강하므로 XY만 보정, Z 고정.
+  제어식: vx = Kp×err_x, vy = Kp×err_y, vz = 0
 
-제어 수식:
-  err_x = target_x - ee_x          (mm, robot base frame)
-  err_z = target_z - ee_z          (mm, robot base frame)
-  vx    = Kp × err_x               (mm/s)
-  vz    = Kp × err_z               (mm/s)
-  vy    = 0.0                       (Y는 서랍 당기는 방향, VS로 건드리지 않음)
+상태 기계 (공통):
+  DETECT  → 좌표 N프레임 연속 수신 대기
+  ALIGN   → P제어 (축 종류만 다름)
+  DONE    → 정렬 완료, 호출자가 다음 스텝 실행
+  ERROR   → 타임아웃 / 소실 → 호출자가 홈 복귀 + PLC + DB 처리
 
 단위: DSR 네이티브 (mm, mm/s) — E-1 예외, unit_action_server.py 래퍼에서 변환.
 ROS2 의존성 없음 — 단독 테스트 가능.
@@ -33,6 +31,20 @@ logger = logging.getLogger(__name__)
 
 
 # ── 데이터 클래스 ──────────────────────────────────────────────────────────────
+
+@dataclass
+class ToolPose:
+    """그리퍼 카메라가 제공하는 공구 중심 좌표.
+
+    x, y : robot base frame 기준 (mm) — XY VS 정렬에 사용
+    z    : robot base frame 기준 (mm) — VS 완료 후 하강 거리에 사용
+    valid: 해당 프레임 좌표 유효 여부
+    """
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    valid: bool = False
+
 
 @dataclass
 class HandlePose:
@@ -63,31 +75,36 @@ class VelocityCommand:
 class ServoConfig:
     """Visual Servoing 파라미터. config/visual_servo.yaml에서 로드."""
     kp: float = 1.0
-    xz_align_thr_mm: float = 3.0
+    xz_align_thr_mm: float = 3.0   # HandleServoController 용
+    xy_align_thr_mm: float = 3.0   # ToolServoController 용
     detect_stable_frames: int = 3
     vel_limit_mm_s: float = 20.0
     timeout_sec: float = 15.0
 
     @classmethod
-    def load_from_yaml(cls, path: str) -> "ServoConfig":
+    def load_from_yaml(cls, path: str, section: str = "") -> "ServoConfig":
+        """section: "handle" | "tool" | "" (루트, 구버전 호환)."""
         import yaml
         with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f)
+        data = raw.get(section, raw) if section else raw
         return cls(
-            kp                  = raw.get("gains", {}).get("kp",           cls.kp),
-            xz_align_thr_mm     = raw.get("thresholds", {}).get("xz_align_thr_mm", cls.xz_align_thr_mm),
-            detect_stable_frames= raw.get("detect", {}).get("stable_frames", cls.detect_stable_frames),
-            vel_limit_mm_s      = raw.get("vel_limit_mm_s",               cls.vel_limit_mm_s),
-            timeout_sec         = raw.get("timeout_sec",                  cls.timeout_sec),
+            kp                   = data.get("gains",     {}).get("kp",                cls.kp),
+            xz_align_thr_mm      = data.get("thresholds",{}).get("xz_align_thr_mm",   cls.xz_align_thr_mm),
+            xy_align_thr_mm      = data.get("thresholds",{}).get("xy_align_thr_mm",   cls.xy_align_thr_mm),
+            detect_stable_frames = data.get("detect",    {}).get("stable_frames",     cls.detect_stable_frames),
+            vel_limit_mm_s       = data.get("vel_limit_mm_s",                         cls.vel_limit_mm_s),
+            timeout_sec          = data.get("timeout_sec",                            cls.timeout_sec),
         )
 
 
 # ── 상태 열거형 ────────────────────────────────────────────────────────────────
 
 class ServoState(Enum):
-    DETECT   = auto()   # 손잡이 좌표 안정 수신 대기
-    ALIGN_XZ = auto()   # XZ P 제어
-    DONE     = auto()   # 정렬 완료 → 호출자가 GRIP_BOX 실행
+    DETECT   = auto()   # 좌표 안정 수신 대기 (공통)
+    ALIGN_XZ = auto()   # XZ P 제어 — HandleServoController
+    ALIGN_XY = auto()   # XY P 제어 — ToolServoController
+    DONE     = auto()   # 정렬 완료 → 호출자가 다음 스텝 실행
     ERROR    = auto()   # 타임아웃 / 소실 → 호출자가 실패 처리
 
 
@@ -235,6 +252,139 @@ class HandleServoController:
 
     def _to_error(self, reason: str) -> VelocityCommand:
         logger.error("[servo] ERROR: %s", reason)
+        self._state = ServoState.ERROR
+        return VelocityCommand(stop=True)
+
+
+# ── 공구 접근 XY VS 제어기 ────────────────────────────────────────────────────
+
+ToolGetterFn = Callable[[], ToolPose]
+
+
+class ToolServoController:
+    """공구 접근 XY 정렬 상태 기계 (vision_fetch 전용).
+
+    그리퍼가 Z 방향으로 공구 위에서 하강하므로 XY만 보정하고 Z는 고정.
+    정렬 완료(DONE) 후 호출자가 그리퍼 캠 Z 좌표로 하강(MOVE_L_TOOL_XYZ) 실행.
+
+    사용 예 (runner에서):
+        cfg  = ServoConfig.load_from_yaml("config/visual_servo.yaml", section="tool")
+        ctrl = ToolServoController(
+            cfg,
+            get_tool=lambda: vision_node.get_tool_pose(),
+            get_ee_pose=lambda: robot.get_ee_pose_mm(),
+            estop_event=self._estop_event,
+        )
+        while not ctrl.is_terminal():
+            cmd = ctrl.tick()
+            send_velocity(cmd)
+            time.sleep(0.033)
+
+        if ctrl.state == ServoState.DONE:
+            move_to_tool_xyz()   # ④ 그리퍼 캠 XYZ 로 하강
+        else:
+            handle_error()
+    """
+
+    def __init__(
+        self,
+        cfg: ServoConfig,
+        get_tool: ToolGetterFn,
+        get_ee_pose: EEPoseGetterFn,
+        estop_event: threading.Event,
+    ) -> None:
+        self._cfg      = cfg
+        self._get_tool = get_tool
+        self._get_ee   = get_ee_pose
+        self._estop    = estop_event
+
+        self._state: ServoState = ServoState.DETECT
+        self._stable_count: int = 0
+        self._start: float = time.monotonic()
+
+        logger.info("[tool_servo] 초기화 — state=DETECT thr=%.1fmm timeout=%.1fs",
+                    cfg.xy_align_thr_mm, cfg.timeout_sec)
+
+    @property
+    def state(self) -> ServoState:
+        return self._state
+
+    def is_terminal(self) -> bool:
+        return self._state in (ServoState.DONE, ServoState.ERROR)
+
+    def tick(self) -> VelocityCommand:
+        if self._estop.is_set():
+            logger.error("[tool_servo] E-stop 감지 — 즉시 정지")
+            return self._to_error("E-stop")
+
+        if time.monotonic() - self._start > self._cfg.timeout_sec:
+            return self._to_error(f"타임아웃 {self._cfg.timeout_sec}s 초과")
+
+        if self._state == ServoState.DETECT:
+            return self._tick_detect()
+        if self._state == ServoState.ALIGN_XY:
+            return self._tick_align_xy()
+
+        return VelocityCommand(stop=True)
+
+    def _tick_detect(self) -> VelocityCommand:
+        tool = self._get_tool()
+
+        if tool.valid:
+            self._stable_count += 1
+            logger.debug("[tool_servo][DETECT] 안정 %d/%d",
+                         self._stable_count, self._cfg.detect_stable_frames)
+        else:
+            if self._stable_count > 0:
+                logger.debug("[tool_servo][DETECT] 수신 끊김 — count 리셋")
+            self._stable_count = 0
+
+        if self._stable_count >= self._cfg.detect_stable_frames:
+            logger.info("[tool_servo][DETECT→ALIGN_XY] 공구 좌표 안정 확보")
+            self._state = ServoState.ALIGN_XY
+            return VelocityCommand(stop=True)
+
+        return VelocityCommand(stop=True)
+
+    def _tick_align_xy(self) -> VelocityCommand:
+        """XY 오차 P 제어.
+
+        수식:
+            err_x = target_x - ee_x   (mm)
+            err_y = target_y - ee_y   (mm)
+            vx    = Kp × err_x        (mm/s)
+            vy    = Kp × err_y        (mm/s)
+            vz    = 0.0               (Z 고정 — 하강은 VS 완료 후 별도 실행)
+        """
+        tool = self._get_tool()
+
+        if not tool.valid:
+            logger.warning("[tool_servo][ALIGN_XY] 공구 좌표 소실 — DETECT 복귀")
+            self._state = ServoState.DETECT
+            self._stable_count = 0
+            return VelocityCommand(stop=True)
+
+        ee_x, ee_y, _ = self._get_ee()
+
+        err_x = tool.x - ee_x
+        err_y = tool.y - ee_y
+        dist  = _norm2(err_x, err_y)
+
+        if dist <= self._cfg.xy_align_thr_mm:
+            logger.info("[tool_servo][ALIGN_XY→DONE] 정렬 완료 dist=%.2fmm", dist)
+            self._state = ServoState.DONE
+            return VelocityCommand(stop=True)
+
+        vx = _clamp(self._cfg.kp * err_x, self._cfg.vel_limit_mm_s)
+        vy = _clamp(self._cfg.kp * err_y, self._cfg.vel_limit_mm_s)
+
+        logger.debug("[tool_servo][ALIGN_XY] err=(%.2f, %.2f)mm dist=%.2fmm → vx=%.2f vy=%.2f mm/s",
+                     err_x, err_y, dist, vx, vy)
+
+        return VelocityCommand(vx=vx, vy=vy, vz=0.0)
+
+    def _to_error(self, reason: str) -> VelocityCommand:
+        logger.error("[tool_servo] ERROR: %s", reason)
         self._state = ServoState.ERROR
         return VelocityCommand(stop=True)
 

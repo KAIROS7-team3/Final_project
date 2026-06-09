@@ -72,6 +72,7 @@ from unit_actions.toolbox_motion import (
     StepKind,
     Step,
     VEL_L, ACC_L, VEL_R, ACC_R, VEL_J, ACC_J,
+    TOOL_APPROACH_Z_MM, TOOL_APPROACH_ORI, TOOL_DESCENT_ORI,
     home_seq,
     drawer_open_seq,
     drawer_close_seq,
@@ -85,6 +86,8 @@ from unit_actions.toolbox_motion import (
 from unit_actions.visual_servoing import (
     HandlePose,
     HandleServoController,
+    ToolPose,
+    ToolServoController,
     ServoConfig,
     ServoState,
     VelocityCommand as VSVelocityCommand,
@@ -180,10 +183,22 @@ class ToolboxSeqRunner(Node):
         # S-7: 기동 전 is_moving 상태 — Transient Local 구독으로 다른 노드의 retained 값 수신
         self._prev_is_moving: bool = False
 
-        # VS: 손잡이 TF 좌표 — /vision/handle_pose 구독으로 갱신
-        # 토픽명·메시지 타입은 비전팀과 확인 필요 (현재 geometry_msgs/PointStamped 가정)
+        # VS (서랍 손잡이): /vision/handle_pose 구독으로 갱신
+        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 (현재 geometry_msgs/PointStamped 가정)
         self._latest_handle: HandlePose = HandlePose()
         self._handle_lock: threading.Lock = threading.Lock()
+
+        # VS (공구 접근): 탑뷰 XY + 그리퍼 캠 XYZ
+        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입·단위 (현재 PointStamped, m→mm 변환 적용)
+        self._latest_top_tool: ToolPose = ToolPose()
+        self._top_tool_lock: threading.Lock = threading.Lock()
+        self._latest_gripper_tool: ToolPose = ToolPose()
+        self._gripper_tool_lock: threading.Lock = threading.Lock()
+
+        # VS (slot 반납): 탑뷰 slot 위치 XY
+        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
+        self._latest_slot_top: ToolPose = ToolPose()
+        self._slot_top_lock: threading.Lock = threading.Lock()
 
         p = f'/{ns}'
         self._movel_cli      = self.create_client(MoveLine,           f'{p}/motion/move_line',       callback_group=self._cb_group)
@@ -222,10 +237,31 @@ class ToolboxSeqRunner(Node):
             callback_group=self._cb_group,
         )
 
-        # VS: 손잡이 TF 좌표 구독 — 비전 노드가 robot base frame (m) 으로 발행
-        # 토픽명은 비전팀 확정 후 /vision/handle_pose 에서 변경 가능
+        # VS (서랍 손잡이): /vision/handle_pose 구독
+        # ⚠️ 비전팀 확인 필요: 토픽명 확정
         self._handle_sub = self.create_subscription(
             PointStamped, '/vision/handle_pose', self._on_handle_pose, 10,
+            callback_group=self._cb_group,
+        )
+
+        # VS (공구 접근): 탑뷰 D455f — rough XY (③번 이동용)
+        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
+        self._top_tool_sub = self.create_subscription(
+            PointStamped, '/vision/tool_top_pose', self._on_top_tool_pose, 10,
+            callback_group=self._cb_group,
+        )
+
+        # VS (공구 접근): 그리퍼 캠 C270 — XY VS + Z 하강
+        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
+        self._gripper_tool_sub = self.create_subscription(
+            PointStamped, '/vision/tool_gripper_pose', self._on_gripper_tool_pose, 10,
+            callback_group=self._cb_group,
+        )
+
+        # VS (slot 반납): 탑뷰 D455f — slot rough XY (⑧번 이동용)
+        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
+        self._slot_top_sub = self.create_subscription(
+            PointStamped, '/vision/slot_top_pose', self._on_slot_top_pose, 10,
             callback_group=self._cb_group,
         )
 
@@ -262,10 +298,40 @@ class ToolboxSeqRunner(Node):
                 self._stop_cli.call_async(MoveStop.Request())
 
     def _on_handle_pose(self, msg: PointStamped) -> None:
-        """VS: 비전 노드가 발행하는 손잡이 중심 좌표 수신 (robot base frame, m → mm 변환)."""
+        """VS: 손잡이 중심 좌표 수신 (robot base frame, m → mm 변환)."""
         with self._handle_lock:
             self._latest_handle = HandlePose(
                 x=msg.point.x * 1000.0,   # m → mm
+                z=msg.point.z * 1000.0,
+                valid=True,
+            )
+
+    def _on_top_tool_pose(self, msg: PointStamped) -> None:
+        """탑뷰 D455f 공구 좌표 수신 — ③ MOVE_L_TOP_XY 에서 rough XY 로 사용."""
+        with self._top_tool_lock:
+            self._latest_top_tool = ToolPose(
+                x=msg.point.x * 1000.0,
+                y=msg.point.y * 1000.0,
+                z=msg.point.z * 1000.0,
+                valid=True,
+            )
+
+    def _on_gripper_tool_pose(self, msg: PointStamped) -> None:
+        """그리퍼 캠 C270 공구 좌표 수신 — ④⑨ VS XY 정렬 + ⑤⑩ Z 하강에 사용."""
+        with self._gripper_tool_lock:
+            self._latest_gripper_tool = ToolPose(
+                x=msg.point.x * 1000.0,
+                y=msg.point.y * 1000.0,
+                z=msg.point.z * 1000.0,
+                valid=True,
+            )
+
+    def _on_slot_top_pose(self, msg: PointStamped) -> None:
+        """탑뷰 D455f slot 위치 수신 — ⑧ MOVE_L_SLOT_XY 에서 rough XY 로 사용."""
+        with self._slot_top_lock:
+            self._latest_slot_top = ToolPose(
+                x=msg.point.x * 1000.0,
+                y=msg.point.y * 1000.0,
                 z=msg.point.z * 1000.0,
                 valid=True,
             )
@@ -398,19 +464,10 @@ class ToolboxSeqRunner(Node):
 
     def _resolve_sequence(self, name: str) -> Optional[list]:
         if name == 'vision_fetch':
-            if not self._check_vision_coords('vision', self._vision_x, self._vision_y, self._vision_z):
-                return None
-            return vision_fetch_seq(self._vision_x, self._vision_y, self._vision_z)
+            return vision_fetch_seq()  # 좌표는 토픽에서 실시간 수신 — 파라미터 불필요
 
         if name == 'vision_return':
-            if not self._check_vision_coords('bottom', self._bottom_x, self._bottom_y, self._bottom_z):
-                return None
-            if not self._check_vision_coords('slot', self._slot_x, self._slot_y, self._slot_z):
-                return None
-            return vision_return_seq(
-                self._bottom_x, self._bottom_y, self._bottom_z,
-                self._slot_x,   self._slot_y,   self._slot_z,
-            )
+            return vision_return_seq()  # 좌표는 토픽에서 실시간 수신 — 파라미터 불필요
 
         if name in ('vision_open_0', 'vision_open_1'):
             layer = 0 if name == 'vision_open_0' else 1
@@ -461,6 +518,14 @@ class ToolboxSeqRunner(Node):
             return True
         elif step.kind == StepKind.VISUAL_SERVO_XZ:
             return self._exec_visual_servo()
+        elif step.kind == StepKind.MOVE_L_TOP_XY:
+            return self._exec_move_l_top_xy()
+        elif step.kind == StepKind.VISUAL_SERVO_XY:
+            return self._exec_visual_servo_xy()
+        elif step.kind == StepKind.MOVE_L_TOOL_XYZ:
+            return self._exec_move_l_tool_xyz()
+        elif step.kind == StepKind.MOVE_L_SLOT_XY:
+            return self._exec_move_l_slot_xy()
         self.get_logger().warn(f'  알 수 없는 StepKind: {step.kind}')
         return False
 
@@ -568,7 +633,7 @@ class ToolboxSeqRunner(Node):
             '../../../../config/visual_servo.yaml',
         )
         try:
-            cfg = ServoConfig.load_from_yaml(cfg_path)
+            cfg = ServoConfig.load_from_yaml(cfg_path, section="handle")
         except Exception as e:
             self.get_logger().error(f'  visual_servo.yaml 로드 실패: {e}')
             return False
@@ -607,6 +672,132 @@ class ToolboxSeqRunner(Node):
 
         self.get_logger().error(f'  [VS] 실패: {ctrl.state.name}')
         return False
+
+    # ── 공구 접근 VS (vision_fetch) ───────────────────────────────────────────
+
+    def _exec_move_l_top_xy(self) -> bool:
+        """③⑦: 탑뷰 D455f XY + TOOL_APPROACH_Z_MM 로 이동."""
+        with self._top_tool_lock:
+            pose = ToolPose(
+                x=self._latest_top_tool.x,
+                y=self._latest_top_tool.y,
+                z=self._latest_top_tool.z,
+                valid=self._latest_top_tool.valid,
+            )
+        if not pose.valid:
+            self.get_logger().error('  [TOP_XY] 탑뷰 공구 좌표 미수신 (/vision/tool_top_pose)')
+            return False
+        pos = [pose.x, pose.y, TOOL_APPROACH_Z_MM] + list(TOOL_APPROACH_ORI)
+        step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
+        self.get_logger().info(f'  [TOP_XY] → ({pose.x:.1f}, {pose.y:.1f}, {TOOL_APPROACH_Z_MM:.1f}) mm')
+        return self._movel(step, DR_MV_MOD_ABS)
+
+    def _exec_visual_servo_xy(self) -> bool:
+        """④: 그리퍼 캠 C270 XY P제어 수렴 — ToolServoController."""
+        cfg_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            '../../../../config/visual_servo.yaml',
+        )
+        try:
+            cfg = ServoConfig.load_from_yaml(cfg_path, section="tool")
+        except Exception as e:
+            self.get_logger().error(f'  [VS_XY] visual_servo.yaml 로드 실패: {e}')
+            return False
+
+        ctrl = ToolServoController(
+            cfg=cfg,
+            get_tool=self._get_latest_gripper_tool,
+            get_ee_pose=self._get_ee_pose_mm,
+            estop_event=self._estop_event,
+        )
+
+        _DT = 0.033  # 30 Hz
+        self.get_logger().info('  [VS_XY] 시작')
+
+        while not ctrl.is_terminal():
+            if self._estop_triggered:
+                return False
+
+            cmd = ctrl.tick()
+
+            if cmd.stop:
+                time.sleep(_DT)
+                continue
+
+            if cmd.vx != 0.0 or cmd.vy != 0.0:
+                ok = self._movel_delta_xy(cmd.vx, cmd.vy, _DT)
+                if not ok:
+                    self.get_logger().error('  [VS_XY] movel_delta_xy 실패')
+                    return False
+
+            time.sleep(_DT)
+
+        if ctrl.state == ServoState.DONE:
+            self.get_logger().info('  [VS_XY] XY 정렬 완료')
+            return True
+
+        self.get_logger().error(f'  [VS_XY] 실패: {ctrl.state.name}')
+        return False
+
+    def _exec_move_l_tool_xyz(self) -> bool:
+        """⑤: 그리퍼 캠 C270 XYZ 로 공구 위치까지 하강."""
+        with self._gripper_tool_lock:
+            pose = ToolPose(
+                x=self._latest_gripper_tool.x,
+                y=self._latest_gripper_tool.y,
+                z=self._latest_gripper_tool.z,
+                valid=self._latest_gripper_tool.valid,
+            )
+        if not pose.valid:
+            self.get_logger().error('  [TOOL_XYZ] 그리퍼 캠 공구 좌표 미수신 (/vision/tool_gripper_pose)')
+            return False
+        pos = [pose.x, pose.y, pose.z] + list(TOOL_DESCENT_ORI)
+        step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
+        self.get_logger().info(f'  [TOOL_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {pose.z:.1f}) mm')
+        return self._movel(step, DR_MV_MOD_ABS)
+
+    def _get_latest_gripper_tool(self) -> ToolPose:
+        with self._gripper_tool_lock:
+            return ToolPose(
+                x=self._latest_gripper_tool.x,
+                y=self._latest_gripper_tool.y,
+                z=self._latest_gripper_tool.z,
+                valid=self._latest_gripper_tool.valid,
+            )
+
+    def _exec_move_l_slot_xy(self) -> bool:
+        """⑧⑫: 탑뷰 D455f slot XY + TOOL_APPROACH_Z_MM 로 이동."""
+        with self._slot_top_lock:
+            pose = ToolPose(
+                x=self._latest_slot_top.x,
+                y=self._latest_slot_top.y,
+                z=self._latest_slot_top.z,
+                valid=self._latest_slot_top.valid,
+            )
+        if not pose.valid:
+            self.get_logger().error('  [SLOT_XY] slot 좌표 미수신 (/vision/slot_top_pose)')
+            return False
+        pos = [pose.x, pose.y, TOOL_APPROACH_Z_MM] + list(TOOL_APPROACH_ORI)
+        step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
+        self.get_logger().info(f'  [SLOT_XY] → ({pose.x:.1f}, {pose.y:.1f}, {TOOL_APPROACH_Z_MM:.1f}) mm')
+        return self._movel(step, DR_MV_MOD_ABS)
+
+    def _movel_delta_xy(self, vx: float, vy: float, dt: float) -> bool:
+        """속도(mm/s) × dt(s) = XY delta(mm) RELATIVE MoveL."""
+        req = MoveLine.Request()
+        req.pos        = [vx * dt, vy * dt, 0.0, 0.0, 0.0, 0.0]
+        req.vel        = [self._vel_l, self._vel_r]
+        req.acc        = [self._acc_l, self._acc_r]
+        req.time       = 0.0
+        req.radius     = 0.0
+        req.ref        = DR_BASE
+        req.mode       = DR_MV_MOD_REL
+        req.blend_type = 0
+        req.sync_type  = 0
+        fut = self._movel_cli.call_async(req)
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=1.0)
+        res = fut.result()
+        return res is not None and res.success
 
     def _get_latest_handle(self) -> HandlePose:
         """스레드 안전하게 최신 손잡이 좌표 반환."""

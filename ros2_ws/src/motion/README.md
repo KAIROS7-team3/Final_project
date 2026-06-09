@@ -172,11 +172,73 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_close_1
 
 > approach_x/y/z 파라미터 불필요 — VS가 실시간으로 정렬하므로 제거됨.
 
-### 비전팀 연결 시 확인 필요
+### 비전팀 연결 시 확인 필요 (서랍 open/close)
 
 - `/vision/handle_pose` 토픽명 확정 (현재 `geometry_msgs/PointStamped` 가정)
 - 좌표 단위 확인 (runner에서 m → mm 변환 적용 중)
-- `config/visual_servo.yaml`의 `kp`, `xz_align_thr_mm` 실기 테스트 후 튜닝
+- `config/visual_servo.yaml` `handle.kp`, `handle.xz_align_thr_mm` 실기 튜닝
+
+---
+
+## vision_fetch 시퀀스 (feat/track-b-vision-sequences)
+
+### 구조 (12스텝)
+
+| 스텝 | 동작 | 좌표 출처 |
+|------|------|-----------|
+| ① | JOINT_HOME | 고정 |
+| ② | GRIP_RELEASE | — |
+| ③ | MoveL — 공구 위쪽 | **탑뷰 D455f XY** + `TOOL_APPROACH_Z_MM` (고정 234mm) |
+| ④ | **VISUAL_SERVO_XY** | 그리퍼 캠 C270 XY P제어 수렴 |
+| ⑤ | MoveL — 공구로 하강 | **그리퍼 캠 C270 XYZ** |
+| ⑥ | GRIP_SOCKET (pulse=650) | — |
+| ⑦ | MoveL — 위로 상승 | 탑뷰 XY + 고정 Z (③과 동일) |
+| ⑧ | MoveL — staging 위 | `SOCKET_BOTTOM_XY` 고정 |
+| ⑨ | MoveL — staging 하강 | `SOCKET_BOTTOM` 고정 |
+| ⑩ | GRIP_RELEASE | — |
+| ⑪ | MoveL — staging 위 | `SOCKET_BOTTOM_XY` 고정 |
+| ⑫ | JOINT_HOME | 고정 |
+
+### Visual Servoing (④) 개념
+
+탑뷰 rough XY로 공구 위로 이동한 뒤, 그리퍼 카메라로 XY 오차를 폐루프로 수렴.
+
+```
+[그리퍼 캠] 공구 XY 좌표 읽기
+        ↓
+현재 EE XY와 오차 계산
+        ↓
+vx = Kp × err_x,  vy = Kp × err_y,  vz = 0 (Z 고정)
+        ↓
+movel_delta_xy 로 조금 이동 → 다시 읽기 → 반복
+        ↓
+|err_xy| ≤ xy_align_thr_mm → DONE → 그리퍼 캠 Z로 하강
+```
+
+- **vz = 0 고정**: Z는 VS 완료 후 그리퍼 캠 Z값으로 별도 하강
+- **파라미터**: `config/visual_servo.yaml` `tool` 섹션
+- **구현체**: `unit_actions/visual_servoing.py` — `ToolServoController`
+
+### 실행
+
+```bash
+ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_id:=socket_19mm
+```
+
+> 좌표 파라미터 불필요 — 탑뷰/그리퍼 토픽에서 실시간 수신.
+
+### 비전팀 연결 시 확인 필요 (vision_fetch)
+
+| 항목 | 현재 가정 | 확인 필요 |
+|------|-----------|-----------|
+| 탑뷰 공구 좌표 토픽 | `/vision/tool_top_pose` | 토픽명 확정 |
+| 그리퍼 캠 공구 좌표 토픽 | `/vision/tool_gripper_pose` | 토픽명 확정 |
+| 메시지 타입 | `geometry_msgs/PointStamped` | 타입 확정 |
+| 좌표 단위 | m (runner에서 ×1000 → mm 변환) | 단위 확정 |
+| `TOOL_APPROACH_Z_MM` | 234.0 mm (소켓 TW 실측) | 공구별 적정 높이 조정 |
+| `TOOL_APPROACH_ORI` | `[53.23, 180.0, -38.07]` deg | 공구별 자세 조정 |
+| `config/visual_servo.yaml` `tool.kp` | 1.0 | 실기 튜닝 필요 |
+| `config/visual_servo.yaml` `tool.xy_align_thr_mm` | 3.0 mm | 실기 튜닝 필요 |
 
 ---
 
@@ -188,5 +250,6 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_close_1
 - [ ] **초기 상태 읽기**: 노드 시작 시 DRL로 현재 그리퍼 위치(present_position)를 읽어 `_current_hz_pos` 초기화
   - `_init_drl_server` 완료 후 `_fc03(slave_id, REG_PRESENT_POSITION, 2)` 호출해 실제 pulse 값 반영
   - RViz에서 시작부터 실제 그리퍼 상태 표시 가능
-- [ ] **VS 실기 튜닝**: `config/visual_servo.yaml` kp, xz_align_thr_mm 실측 보정
-- [ ] **비전팀 인터페이스 확정**: `/vision/handle_pose` 토픽명·단위 확인 후 runner 수정
+- [ ] **VS 실기 튜닝**: `config/visual_servo.yaml` handle/tool 각 섹션 kp·임계값 실측 보정
+- [ ] **비전팀 인터페이스 확정**: 위 표 항목 확인 후 토픽명·타입·단위 반영
+- [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place 각각 VS 적용)
