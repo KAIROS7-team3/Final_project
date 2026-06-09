@@ -41,10 +41,11 @@ class SystemState(str, Enum):
 # 어떤 색/패턴으로 보일지는 여기서 한 번에 확인할 수 있게 둔다.
 STATE_LED_MAP: dict[SystemState, tuple[LEDColor, LEDMode]] = {
     SystemState.IDLE: (LEDColor.GREEN, LEDMode.SOLID),
-    SystemState.LISTENING: (LEDColor.GREEN, LEDMode.PULSE),
+    SystemState.LISTENING: (LEDColor.YELLOW, LEDMode.PULSE),
     SystemState.INFERRING: (LEDColor.GREEN, LEDMode.FLASH),
-    SystemState.MOVING: (LEDColor.GREEN, LEDMode.SOLID),
+    # MOVING must stay visually distinct from IDLE so operators can tell motion from standby.
+    SystemState.MOVING: (LEDColor.RED, LEDMode.SOLID),
     SystemState.ERROR: (LEDColor.RED, LEDMode.FLASH),
     SystemState.E_STOP: (LEDColor.RED, LEDMode.SOLID),
-    SystemState.WATCHDOG: (LEDColor.YELLOW, LEDMode.FLASH),
+    SystemState.WATCHDOG: (LEDColor.WHITE, LEDMode.FLASH),
 }

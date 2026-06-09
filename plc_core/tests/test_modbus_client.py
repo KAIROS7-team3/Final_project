@@ -288,7 +288,7 @@ def test_set_system_state_resets_then_pulses_configured_output(
     status = plc.set_system_state(SystemState.MOVING)
 
     assert status.system_state == SystemState.MOVING
-    assert status.led_color == LEDColor.GREEN
+    assert status.led_color == LEDColor.RED
     assert status.led_mode == LEDMode.SOLID
     assert fake_client.calls[-4:] == [
         ("write_coil", {"address": 256, "value": True, "device_id": 1}),
