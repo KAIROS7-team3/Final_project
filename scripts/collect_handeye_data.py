@@ -82,7 +82,9 @@ DIST_COEFFS = np.array(_cam_info['coeffs'], dtype=np.float64)
 IMG_W: int = _cam_info['width']
 IMG_H: int = _cam_info['height']
 
-# ── 캘리브레이션 자세 (handeye_calib_motion.py와 동일) ─────────────────────────
+# ── 캘리브레이션 자세 — TFcalibration.tw 기반 실측 자세 (calib_poses.py와 별개) ──
+# calib_poses.py: handeye_calib_motion.py 전용 격자형 37자세
+# 이 파일: DART 직접교시로 수집한 R9+V21=30자세 (D455f 탑뷰 캘리브레이션 전용)
 # ⚠️ E-1 예외: Doosan MoveJoint API는 degree 입력 (하드웨어 경계 인터페이스)
 CALIB_POSES: list[list[float]] = [
     # ── 직접교시 샘플 기반 자세 (TFcalibration.tw 2~10번 참조) ────────────────
