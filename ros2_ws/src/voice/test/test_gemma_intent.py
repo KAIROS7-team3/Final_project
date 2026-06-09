@@ -7,8 +7,10 @@ from voice.gemma_intent import (
     GemmaConfig,
     GemmaIntentClassifier,
     GemmaIntentResult,
+    ToolSpec,
     build_prompt,
     load_prompt_template,
+    load_tool_catalog,
     parse_gemma_output,
     resolve_model_id_path,
 )
@@ -30,6 +32,40 @@ def test_build_prompt_contains_raw_text_and_tool_catalog() -> None:
     assert "스패너 가져와" in prompt
     assert "spanner_16mm" in prompt
     assert "JSON 객체 하나만 출력" in prompt
+
+
+def test_build_prompt_uses_custom_tool_catalog() -> None:
+    prompt = build_prompt(
+        "니들 가져와",
+        "규칙:\n__TOOL_CATALOG__\n입력: __RAW_TEXT__\n",
+        (
+            ToolSpec(
+                tool_id="needle_nose",
+                label="니들 노즈 플라이어",
+                aliases=("니들 노즈 플라이어", "needle nose"),
+            ),
+        ),
+    )
+
+    assert "- needle_nose (니들 노즈 플라이어): 니들 노즈 플라이어, needle nose" in prompt
+    assert "니들 가져와" in prompt
+
+
+def test_load_tool_catalog_reads_root_toolbox_yaml() -> None:
+    catalog = load_tool_catalog()
+
+    assert any(
+        spec.tool_id == "socket_19mm" and "복스 소켓 19mm" in spec.aliases
+        for spec in catalog
+    )
+
+
+def test_gemma_config_default_toolbox_path_loads_catalog() -> None:
+    config = GemmaConfig()
+    catalog = load_tool_catalog(config.toolbox_path)
+
+    assert config.toolbox_path.endswith("toolbox.yaml")
+    assert len(catalog) == 6
 
 
 def test_load_prompt_template_reads_external_file() -> None:
@@ -89,7 +125,10 @@ def test_parse_gemma_output_normalizes_multiword_aliases(
     expected_tool_id: str,
 ) -> None:
     result = parse_gemma_output(
-        f'{{"intent_type":"fetch","tool_id":"{alias}","confidence":0.91,"needs_confirm":false}}'
+        (
+            f'{{"intent_type":"fetch","tool_id":"{alias}",'
+            '"confidence":0.91,"needs_confirm":false}'
+        )
     )
 
     assert result.tool_id == expected_tool_id
@@ -98,7 +137,10 @@ def test_parse_gemma_output_normalizes_multiword_aliases(
 def test_classifier_downgrades_low_confidence_fetch_to_unknown() -> None:
     backend = FakeBackend(
         [
-            '{"intent_type":"fetch","tool_id":"spanner_16mm","confidence":0.42,"needs_confirm":false}',
+            (
+                '{"intent_type":"fetch","tool_id":"spanner_16mm",'
+                '"confidence":0.42,"needs_confirm":false}'
+            ),
         ]
     )
     classifier = GemmaIntentClassifier(

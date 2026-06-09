@@ -22,9 +22,10 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description() -> LaunchDescription:
     """Whisper STT와 Gemma intent 노드를 함께 실행한다."""
 
-    gemma_config_path = (
-        Path(get_package_share_directory("voice")) / "config" / "gemma.yaml"
-    )
+    voice_share = Path(get_package_share_directory("voice"))
+    gemma_config_path = voice_share / "config" / "gemma.yaml"
+    gemma_prompt_template_path = voice_share / "gemma_prompt.txt"
+    toolbox_path = voice_share / "config" / "toolbox.yaml"
 
     return LaunchDescription(
         [
@@ -61,7 +62,14 @@ def generate_launch_description() -> LaunchDescription:
                 "gemma_model_id",
                 default_value="~/models/gemma/gemma-3-1b-it",
             ),
-            DeclareLaunchArgument("gemma_prompt_template_path", default_value=""),
+            DeclareLaunchArgument(
+                "gemma_prompt_template_path",
+                default_value=str(gemma_prompt_template_path),
+            ),
+            DeclareLaunchArgument(
+                "toolbox_path",
+                default_value=str(toolbox_path),
+            ),
             DeclareLaunchArgument("gemma_device", default_value="auto"),
             DeclareLaunchArgument(
                 "gemma_confidence_threshold",
@@ -143,9 +151,10 @@ def generate_launch_description() -> LaunchDescription:
                             value_type=bool,
                         ),
                         "gemma_model_id": LaunchConfiguration("gemma_model_id"),
-                        "prompt_template_path": LaunchConfiguration(
+                        "gemma_prompt_template_path": LaunchConfiguration(
                             "gemma_prompt_template_path"
                         ),
+                        "toolbox_path": LaunchConfiguration("toolbox_path"),
                         "gemma_device": LaunchConfiguration("gemma_device"),
                         "gemma_confidence_threshold": ParameterValue(
                             LaunchConfiguration("gemma_confidence_threshold"),

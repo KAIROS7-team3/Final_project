@@ -1,8 +1,11 @@
 from glob import glob
+from pathlib import Path
 
 from setuptools import find_packages, setup
 
 package_name = "voice"
+repo_root = Path(__file__).resolve().parents[3]
+toolbox_path = repo_root / "config" / "toolbox.yaml"
 
 setup(
     name=package_name,
@@ -12,7 +15,11 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/config", ["config/gemma.yaml"]),
+        (f"share/{package_name}", ["voice/gemma_prompt.txt"]),
+        (
+            f"share/{package_name}/config",
+            glob("config/*.yaml") + [str(toolbox_path)],
+        ),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["setuptools"],

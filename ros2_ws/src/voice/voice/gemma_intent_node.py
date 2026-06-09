@@ -9,13 +9,15 @@ confidence, DB 오류, 불명확한 공구 ID는 모두 fail-closed로 처리한
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import rclpy
 from interfaces.msg import Intent
 from interfaces.srv import CheckToolFeasibility
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from voice.gemma_intent import GemmaConfig, GemmaIntentClassifier
+from voice.gemma_intent import GemmaConfig, GemmaIntentClassifier, default_toolbox_path
 from voice.wake_word import DEFAULT_WAKE_WORDS, apply_wake_word_gate
 
 
@@ -35,7 +37,8 @@ class GemmaIntentNode(Node):
             "gemma_model_id",
             "~/models/gemma/gemma-3-1b-it",
         )
-        self.declare_parameter("prompt_template_path", "")
+        self.declare_parameter("gemma_prompt_template_path", "")
+        self.declare_parameter("toolbox_path", "")
         self.declare_parameter("gemma_device", "auto")
         self.declare_parameter("gemma_confidence_threshold", 0.75)
         self.declare_parameter("gemma_max_new_tokens", 128)
@@ -58,33 +61,40 @@ class GemmaIntentNode(Node):
             self._classifier = classifier
             return
 
-        self._classifier = GemmaIntentClassifier(
-            GemmaConfig(
-                model_id=self.get_parameter("gemma_model_id")
-                .get_parameter_value()
-                .string_value,
-                prompt_template_path=self.get_parameter("prompt_template_path")
-                .get_parameter_value()
-                .string_value,
-                device=self.get_parameter("gemma_device")
-                .get_parameter_value()
-                .string_value,
-                confidence_threshold=self.get_parameter(
-                    "gemma_confidence_threshold"
-                )
-                .get_parameter_value()
-                .double_value,
-                max_new_tokens=self.get_parameter("gemma_max_new_tokens")
-                .get_parameter_value()
-                .integer_value,
-                temperature=self.get_parameter("gemma_temperature")
-                .get_parameter_value()
-                .double_value,
-                warmup=self.get_parameter("gemma_warmup")
-                .get_parameter_value()
-                .bool_value,
-            )
+        prompt_template_path = self.get_parameter("gemma_prompt_template_path")
+        prompt_template_path = (
+            prompt_template_path.get_parameter_value().string_value
+            or str(Path(__file__).with_name("gemma_prompt.txt"))
         )
+        toolbox_path = self.get_parameter("toolbox_path")
+        toolbox_path = (
+            toolbox_path.get_parameter_value().string_value
+            or str(default_toolbox_path())
+        )
+
+        config = GemmaConfig(
+            model_id=self.get_parameter("gemma_model_id")
+            .get_parameter_value()
+            .string_value,
+            prompt_template_path=prompt_template_path,
+            toolbox_path=toolbox_path,
+            device=self.get_parameter("gemma_device")
+            .get_parameter_value()
+            .string_value,
+            confidence_threshold=self.get_parameter("gemma_confidence_threshold")
+            .get_parameter_value()
+            .double_value,
+            max_new_tokens=self.get_parameter("gemma_max_new_tokens")
+            .get_parameter_value()
+            .integer_value,
+            temperature=self.get_parameter("gemma_temperature")
+            .get_parameter_value()
+            .double_value,
+            warmup=self.get_parameter("gemma_warmup")
+            .get_parameter_value()
+            .bool_value,
+        )
+        self._classifier = GemmaIntentClassifier(config)
 
     def _handle_raw_text(self, message: String) -> None:
         """Whisper 원문 한 건을 Gemma intent로 변환한다."""

@@ -16,14 +16,20 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - optional dependency guard
+    yaml = None
 
 VALID_INTENTS = {"fetch", "return", "cancel", "unknown"}
 TOOL_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 CODE_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 DEFAULT_PROMPT_TEMPLATE_PATH = Path(__file__).with_name("gemma_prompt.txt")
+FALLBACK_TOOLBOX_PATH = Path(__file__).resolve().parents[4] / "config" / "toolbox.yaml"
 
 
 @dataclass(frozen=True)
@@ -39,53 +45,102 @@ def _normalize_tool_key(value: str) -> str:
     return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
-TOOL_CATALOG: tuple[ToolSpec, ...] = (
-    ToolSpec(
-        tool_id="screwdriver",
-        label="십자 드라이버",
-        aliases=("십자 드라이버", "드라이버", "screwdriver"),
-    ),
-    ToolSpec(
-        tool_id="utility_knife",
-        label="커터칼",
-        aliases=("커터", "커터칼", "utility knife", "knife"),
-    ),
-    ToolSpec(
-        tool_id="ratchet_wrench",
-        label="라쳇 렌치",
-        aliases=("라쳇", "라쳇 렌치", "ratchet", "ratchet wrench"),
-    ),
-    ToolSpec(
-        tool_id="multi_tool",
-        label="멕가이버",
-        aliases=("멕가이버", "맥가이버", "multi tool", "multitool"),
-    ),
-    ToolSpec(
-        tool_id="spanner_16mm",
-        label="스패너 16mm",
-        aliases=("스패너", "스패너 16mm", "16mm", "spanner", "spanner 16mm"),
-    ),
-    ToolSpec(
-        tool_id="socket_19mm",
-        label="복스 소켓 19mm",
-        aliases=(
-            "복스",
-            "소켓",
-            "복스 소켓",
-            "복스 소켓 19mm",
-            "19mm",
-            "socket",
-            "socket 19mm",
-        ),
-    ),
-)
+def default_toolbox_path() -> Path:
+    """toolbox.yaml의 기본 위치를 해석한다.
 
-ALIAS_TO_TOOL_ID: dict[str, str] = {
-    _normalize_tool_key(alias): spec.tool_id
-    for spec in TOOL_CATALOG
-    for alias in spec.aliases
-}
-TOOL_IDS = {spec.tool_id for spec in TOOL_CATALOG}
+    설치본이 있으면 `share/voice/config/toolbox.yaml`을 우선하고, 없으면
+    소스 트리 루트의 `config/toolbox.yaml`로 fallback한다.
+    """
+
+    try:
+        from ament_index_python.packages import get_package_share_directory
+
+        return Path(get_package_share_directory("voice")) / "config" / "toolbox.yaml"
+    except Exception:  # pragma: no cover - package lookup/runtime fallback path
+        return FALLBACK_TOOLBOX_PATH
+
+
+def _dedupe_preserve_order(values: tuple[str, ...]) -> tuple[str, ...]:
+    """중복 alias를 제거하되 원래 순서를 유지한다."""
+
+    seen: set[str] = set()
+    unique_values: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique_values.append(value)
+    return tuple(unique_values)
+
+
+def load_tool_catalog(toolbox_path: str | Path | None = None) -> tuple[ToolSpec, ...]:
+    """toolbox.yaml에서 canonical tool catalog를 읽는다."""
+
+    if yaml is None:  # pragma: no cover - dependency guard
+        raise GemmaLoadError("PyYAML is required to load toolbox.yaml")
+
+    path = Path(toolbox_path).expanduser() if toolbox_path else default_toolbox_path()
+    try:
+        raw_catalog = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise GemmaLoadError(f"failed to load Gemma toolbox catalog: {path}") from exc
+    except Exception as exc:  # pragma: no cover - parser/runtime path
+        raise GemmaLoadError(f"failed to parse Gemma toolbox catalog: {path}") from exc
+
+    if not isinstance(raw_catalog, dict):
+        raise GemmaLoadError("Gemma toolbox catalog must be a mapping")
+
+    raw_tools = raw_catalog.get("tools", [])
+    if not isinstance(raw_tools, list) or not raw_tools:
+        raise GemmaLoadError(
+            "Gemma toolbox catalog must contain a non-empty tools list"
+        )
+
+    tool_catalog: list[ToolSpec] = []
+    for raw_spec in raw_tools:
+        if not isinstance(raw_spec, dict):
+            raise GemmaLoadError("each toolbox entry must be a mapping")
+
+        tool_id = str(raw_spec.get("tool_id", "")).strip()
+        label = str(raw_spec.get("display_name", "")).strip()
+        if not tool_id or not label:
+            raise GemmaLoadError("toolbox entries require tool_id and display_name")
+        if not TOOL_ID_PATTERN.match(tool_id):
+            raise GemmaLoadError(f"unsupported tool_id in toolbox.yaml: {tool_id!r}")
+
+        raw_aliases = raw_spec.get("aliases", ())
+        if raw_aliases is None:
+            alias_values: tuple[str, ...] = ()
+        elif isinstance(raw_aliases, (list, tuple)):
+            alias_values = tuple(
+                str(alias).strip()
+                for alias in raw_aliases
+                if str(alias).strip()
+            )
+        else:
+            raise GemmaLoadError("toolbox aliases must be a sequence of strings")
+
+        aliases = _dedupe_preserve_order((label, *alias_values))
+        tool_catalog.append(ToolSpec(tool_id=tool_id, label=label, aliases=aliases))
+
+    return tuple(tool_catalog)
+
+
+def _build_tool_alias_map(tool_catalog: tuple[ToolSpec, ...]) -> dict[str, str]:
+    """alias -> canonical tool_id 매핑을 만든다."""
+
+    return {
+        _normalize_tool_key(alias): spec.tool_id
+        for spec in tool_catalog
+        for alias in spec.aliases
+    }
+
+
+def _tool_catalog_lines(tool_catalog: tuple[ToolSpec, ...]) -> str:
+    return "\n".join(
+        f"- {spec.tool_id} ({spec.label}): {', '.join(spec.aliases)}"
+        for spec in tool_catalog
+    )
 
 
 class GemmaLoadError(RuntimeError):
@@ -109,6 +164,7 @@ class GemmaConfig:
 
     model_id: str = "~/models/gemma/gemma-3-1b-it"
     prompt_template_path: str = str(DEFAULT_PROMPT_TEMPLATE_PATH)
+    toolbox_path: str = field(default_factory=lambda: str(default_toolbox_path()))
     device: str = "auto"
     confidence_threshold: float = 0.75
     max_new_tokens: int = 128
@@ -147,14 +203,16 @@ def load_prompt_template(prompt_template_path: str | Path | None = None) -> str:
     return template
 
 
-def build_prompt(raw_text: str, prompt_template: str | None = None) -> str:
+def build_prompt(
+    raw_text: str,
+    prompt_template: str | None = None,
+    tool_catalog: tuple[ToolSpec, ...] | None = None,
+) -> str:
     """Gemma에 넣을 한국어 intent 분류 프롬프트를 만든다."""
 
     template = prompt_template or load_prompt_template()
-    tool_catalog_lines = "\n".join(
-        f"- {spec.tool_id} ({spec.label}): {', '.join(spec.aliases)}"
-        for spec in TOOL_CATALOG
-    )
+    catalog = tool_catalog or load_tool_catalog()
+    tool_catalog_lines = _tool_catalog_lines(catalog)
 
     return template.replace("__TOOL_CATALOG__", tool_catalog_lines).replace(
         "__RAW_TEXT__", raw_text.strip()
@@ -167,8 +225,25 @@ def resolve_model_id_path(model_id: str) -> str:
     return str(Path(model_id).expanduser())
 
 
-def parse_gemma_output(output: str) -> GemmaIntentResult:
+def parse_gemma_output(
+    output: str,
+    *,
+    tool_alias_to_id: dict[str, str] | None = None,
+    valid_tool_ids: set[str] | None = None,
+) -> GemmaIntentResult:
     """Gemma 원문 응답을 strict JSON으로 파싱한다."""
+
+    if tool_alias_to_id is None and valid_tool_ids is None:
+        catalog = load_tool_catalog()
+        tool_alias_to_id = _build_tool_alias_map(catalog)
+        valid_tool_ids = {spec.tool_id for spec in catalog}
+    elif tool_alias_to_id is None:
+        catalog = load_tool_catalog()
+        tool_alias_to_id = _build_tool_alias_map(catalog)
+        if valid_tool_ids is None:
+            valid_tool_ids = {spec.tool_id for spec in catalog}
+    elif valid_tool_ids is None:
+        valid_tool_ids = set(tool_alias_to_id.values())
 
     cleaned = _strip_code_fence(output.strip())
     try:
@@ -193,7 +268,11 @@ def parse_gemma_output(output: str) -> GemmaIntentResult:
         raise GemmaParseError("confidence must be between 0.0 and 1.0")
 
     needs_confirm = bool(data.get("needs_confirm", False))
-    tool_id = _normalize_tool_id(str(data.get("tool_id", "")).strip())
+    tool_id = _normalize_tool_id(
+        str(data.get("tool_id", "")).strip(),
+        tool_alias_to_id=tool_alias_to_id,
+        valid_tool_ids=valid_tool_ids,
+    )
 
     if intent_type in {"fetch", "return"} and not tool_id:
         raise GemmaParseError("fetch/return requires a canonical tool_id")
@@ -218,6 +297,9 @@ class GemmaIntentClassifier:
         backend: GemmaBackend | None = None,
     ) -> None:
         self.config = config or GemmaConfig()
+        self._tool_catalog = load_tool_catalog(self.config.toolbox_path)
+        self._tool_alias_to_id = _build_tool_alias_map(self._tool_catalog)
+        self._tool_ids = {spec.tool_id for spec in self._tool_catalog}
         self._prompt_template = load_prompt_template(
             self.config.prompt_template_path
         )
@@ -229,21 +311,27 @@ class GemmaIntentClassifier:
         """짧은 더미 추론으로 모델을 예열한다."""
 
         try:
-            self._backend.generate(build_prompt("취소", self._prompt_template))
+            self._backend.generate(
+                build_prompt("취소", self._prompt_template, self._tool_catalog)
+            )
         except Exception as exc:  # pragma: no cover - backend runtime path
             raise GemmaLoadError("Gemma warmup failed") from exc
 
     def classify(self, raw_text: str) -> GemmaIntentResult:
         """raw text를 Gemma로 분류하고 fail-closed 결과를 반환한다."""
 
-        prompt = build_prompt(raw_text, self._prompt_template)
+        prompt = build_prompt(raw_text, self._prompt_template, self._tool_catalog)
         try:
             raw_output = self._backend.generate(prompt)
         except Exception as exc:  # pragma: no cover - backend runtime path
             raise GemmaLoadError("Gemma inference failed") from exc
 
         try:
-            parsed = parse_gemma_output(raw_output)
+            parsed = parse_gemma_output(
+                raw_output,
+                tool_alias_to_id=self._tool_alias_to_id,
+                valid_tool_ids=self._tool_ids,
+            )
         except GemmaParseError:
             return GemmaIntentResult(
                 intent_type="unknown",
@@ -362,13 +450,18 @@ def _strip_code_fence(text: str) -> str:
     return text
 
 
-def _normalize_tool_id(tool_id: str) -> str:
+def _normalize_tool_id(
+    tool_id: str,
+    *,
+    tool_alias_to_id: dict[str, str],
+    valid_tool_ids: set[str],
+) -> str:
     candidate = _normalize_tool_key(tool_id)
     if not candidate:
         return ""
-    if candidate in TOOL_IDS:
+    if candidate in valid_tool_ids:
         return candidate
-    return ALIAS_TO_TOOL_ID.get(candidate, "")
+    return tool_alias_to_id.get(candidate, "")
 
 
 def _resolve_device(device: str, torch_module) -> str:

@@ -10,7 +10,20 @@ if "rclpy" not in sys.modules:
     rclpy_node_module = types.ModuleType("rclpy.node")
 
     class _Node:
-        pass
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def declare_parameter(self, *args, **kwargs):
+            return None
+
+        def create_publisher(self, *args, **kwargs):
+            return types.SimpleNamespace(publish=lambda message: None)
+
+        def create_client(self, *args, **kwargs):
+            return types.SimpleNamespace(wait_for_service=lambda timeout_sec: True)
+
+        def create_subscription(self, *args, **kwargs):
+            return None
 
     rclpy_node_module.Node = _Node
     sys.modules["rclpy"] = rclpy_module
@@ -128,23 +141,35 @@ class FakeParameter:
 
 
 class FakeFeasibilityClient:
-    def __init__(self, feasible: bool = True, reason: str = "") -> None:
+    def __init__(
+        self,
+        feasible: bool = True,
+        reason: str = "",
+        *,
+        wait_result: bool = True,
+        future_exception: Exception | None = None,
+    ) -> None:
         self.feasible = feasible
         self.reason = reason
+        self.wait_result = wait_result
+        self.future_exception = future_exception
         self.requests = []
 
     def wait_for_service(self, timeout_sec: float) -> bool:
-        return True
+        return self.wait_result
 
     def call_async(self, request) -> Future:
         self.requests.append(request)
         future: Future = Future()
 
-        response = types.SimpleNamespace(
-            feasible=self.feasible,
-            reason=self.reason,
-        )
-        future.set_result(response)
+        if self.future_exception is not None:
+            future.set_exception(self.future_exception)
+        else:
+            response = types.SimpleNamespace(
+                feasible=self.feasible,
+                reason=self.reason,
+            )
+            future.set_result(response)
         return future
 
 
@@ -229,6 +254,57 @@ def test_fetch_rejected_by_db_gate_is_not_published() -> None:
     assert node._logger.warning_messages[-1] == "DB gate rejected voice intent: out"
 
 
+def test_fetch_logs_error_when_db_service_is_unavailable() -> None:
+    classifier = FakeClassifier(
+        GemmaIntentResult(
+            "fetch",
+            "spanner_16mm",
+            0.95,
+            raw_output='{"intent_type":"fetch"}',
+        )
+    )
+    feasibility_client = FakeFeasibilityClient(wait_result=False)
+    node = _build_node(classifier, feasibility_client)
+
+    node._handle_raw_text(types.SimpleNamespace(data="스패너 가져와"))
+
+    assert len(feasibility_client.requests) == 0
+    assert len(node._publisher.messages) == 0
+    assert (
+        node._logger.error_messages[-1]
+        == "/db/CheckToolFeasibility service is not available; voice intent rejected"
+    )
+
+
+def test_handle_feasibility_logs_future_exception() -> None:
+    node = _build_node(
+        FakeClassifier(
+            GemmaIntentResult(
+                "fetch",
+                "spanner_16mm",
+                0.95,
+                raw_output='{"intent_type":"fetch"}',
+            )
+        )
+    )
+    future: Future = Future()
+    future.set_exception(RuntimeError("boom"))
+
+    node._handle_feasibility(
+        future,
+        "fetch",
+        "spanner_16mm",
+        0.95,
+        "스패너 가져와",
+    )
+
+    assert len(node._publisher.messages) == 0
+    assert (
+        node._logger.error_messages[-1]
+        == "DB feasibility check failed; voice intent rejected: boom"
+    )
+
+
 def test_missing_wake_word_blocks_input_when_enabled() -> None:
     classifier = FakeClassifier(
         GemmaIntentResult(
@@ -244,3 +320,21 @@ def test_missing_wake_word_blocks_input_when_enabled() -> None:
 
     assert classifier.inputs == []
     assert len(node._publisher.messages) == 0
+
+
+def test_node_initializes_with_injected_classifier_without_share_lookup() -> None:
+    classifier = FakeClassifier(
+        GemmaIntentResult(
+            "cancel",
+            "",
+            0.1,
+            raw_output='{"intent_type":"cancel"}',
+        )
+    )
+
+    node = GemmaIntentNode(
+        classifier=classifier,
+        feasibility_client=FakeFeasibilityClient(),
+    )
+
+    assert node._classifier is classifier

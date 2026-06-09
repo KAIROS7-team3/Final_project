@@ -1,4 +1,11 @@
-voice:
+whisper_node:
+  ros__parameters:
+    whisper_no_speech_threshold: 0.6
+    whisper_logprob_threshold: -1.0
+    whisper_compression_ratio_threshold: 2.4
+    reject_hallucinated_transcripts: true
+
+gemma_intent_node:
   ros__parameters:
     require_wake_word: true
     wake_words:
@@ -34,10 +41,6 @@ voice:
       - 코 보트
       - 고보트
       - 고 보트
-    whisper_no_speech_threshold: 0.6
-    whisper_logprob_threshold: -1.0
-    whisper_compression_ratio_threshold: 2.4
-    reject_hallucinated_transcripts: true
     gemma_model_id: ~/models/gemma/gemma-3-1b-it
     gemma_device: auto
     gemma_confidence_threshold: 0.75
