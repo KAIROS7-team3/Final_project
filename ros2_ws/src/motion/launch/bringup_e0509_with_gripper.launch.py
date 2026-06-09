@@ -196,6 +196,11 @@ def generate_launch_description() -> LaunchDescription:
         )
     )
 
+    # virtual 모드: 에뮬레이터 standby(5s) 이후 control_node가 연결 시도해야 한다.
+    # control_node를 즉시 시작하면 에뮬레이터가 아직 포트를 열기 전에 접속해 실패한다.
+    # real 모드에서도 6s 지연은 무해하다(컨트롤러는 항상 기동 중).
+    delayed_control_node = TimerAction(period=6.0, actions=[control_node])
+
     return LaunchDescription(
         arguments + [
             run_emulator_node,
@@ -203,7 +208,7 @@ def generate_launch_description() -> LaunchDescription:
             remapped_tf_nodes,
             robot_controller_spawner,
             joint_state_broadcaster_spawner,
-            control_node,
+            delayed_control_node,
             delay_after_controller,
         ]
     )
