@@ -34,7 +34,7 @@ logger = logging.getLogger('fk_calibrate')
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _CAM_DATA   = os.path.join(_SCRIPT_DIR, 'tcp_calib', 'cam_data.npz')
 _OUT_YAML   = os.path.join(_SCRIPT_DIR, '..', 'config', 'topview_calib.yaml')
-_DEFAULT_TW = os.path.join(os.path.expanduser('~'), 'Downloads', 'topview아르코.tw')
+_DEFAULT_TW = os.path.join(os.path.expanduser('~'), 'Downloads', 'topview아르코v2.tw')
 
 METHODS: dict[str, int] = {
     'TSAI':       cv2.CALIB_HAND_EYE_TSAI,
@@ -101,30 +101,59 @@ def forward_kinematics(joint_angles_deg: list[float]) -> np.ndarray:
 
 
 # ── TW 파싱 ───────────────────────────────────────────────────────────────────
-def load_tw_joints(tw_path: str) -> list[list[float]]:
-    """
-    DART .tw 파일에서 MoveJNode 관절각 파싱.
-    반환: [[J1..J6], ...] degree 단위, 파일 순서대로
-    pose 필드는 {'pose1': v1, ..., 'pose6': v6} dict 형식.
-    """
+def _load_tw_nodes(tw_path: str) -> list:
     with open(tw_path, 'rb') as f:
         raw = f.read()
     try:
         data = json.loads(raw)
     except Exception:
         data = json.loads(base64.b64decode(raw).decode('utf-8'))
+    return data['taskFile']['file']['children'][2]['_pojo']['children']
 
-    nodes = data['taskFile']['file']['children'][2]['_pojo']['children']
+
+def load_tw_joints(tw_path: str) -> list[list[float]]:
+    """MoveJNode 관절각 파싱. 반환: [[J1..J6], ...] degree."""
+    nodes = _load_tw_nodes(tw_path)
     joints: list[list[float]] = []
     for node in nodes:
+        if node.get('_type') != 'MoveJNode':
+            continue
         pojo = node.get('_pojo', node)
         pose = pojo.get('pose', {})
         if isinstance(pose, dict) and 'pose1' in pose:
             joints.append([float(pose[f'pose{k}']) for k in range(1, 7)])
         elif isinstance(pose, list) and len(pose) >= 6:
             joints.append([float(v) for v in pose[:6]])
-    logger.info('TW 파싱: %d개 포즈 발견', len(joints))
+    logger.info('TW 파싱(MoveJ): %d개 포즈 발견', len(joints))
     return joints
+
+
+def load_tw_movel(tw_path: str) -> list[np.ndarray]:
+    """
+    MoveJNode 바로 다음 MoveLNode의 TCP 좌표 파싱.
+    DART 형식: pose1~3 = X,Y,Z (mm), pose4~6 = A,B,C (deg, ZYZ 오일러).
+    반환: T_gripper2base 4×4 행렬 리스트 (단위: m).
+    """
+    nodes = _load_tw_nodes(tw_path)
+    results: list[np.ndarray] = []
+    for i, node in enumerate(nodes):
+        if node.get('_type') != 'MoveJNode':
+            continue
+        if i + 1 >= len(nodes) or nodes[i + 1].get('_type') != 'MoveLNode':
+            continue
+        pojo = nodes[i + 1].get('_pojo', nodes[i + 1])
+        p = pojo.get('pose', {})
+        x = float(p['pose1']) / 1000.0
+        y = float(p['pose2']) / 1000.0
+        z = float(p['pose3']) / 1000.0
+        a = float(p['pose4'])
+        b = float(p['pose5'])
+        c = float(p['pose6'])
+        R = Rotation.from_euler('ZYZ', [a, b, c], degrees=True).as_matrix()
+        T = _make_T(R, np.array([x, y, z]))
+        results.append(T)
+    logger.info('TW 파싱(MoveL TCP): %d개 포즈 발견', len(results))
+    return results
 
 
 # ── AXB 잔차 검증 ─────────────────────────────────────────────────────────────
@@ -200,6 +229,11 @@ def save_yaml(R: np.ndarray, t: np.ndarray, n: int, method: str,
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--tw', default=_DEFAULT_TW, help='.tw 파일 경로')
+    parser.add_argument('--tw2', default=None, help='추가 .tw 파일 (두 세트 합산)')
+    parser.add_argument('--cam-indices', default=None,
+                        help='사용할 cam_data 인덱스 (쉼표 구분, 예: 0,1,2 또는 0-9,12-19)')
+    parser.add_argument('--use-movel', action='store_true',
+                        help='FK 계산 대신 MoveL TCP 좌표 직접 사용 (URDF 오차 제거)')
     parser.add_argument('--method', default='PARK', choices=list(METHODS))
     parser.add_argument('--all', action='store_true', help='5가지 알고리즘 전부 비교')
     parser.add_argument('--dump-fk', action='store_true', help='FK 결과만 출력 후 종료')
@@ -209,17 +243,37 @@ def main() -> None:
     if not os.path.exists(args.tw):
         logger.error('TW 파일 없음: %s', args.tw)
         sys.exit(1)
-    joint_list = load_tw_joints(args.tw)
 
-    # ─ FK 계산 ─
-    fk_results: list[np.ndarray] = []
-    print('\n=== FK 결과 (base_link 기준 link_6 위치) ===')
-    for idx, jq in enumerate(joint_list, 1):
-        T = forward_kinematics(jq)
-        fk_results.append(T)
-        pos = T[:3, 3]
-        print(f'  pose_{idx:02d}  J=[{", ".join(f"{v:7.2f}" for v in jq)}] deg')
-        print(f'          TCP = [{pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}] m')
+    if args.use_movel:
+        fk_results = load_tw_movel(args.tw)
+        if args.tw2:
+            if not os.path.exists(args.tw2):
+                logger.error('TW2 파일 없음: %s', args.tw2)
+                sys.exit(1)
+            fk_results2 = load_tw_movel(args.tw2)
+            logger.info('TW2 MoveL 로드: %d포즈 추가', len(fk_results2))
+            fk_results = fk_results + fk_results2
+        print('\n=== DART MoveL TCP (base_link 기준) ===')
+        for idx, T in enumerate(fk_results, 1):
+            pos = T[:3, 3]
+            print(f'  pose_{idx:02d}  TCP = [{pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}] m')
+    else:
+        joint_list = load_tw_joints(args.tw)
+        if args.tw2:
+            if not os.path.exists(args.tw2):
+                logger.error('TW2 파일 없음: %s', args.tw2)
+                sys.exit(1)
+            joint_list2 = load_tw_joints(args.tw2)
+            logger.info('TW2 로드: %d포즈 추가 (합계 %d)', len(joint_list2), len(joint_list) + len(joint_list2))
+            joint_list = joint_list + joint_list2
+        fk_results = []
+        print('\n=== FK 결과 (base_link 기준 link_6 위치) ===')
+        for idx, jq in enumerate(joint_list, 1):
+            T = forward_kinematics(jq)
+            fk_results.append(T)
+            pos = T[:3, 3]
+            print(f'  pose_{idx:02d}  J=[{", ".join(f"{v:7.2f}" for v in jq)}] deg')
+            print(f'          TCP = [{pos[0]:.4f}, {pos[1]:.4f}, {pos[2]:.4f}] m')
 
     if args.dump_fk:
         return
@@ -231,7 +285,28 @@ def main() -> None:
     cam = np.load(_CAM_DATA)
     R_t2c_all = list(cam['R_target2cam'])
     t_t2c_all = list(cam['t_target2cam'])
-    n_cam = len(R_t2c_all)
+
+    # --cam-indices 파싱 (예: "0-9,12-19" 또는 "10,12,13,14")
+    if args.cam_indices:
+        indices: list[int] = []
+        for part in args.cam_indices.split(','):
+            part = part.strip()
+            if '-' in part:
+                a, b = part.split('-')
+                indices.extend(range(int(a), int(b) + 1))
+            else:
+                indices.append(int(part))
+        if max(indices) >= len(R_t2c_all):
+            logger.error('cam-indices 범위 초과: max=%d, 전체=%d', max(indices), len(R_t2c_all))
+            sys.exit(1)
+        R_t2c_sel = [R_t2c_all[i] for i in indices]
+        t_t2c_sel = [t_t2c_all[i] for i in indices]
+        logger.info('cam-indices 선택: %s  (%d쌍)', args.cam_indices, len(indices))
+    else:
+        R_t2c_sel = R_t2c_all
+        t_t2c_sel = t_t2c_all
+
+    n_cam = len(R_t2c_sel)
     n_fk  = len(fk_results)
     logger.info('cam_data: %d쌍  /  FK: %d포즈', n_cam, n_fk)
 
@@ -244,8 +319,8 @@ def main() -> None:
 
     R_g2b = [fk_results[i][:3, :3] for i in range(n)]
     t_g2b = [fk_results[i][:3, 3]  for i in range(n)]
-    R_t2c = R_t2c_all[:n]
-    t_t2c = t_t2c_all[:n]
+    R_t2c = R_t2c_sel[:n]
+    t_t2c = t_t2c_sel[:n]
 
     # ─ 알고리즘 실행 ─
     if args.all:
