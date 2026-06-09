@@ -28,7 +28,7 @@ def _load_config() -> dict:
         with open(_CONFIG_PATH) as f:
             return yaml.safe_load(f).get('point_collect', {})
     except Exception as e:
-        logger.warning(f'config/runtime.yaml 로드 실패, 기본값 사용: {e}')
+        logger.warning('config/runtime.yaml 로드 실패, 기본값 사용: %s', e)
         return {}
 
 _cfg = _load_config()
@@ -135,7 +135,7 @@ def main() -> None:
             logger.info('=== 수집 완료 — 아래 값을 compute_hand_eye.py camera_points 에 입력 ===')
             for i, pt in enumerate(collected):
                 X, Y, Z = pt['camera_xyz_m']
-                logger.info(f'  [{X:.4f}, {Y:.4f}, {Z:.4f}],  # #{i + 1}')
+                logger.info('  [%.4f, %.4f, %.4f],  # #%d', X, Y, Z, i + 1)
 
 
 if __name__ == '__main__':

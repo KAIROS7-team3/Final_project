@@ -33,14 +33,14 @@ POSES: list[tuple[str, list[float], str]] = [
     # (레이블, [J1,J2,J3,J4,J5,J6], 위험도)
     ("A1",  [  0.0,   0.0,  90.0,   0.0,  90.0,   0.0], ""),
     ("A2",  [ 30.0,   0.0,  90.0,   0.0,  90.0,   0.0], ""),
-    ("A3",  [ 60.0,   0.0,  90.0,   0.0,  90.0,   0.0], "⚠️  J1 +60° 우측 스윕"),
-    ("A4",  [-30.0,   0.0,  90.0,   0.0,  90.0,   0.0], ""),
-    ("A5",  [-60.0,   0.0,  90.0,   0.0,  90.0,   0.0], "⚠️  J1 -60° 좌측 스윕"),
+    ("A3",  [-30.0,   0.0,  90.0,   0.0,  90.0,   0.0], ""),
+    ("A4",  [ 30.0, -20.0,  80.0,   0.0,  90.0,   0.0], ""),
+    ("A5",  [-30.0, -20.0,  80.0,   0.0,  90.0,   0.0], ""),
     ("A6",  [  0.0, -20.0,  90.0,   0.0,  90.0,   0.0], ""),
     ("A7",  [  0.0, -35.0,  90.0,   0.0,  90.0,   0.0], "⚠️  J2 -35° 팔 들어올림"),
     ("A8",  [  0.0,   0.0,  75.0,   0.0,  90.0,   0.0], ""),
     ("A9",  [  0.0,   0.0, 105.0,   0.0,  90.0,   0.0], ""),
-    ("A10", [ 30.0, -20.0,  80.0,   0.0,  90.0,   0.0], ""),
+    ("A10", [  0.0, -30.0,  85.0,   0.0,  90.0,   0.0], "⚠️  J2 -30° 팔 들어올림"),
     ("B1",  [  0.0,   0.0,  90.0,  30.0,  90.0,   0.0], ""),
     ("B2",  [  0.0,   0.0,  90.0, -30.0,  90.0,   0.0], ""),
     ("B3",  [  0.0,   0.0,  90.0,  50.0,  90.0,   0.0], ""),
@@ -93,12 +93,11 @@ class PoseCheckerNode(Node):
         req.blend_type = 0
         req.sync_type  = 0
         future = self.cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        result = future.result()
-        if result is None:
-            self.get_logger().error('move_joint 응답 없음')
+        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
+        if not future.done() or future.result() is None:
+            self.get_logger().error('move_joint 타임아웃 또는 응답 없음')
             return False
-        return bool(result.success)
+        return bool(future.result().success)
 
 
 def _print_table() -> None:
