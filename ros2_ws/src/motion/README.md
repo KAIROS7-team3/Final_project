@@ -101,6 +101,85 @@ ros2 topic echo /dsr01/joint_states_rviz
 - **TCP 모드**: DRL 서버 코드를 로봇에 배포해 TCP 소켓으로 양방향 통신. 실제 state feedback 가능하나 로봇 환경에 따라 소켓 서버 실행 여부 확인 필요.
 - **초기 상태**: 노드 시작 시 실제 그리퍼 위치를 읽지 않아 pulse=0으로 초기화됨.
 
+## vision_drawer open/close 시퀀스 (feat/track-b-vision-sequences)
+
+`unit_actions/toolbox_motion.py`에 정의. `toolbox_seq_runner`에서 실행.
+
+### 공통 구조 (11스텝, open/close 동일)
+
+| 스텝 | open | close |
+|------|------|-------|
+| ① | GRIP_RELEASE | GRIP_RELEASE |
+| ② | MoveJ → SETUP_J | MoveJ → CLOSE_SETUP_J |
+| ③ | MoveL → APPROACH (하드코딩) | MoveL → OPENDOWN (하드코딩) |
+| ④⑤ | **VISUAL_SERVO_XZ** | **VISUAL_SERVO_XZ** |
+| ⑥ | GRIP_BOX | GRIP_BOX |
+| ⑦ | MoveL → OPEN (당김) | MoveL → OPEN |
+| ⑧ | MoveL → SILENCE (Z -9mm) | MoveL → APPROACH (밀기) |
+| ⑨ | GRIP_RELEASE | GRIP_RELEASE |
+| ⑩ | MoveL → INNER | MoveL → CLOSE_END |
+| ⑪ | JOINT_HOME | JOINT_HOME |
+
+### Visual Servoing (④⑤) 개념
+
+탑뷰 카메라는 서랍 손잡이를 보기 어렵고, 그리퍼 카메라는 화질이 낮아 TF 좌표에 오차 존재.
+오차가 얼마인지 정확히 모르므로, **한 번에 이동하지 않고 폐루프로 수렴**시키는 PBVS 방식 사용.
+
+```
+비전(TF) 손잡이 좌표 읽기
+        ↓
+현재 EE 위치와 XZ 오차 계산
+        ↓
+vx = Kp × err_x,  vz = Kp × err_z,  vy = 0 (Y 고정)
+        ↓
+movel_delta 로 조금 이동 → 다시 읽기 → 반복
+        ↓
+|err_xz| ≤ xz_align_thr_mm → GRIP_BOX
+```
+
+- **vy = 0 고정**: Y는 서랍 당기는/미는 방향이라 VS로 건드리지 않음
+- **XZ만 보정**: 그리퍼 카메라가 Y 방향을 향해 장착 → 이미지 가로=X, 세로=Z
+- **파라미터**: `config/visual_servo.yaml` (Kp, 임계값, timeout 등)
+- **구현체**: `unit_actions/visual_servoing.py` — `HandleServoController`
+
+### layer 0 / layer 1 웨이포인트
+
+| | layer 0 (1층) | layer 1 (2층) |
+|-|--------------|--------------|
+| SETUP_J | `[-19.53, 53.85, 110.47, 71.14, 95.19, -75.18]` deg | `[-6.14, 44.85, 116.43, 84.19, 91.97, -71.38]` deg |
+| CLOSE_SETUP_J | `[-23.33, 56.66, 107.63, 67.45, 96.16, -75.52]` deg | `[-23.64, 48.6, 110.08, 67.82, 98.38, -70.33]` deg |
+| APPROACH | `[378.88, 433.02, 65.45, 90,90,90]` | `[380.57, 427.51, 115.68, 90,90,90]` |
+| OPEN | `[378.88, 243.86, 65.46, 90,90,90]` | `[380.56, 237.79, 115.69, 90,90,90]` |
+| INNER | `[378.88, 169.1, 50.45, 90,90,90]` | `[380.56, 165.94, 103.69, 90,90,90]` |
+
+layer 1이 layer 0보다 Z 약 +50mm 높음.
+
+### 실행 명령
+
+```bash
+# vision open layer 0
+ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_open_0
+
+# vision open layer 1
+ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_open_1
+
+# vision close layer 0
+ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_close_0
+
+# vision close layer 1
+ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_close_1
+```
+
+> approach_x/y/z 파라미터 불필요 — VS가 실시간으로 정렬하므로 제거됨.
+
+### 비전팀 연결 시 확인 필요
+
+- `/vision/handle_pose` 토픽명 확정 (현재 `geometry_msgs/PointStamped` 가정)
+- 좌표 단위 확인 (runner에서 m → mm 변환 적용 중)
+- `config/visual_servo.yaml`의 `kp`, `xz_align_thr_mm` 실기 테스트 후 튜닝
+
+---
+
 ## TODO
 
 - [x] **virtual 모드 대응**: `mode` 파라미터로 virtual 감지 → DRL/flange 초기화 생략 (에뮬레이터 블로킹 버그 수정)
@@ -109,3 +188,5 @@ ros2 topic echo /dsr01/joint_states_rviz
 - [ ] **초기 상태 읽기**: 노드 시작 시 DRL로 현재 그리퍼 위치(present_position)를 읽어 `_current_hz_pos` 초기화
   - `_init_drl_server` 완료 후 `_fc03(slave_id, REG_PRESENT_POSITION, 2)` 호출해 실제 pulse 값 반영
   - RViz에서 시작부터 실제 그리퍼 상태 표시 가능
+- [ ] **VS 실기 튜닝**: `config/visual_servo.yaml` kp, xz_align_thr_mm 실측 보정
+- [ ] **비전팀 인터페이스 확정**: `/vision/handle_pose` 토픽명·단위 확인 후 runner 수정
