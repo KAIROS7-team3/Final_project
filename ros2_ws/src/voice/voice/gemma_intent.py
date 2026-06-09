@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 VALID_INTENTS = {"fetch", "return", "cancel", "unknown"}
@@ -33,6 +33,10 @@ class ToolSpec:
     tool_id: str
     label: str
     aliases: tuple[str, ...]
+
+
+def _normalize_tool_key(value: str) -> str:
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
 TOOL_CATALOG: tuple[ToolSpec, ...] = (
@@ -64,12 +68,20 @@ TOOL_CATALOG: tuple[ToolSpec, ...] = (
     ToolSpec(
         tool_id="socket_19mm",
         label="복스 소켓 19mm",
-        aliases=("복스", "소켓", "복스 소켓", "19mm", "socket", "socket 19mm"),
+        aliases=(
+            "복스",
+            "소켓",
+            "복스 소켓",
+            "복스 소켓 19mm",
+            "19mm",
+            "socket",
+            "socket 19mm",
+        ),
     ),
 )
 
 ALIAS_TO_TOOL_ID: dict[str, str] = {
-    alias.strip().lower(): spec.tool_id
+    _normalize_tool_key(alias): spec.tool_id
     for spec in TOOL_CATALOG
     for alias in spec.aliases
 }
@@ -351,7 +363,7 @@ def _strip_code_fence(text: str) -> str:
 
 
 def _normalize_tool_id(tool_id: str) -> str:
-    candidate = tool_id.strip().lower().replace("-", "_").replace(" ", "_")
+    candidate = _normalize_tool_key(tool_id)
     if not candidate:
         return ""
     if candidate in TOOL_IDS:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from voice.gemma_intent import (
     DEFAULT_PROMPT_TEMPLATE_PATH,
     GemmaConfig,
@@ -73,6 +75,24 @@ def test_parse_gemma_output_accepts_fenced_json_and_aliases() -> None:
         needs_confirm=False,
         raw_output='{"intent_type":"fetch","tool_id":"스패너","confidence":0.91,"needs_confirm":false}',
     )
+
+
+@pytest.mark.parametrize(
+    ("alias", "expected_tool_id"),
+    [
+        ("스패너 16mm", "spanner_16mm"),
+        ("복스 소켓 19mm", "socket_19mm"),
+    ],
+)
+def test_parse_gemma_output_normalizes_multiword_aliases(
+    alias: str,
+    expected_tool_id: str,
+) -> None:
+    result = parse_gemma_output(
+        f'{{"intent_type":"fetch","tool_id":"{alias}","confidence":0.91,"needs_confirm":false}}'
+    )
+
+    assert result.tool_id == expected_tool_id
 
 
 def test_classifier_downgrades_low_confidence_fetch_to_unknown() -> None:
