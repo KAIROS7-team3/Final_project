@@ -22,11 +22,13 @@
 # ─────────────────────────────────────────────────────────────────────────
 
 schema:
-  version: 3   # v2 → v3: ArUco 마커 기반 동적 ROI 추가
+  version: 4   # v3 → v4: 마커 2종(탑/프런트) 분리, 실측 치수 반영, 서랍 손잡이 오프셋 추가
   toolbox:
-    required: [origin, slot_size, grid_layers, grid_rows, grid_cols, orientation]
+    required: [origin, dimensions, grid_layers, grid_rows, grid_cols, orientation]
   aruco:
-    required: [marker_id, marker_size_m, marker_to_origin]
+    required: [top_marker, front_marker]
+  drawers:
+    required: [upper, lower]
   tools:
     required: [tool_id, dimensions]
     optional: [display_name, mass_kg, grasp_approach, notes]
@@ -35,6 +37,10 @@ schema:
 toolbox:
   origin: {x: 0.300, y: -0.200, z: 0.050}  # layer 0 기준 좌상단 모서리
   orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+  dimensions:           # 실측값 (m)
+    width:  0.460
+    depth:  0.260
+    height: 0.220
   slot_size: {x: 0.060, y: 0.060}  # 슬롯 격자 한 칸 (참조용 — 공구는 격자 무관하게 놓임)
   grid_layers: 2    # 서랍 수 (스캔 횟수와 일치)
   grid_rows: 1
@@ -42,15 +48,30 @@ toolbox:
   layer_height_z: 0.080   # 층간 높이 — Phase 0 ② 실제 측정 후 갱신
   slot_depth_z: 0.040
 
-# ArUco 마커 — 공구함 천장 부착, 탑뷰 ROI 동적 계산 기준점
-# ⚠️ marker_to_origin 오프셋은 마커 부착 후 실측 갱신 필요
+# ArUco 마커 — DICT_4X4_50, 탑뷰 ROI 계산 및 서랍 기준점 인식용
 aruco:
-  marker_id: 0            # ArUco DICT_4X4_50 기준 ID
-  marker_size_m: 0.050    # 마커 실제 한 변 길이 (pose 추정용)
-  marker_to_origin:       # 마커 중심 → toolbox.origin 오프셋 (m)
-    x: 0.0                # 실측 후 갱신
-    y: 0.0                # 실측 후 갱신
-    z: -0.120             # 천장 → layer 0 바닥까지 높이 — 실측 후 갱신
+  # 탑뷰 카메라(D455f)가 인식하는 공구함 윗면 마커
+  top_marker:
+    id: 2                   # DICT_4X4_50
+    size_m: 0.050
+    marker_to_origin:       # 마커 중심 → toolbox.origin 오프셋 (m)
+      x: 0.0                # 실측 후 갱신
+      y: 0.0                # 실측 후 갱신
+      z: -0.120             # 윗면 → layer 0 바닥까지 높이 — 실측 후 갱신
+  # 앞면 마커 — 서랍 층 기준점 계산용 (그리퍼 카메라 C270 가시 범위)
+  front_marker:
+    id: 0                   # DICT_4X4_50
+    size_m: 0.050
+    view_pose:
+      standoff_m: 0.35      # 마커 정면 접근 거리
+
+# 서랍 손잡이 오프셋 — front_marker 중심 기준 (m)
+# z=0.015: 손잡이 돌출 22mm − 서랍 면판 오목 7mm = 15mm (마커 평면 기준)
+drawers:
+  upper:
+    handle_offset: {y: 0.095, z: 0.015}
+  lower:
+    handle_offset: {y: 0.145, z: 0.015}
 
 # 6종 공구 카탈로그 — 물리 치수·그립 정보만 관리.
 # 슬롯 위치(slot_layer/row/col)는 스캔 시 DB에 기록되며 여기서 관리하지 않음.
