@@ -193,7 +193,7 @@ def make_config() -> ModbusPLCConfig:
         watchdog_coil_label="M0050",
         watchdog_coil_address=80,
         system_state_outputs={
-            SystemState.IDLE: (),
+            SystemState.IDLE: ("M0000",),
             SystemState.MOVING: ("M0002",),
             SystemState.E_STOP: ("M0003",),
             SystemState.ERROR: ("M0004",),
@@ -212,6 +212,8 @@ def make_node(
         modbus=make_config(),
         watchdog_period_s=0.1,
         watchdog_timeout_s=0.5,
+        connect_retry_count=1,
+        connect_retry_backoff_s=0.1,
         db_path="robot_arm.db",
     )
     node._plc = FakePLC(connected=connected, fail_write=fail_write)
@@ -237,7 +239,19 @@ def make_node(
 def test_error_and_estop_led_contract() -> None:
     assert STATE_LED_MAP[SystemState.ERROR] == (LEDColor.RED, LEDMode.FLASH)
     assert STATE_LED_MAP[SystemState.E_STOP] == (LEDColor.RED, LEDMode.SOLID)
-    assert STATE_LED_MAP[SystemState.WATCHDOG] == (LEDColor.YELLOW, LEDMode.FLASH)
+    assert STATE_LED_MAP[SystemState.WATCHDOG] == (LEDColor.WHITE, LEDMode.FLASH)
+    assert STATE_LED_MAP[SystemState.LISTENING] == (LEDColor.YELLOW, LEDMode.PULSE)
+    assert STATE_LED_MAP[SystemState.MOVING] == (LEDColor.RED, LEDMode.PULSE)
+
+
+def test_pythonpath_environment_hook_points_to_workspace_root() -> None:
+    environment_dir = PLC_PACKAGE_ROOT / "environment"
+
+    sh_text = (environment_dir / "plc_core_pythonpath.sh").read_text(encoding="utf-8")
+
+    assert not (environment_dir / "plc_core_pythonpath.dsv").exists()
+    assert '${AMENT_CURRENT_PREFIX}/../..' in sh_text
+    assert '${AMENT_CURRENT_PREFIX}/../../..' not in sh_text
 
 
 def test_watchdog_hook_targets_dedicated_m050_coil() -> None:
@@ -251,10 +265,10 @@ def test_watchdog_hook_targets_dedicated_m050_coil() -> None:
 def test_semantic_states_map_to_latest_ladder_outputs() -> None:
     outputs = ModbusPLCConfig.parse_system_state_outputs(
         ("idle", "moving", "e_stop", "error", "watchdog"),
-        ("none", "M0002", "M0003", "M0004", "M0005"),
+        ("M0000", "M0002", "M0003", "M0004", "M0005"),
     )
 
-    assert outputs[SystemState.IDLE] == ()
+    assert outputs[SystemState.IDLE] == ("M0000",)
     assert outputs[SystemState.E_STOP] == ("M0003",)
     assert outputs[SystemState.ERROR] == ("M0004",)
     assert outputs[SystemState.WATCHDOG] == ("M0005",)
@@ -421,3 +435,29 @@ def test_read_timer_does_not_reconnect_when_disconnected() -> None:
     node.read_timer_callback()
 
     assert ("connect", {}) not in node._plc.calls
+
+
+def test_connect_with_retry_sets_idle_outputs_on_startup() -> None:
+    node = make_node()
+
+    assert node._connect_with_retry() is True
+    assert ("connect", {}) in node._plc.calls
+    assert (
+        "set_system_state",
+        {"state": SystemState.IDLE, "apply_outputs": False},
+    ) in node._plc.calls
+    assert node._status_pub.messages[-1].system_state == SystemState.IDLE.value
+    assert node._pulse_timers
+
+    node._pulse_timers[0].callback()
+
+    assert ("write_coil", {"address": 256, "value": False}) in node._plc.calls
+    assert ("write_coil", {"address": 0, "value": True}) in node._plc.calls
+
+    while node._pulse_timers:
+        node._pulse_timers[0].callback()
+
+    assert node._plc.calls[-1] == (
+        "write_coil",
+        {"address": 0, "value": False},
+    )

@@ -41,7 +41,7 @@ parameter 로드, topic 변환, `/plc/status` publish를 담당하는 wrapper다
 | `watchdog_timeout_s` | `0.5` | heartbeat stall 허용 한계 |
 | `enable_estop_poll` | `false` | PLC E-stop input polling 사용 여부 |
 | `estop_poll_period_s` | `0.1` | E-stop input polling 주기 |
-| `db_path` | `robot_arm.db` | PLC 실패를 기록할 SQLite DB 경로 (절대 경로 권장: `db_path:=/path/to/robot_arm.db`) |
+| `db_path` | `robot_arm.db` | PLC 실패를 기록할 SQLite DB 경로 (예: `db_path:=../robot_arm.db`) |
 
 운영 배포 단계에서는 udev rule로 PLC serial 장치를 `/dev/plc`로 고정하는 것을
 목표로 한다. 현재 개발/검증 기본값은 실제 성공한 `/dev/ttyUSB0`이다.
@@ -130,21 +130,37 @@ ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: watchdog}"
 `watchdog`이다.
 노드는 일반 상태 적용 전 `M0100` reset coil을 pulse해 기존 래치 출력을 끊고,
 `system_state_output_labels`에 연결된 M coil을 push-button처럼 pulse한다.
-`idle`은 출력 coil 없이 reset만 수행한다.
+`idle`은 `M0000`을 pulse해서 초록 상태를 유지하고, reset도 함께 수행한다.
 `e_stop`은 reset을 선행하지 않고 `M0003`을 직접 ON 하며, latch 상태에서 자동
 복구하지 않는다.
+PLC 노드가 연결에 성공하면 기동 직후에도 `idle`을 한 번 적용해서 초록 상태를
+바로 보이게 한다. 이때의 green/idle은 PLC 통신 건강 상태를 보여 주는
+스냅샷이고, 상위 orchestrator는 부팅 reconciliation이 끝나기 전까지 fetch/return
+명령을 계속 막는다.
 
 기본 매핑:
 
 | 상태 | 출력 coil | 연결 출력 |
 |------|-----------|-----------|
-| `idle` | `none` | reset only |
+| `idle` | `M0000` | `P0040` |
 | `listening` | `M0001` | `P0041` |
 | `inferring` | `M0001` | `P0041` |
 | `moving` | `M0002` | `P0042` |
 | `e_stop` | `M0003` | `P0043` |
 | `error` | `M0004` | `P0043` |
 | `watchdog` | `M0005` | `P0044` |
+
+LED 표시:
+
+| 상태 | 색상 | 점등 |
+|------|------|------|
+| `idle` | green | solid |
+| `listening` | yellow | pulse |
+| `inferring` | green | flash |
+| `moving` | red | pulse |
+| `e_stop` | red | solid |
+| `error` | red | flash, 1s on / 1s off |
+| `watchdog` | white | flash |
 
 현장 래더에서 출력 의미가 바뀌면
 `ros2_ws/src/plc/config/xgb_plc.yaml`의 `system_state_output_labels`만 조정한다.
@@ -248,7 +264,7 @@ ros2 launch plc plc.launch.py port:=/dev/ttyUSB0 baudrate:=115200 device_id:=1
 
 `/dev/ttyUSB0`가 아닌 경우 실제 장치로 바꾼다. 데모 중에 watchdog이나 E-stop
 감시를 끄려면 `enable_watchdog:=false` 또는 `enable_estop_poll:=false`를 명시한다.
-DB를 다른 위치로 쓰려면 `db_path:=/absolute/path/to/robot_arm.db`를 같이 넘긴다.
+DB를 다른 위치로 쓰려면 `db_path:=../robot_arm.db`처럼 상대 경로를 같이 넘긴다.
 
 #### watchdog on smoke test
 
@@ -330,7 +346,7 @@ ros2 topic pub --once /plc/system_state std_msgs/msg/String "{data: error}"
 ```
 
 확인 포인트:
-- `idle`은 reset만 수행하고 별도 출력 coil pulse가 없다.
+- `idle`은 `M0000` pulse로 `P0040`이 반응하고, reset도 함께 수행한다.
 - `moving`은 `M0002` pulse로 `P0042`가 반응해야 한다.
 - `error`는 `M0004` pulse로 `P0043`가 반응해야 한다.
 
@@ -473,6 +489,45 @@ launch를 실행한 터미널에서 `Ctrl+C`를 누른다. 노드는 종료 시 
 닫는다.
 
 ## 문제 해결
+
+### 노트북에서 PLC USB-RS485 장치 인식 확인
+
+PLC 본체 자체가 USB로 보이는 것은 아니고, 보통 노트북에는 USB-RS485 어댑터가
+`ttyUSB` 장치로 올라온다. 케이블을 연결한 뒤 아래 순서로 확인한다.
+
+장치 목록 확인:
+
+```bash
+lsusb
+```
+
+최근 커널 로그 확인:
+
+```bash
+dmesg | tail -n 30
+```
+
+serial 장치 파일 확인:
+
+```bash
+ls /dev/ttyUSB*
+```
+
+장치 메타데이터 확인:
+
+```bash
+udevadm info --query=all --name=/dev/ttyUSB0 | grep -E "DEVNAME|ID_VENDOR_ID|ID_MODEL_ID|ID_SERIAL"
+```
+
+현재 사용자 권한 확인:
+
+```bash
+groups
+```
+
+정상이라면 `dmesg`에 USB serial attach 로그가 보이고, `/dev/ttyUSB0` 또는
+`/dev/ttyUSB1` 같은 장치가 생성되어야 한다. 장치 번호가 다르면 launch에서
+`port:=/dev/ttyUSB1`처럼 실제 값으로 넘긴다.
 
 ### `/dev/ttyUSB0`가 없음
 
