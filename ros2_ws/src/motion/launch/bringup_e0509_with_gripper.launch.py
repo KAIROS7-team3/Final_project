@@ -1,23 +1,20 @@
-# e0509 + RH-P12-RN 그리퍼 통합 bringup
+# e0509 + RH-P12-RN 그리퍼 통합 bringup (실물 로봇 전용)
 #
-# virtual 모드 (기본):
-#   ros2 launch motion bringup_e0509_with_gripper.launch.py
-#
-# real 모드 (실물 로봇):
+# 실행 예:
 #   ros2 launch motion bringup_e0509_with_gripper.launch.py \
-#     mode:=real host:=<ROBOT_IP> robot_ip:=<ROBOT_IP>
+#     host:=110.120.1.38 robot_ip:=110.120.1.38
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, RegisterEventHandler, TimerAction
-from launch.conditions import IfCondition, UnlessCondition
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
-    Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution, PythonExpression
+    Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
 )
-from launch_ros.actions import Node, SetRemap
+from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 from dsr_bringup2.utils import read_update_rate
@@ -32,21 +29,18 @@ def generate_launch_description() -> LaunchDescription:
         gripper_urdf = f.read()
 
     update_rate = str(read_update_rate())
-    mode = LaunchConfiguration("mode")
 
     arguments = [
-        DeclareLaunchArgument("name",   default_value="dsr01",       description="Robot namespace"),
-        DeclareLaunchArgument("host",   default_value="127.0.0.1",   description="Doosan controller IP"),
-        DeclareLaunchArgument("port",   default_value="12345",        description="Doosan controller port"),
-        DeclareLaunchArgument("mode",   default_value="virtual",      description="virtual | real"),
-        DeclareLaunchArgument("model",  default_value="e0509",        description="Robot model"),
-        DeclareLaunchArgument("color",  default_value="white",        description="Mesh color"),
-        DeclareLaunchArgument("rt_host", default_value="192.168.137.50", description="RT IP"),
-        DeclareLaunchArgument("remap_tf", default_value="false",      description="Remap /tf"),
+        DeclareLaunchArgument("name",     default_value="dsr01",          description="Robot namespace"),
+        DeclareLaunchArgument("host",     default_value="110.120.1.38",   description="Doosan controller IP"),
+        DeclareLaunchArgument("port",     default_value="12345",           description="Doosan controller port"),
+        DeclareLaunchArgument("model",    default_value="e0509",           description="Robot model"),
+        DeclareLaunchArgument("color",    default_value="white",           description="Mesh color"),
+        DeclareLaunchArgument("rt_host",  default_value="192.168.137.50", description="RT IP"),
         DeclareLaunchArgument("robot_ip", default_value=LaunchConfiguration("host"),
-                              description="Gripper TCP IP (real 모드에서 host와 같음)"),
+                              description="Gripper TCP IP"),
         DeclareLaunchArgument("launch_gripper", default_value="true",
-                              description="gripper_node 실행 (false=RViz 시각화만)"),
+                              description="gripper_node 실행"),
         DeclareLaunchArgument("launch_merger", default_value="true",
                               description="rviz_joint_state_merger 실행"),
     ]
@@ -61,7 +55,7 @@ def generate_launch_description() -> LaunchDescription:
             " host:=", LaunchConfiguration("host"),
             " rt_host:=", LaunchConfiguration("rt_host"),
             " port:=", LaunchConfiguration("port"),
-            " mode:=", LaunchConfiguration("mode"),
+            " mode:=real",
             " model:=", LaunchConfiguration("model"),
             " update_rate:=", update_rate,
         ]
@@ -72,28 +66,6 @@ def generate_launch_description() -> LaunchDescription:
         PathJoinSubstitution([FindPackageShare("dsr_controller2"), "config", "dsr_controller2.yaml"]),
     ]
 
-    # 에뮬레이터 (virtual 모드에서만 실행)
-    run_emulator_node = Node(
-        package="dsr_bringup2",
-        executable="run_emulator",
-        namespace=LaunchConfiguration("name"),
-        parameters=[
-            {"name":    LaunchConfiguration("name")},
-            {"rate":    100},
-            {"standby": 5000},
-            {"command": True},
-            {"host":    LaunchConfiguration("host")},
-            {"port":    LaunchConfiguration("port")},
-            {"mode":    LaunchConfiguration("mode")},
-            {"model":   LaunchConfiguration("model")},
-            {"gripper": "none"},
-            {"mobile":  "none"},
-            {"rt_host": LaunchConfiguration("rt_host")},
-        ],
-        condition=IfCondition(PythonExpression(["'", mode, "' == 'virtual'"])),
-        output="screen",
-    )
-
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
@@ -102,7 +74,6 @@ def generate_launch_description() -> LaunchDescription:
         output="both",
     )
 
-    # e0509_with_gripper.urdf 사용 — 그리퍼 링크 포함
     robot_state_pub_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -111,19 +82,6 @@ def generate_launch_description() -> LaunchDescription:
         output="both",
         remappings=[("joint_states", "joint_states_rviz")],
         parameters=[{"robot_description": gripper_urdf}],
-    )
-
-    original_tf_nodes = GroupAction(
-        actions=[robot_state_pub_node],
-        condition=UnlessCondition(LaunchConfiguration("remap_tf")),
-    )
-    remapped_tf_nodes = GroupAction(
-        actions=[
-            SetRemap(src="/tf", dst="tf"),
-            SetRemap(src="/tf_static", dst="tf_static"),
-            robot_state_pub_node,
-        ],
-        condition=IfCondition(LaunchConfiguration("remap_tf")),
     )
 
     joint_state_broadcaster_spawner = Node(
@@ -140,7 +98,6 @@ def generate_launch_description() -> LaunchDescription:
         arguments=["dsr_controller2", "-c", "controller_manager"],
     )
 
-    # dsr_controller2 활성화 후 gripper + merger 시작
     gripper_service_node = Node(
         package="motion",
         executable="gripper_node",
@@ -149,7 +106,7 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[
             gripper_config,
             {"robot_ip": LaunchConfiguration("robot_ip")},
-            {"mode": LaunchConfiguration("mode")},
+            {"mode": "real"},
         ],
         condition=IfCondition(LaunchConfiguration("launch_gripper")),
     )
@@ -174,15 +131,6 @@ def generate_launch_description() -> LaunchDescription:
         )],
     )
 
-    home_on_start_node = Node(
-        package="motion",
-        executable="home_on_start",
-        name="home_on_start",
-        output="screen",
-        parameters=[{"robot_ns": LaunchConfiguration("name")}],
-        condition=IfCondition(PythonExpression(["'", mode, "' == 'virtual'"])),
-    )
-
     delay_after_controller = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=robot_controller_spawner,
@@ -190,25 +138,16 @@ def generate_launch_description() -> LaunchDescription:
                 gripper_service_node,
                 joint_state_merger_node,
                 rviz_node,
-                # virtual 모드에서만: controller 준비 후 3초 대기 → 홈 자세 이동
-                TimerAction(period=3.0, actions=[home_on_start_node]),
             ],
         )
     )
 
-    # virtual 모드: 에뮬레이터 standby(5s) 이후 control_node가 연결 시도해야 한다.
-    # control_node를 즉시 시작하면 에뮬레이터가 아직 포트를 열기 전에 접속해 실패한다.
-    # real 모드에서도 6s 지연은 무해하다(컨트롤러는 항상 기동 중).
-    delayed_control_node = TimerAction(period=6.0, actions=[control_node])
-
     return LaunchDescription(
         arguments + [
-            run_emulator_node,
-            original_tf_nodes,
-            remapped_tf_nodes,
+            robot_state_pub_node,
+            control_node,
             robot_controller_spawner,
             joint_state_broadcaster_spawner,
-            delayed_control_node,
             delay_after_controller,
         ]
     )

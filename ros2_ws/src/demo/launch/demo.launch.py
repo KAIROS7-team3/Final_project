@@ -1,19 +1,19 @@
 """demo.launch.py
 ────────────────
-voice→DB Gate→motion→PLC LED 데모 통합 런치.
+voice→DB Gate→motion→PLC LED 데모 통합 런치 (실물 로봇 전용).
 
 실행 예:
-  # virtual (에뮬레이터):
-  ros2 launch demo demo.launch.py
-
-  # real (실물 110.120.1.38):
-  ros2 launch demo demo.launch.py mode:=real robot_ip:=110.120.1.38
+  # 기본 (대시보드 포함):
+  ros2 launch demo demo.launch.py robot_ip:=110.120.1.38
 
   # voice 포함:
-  ros2 launch demo demo.launch.py mode:=real robot_ip:=110.120.1.38 voice:=true
+  ros2 launch demo demo.launch.py robot_ip:=110.120.1.38 voice:=true
+
+  # PLC LED 포함:
+  ros2 launch demo demo.launch.py robot_ip:=110.120.1.38 plc:=true
 
   # 전체:
-  ros2 launch demo demo.launch.py mode:=real robot_ip:=110.120.1.38 \\
+  ros2 launch demo demo.launch.py robot_ip:=110.120.1.38 \\
     voice:=true plc:=true plc_port:=/dev/ttyUSB0 dashboard:=true
 
 시작 순서 (타이머 활용):
@@ -43,12 +43,8 @@ def generate_launch_description() -> LaunchDescription:
     # ── Launch 인자 ──────────────────────────────────────────────────────────
     args = [
         DeclareLaunchArgument(
-            "mode", default_value="virtual",
-            description="virtual | real"
-        ),
-        DeclareLaunchArgument(
             "robot_ip", default_value="110.120.1.38",
-            description="Doosan 컨트롤러 IP (real 모드에서 사용)"
+            description="Doosan 컨트롤러 IP"
         ),
         DeclareLaunchArgument(
             "robot_ns", default_value="dsr01",
@@ -76,7 +72,6 @@ def generate_launch_description() -> LaunchDescription:
         ),
     ]
 
-    mode       = LaunchConfiguration("mode")
     robot_ip   = LaunchConfiguration("robot_ip")
     robot_ns   = LaunchConfiguration("robot_ns")
     voice      = LaunchConfiguration("voice")
@@ -86,13 +81,6 @@ def generate_launch_description() -> LaunchDescription:
     db_path    = LaunchConfiguration("db_path")
 
     # ── 0s: Doosan bringup (DSR + gripper) ──────────────────────────────────
-    # virtual 모드에서는 에뮬레이터가 127.0.0.1:12345에서 실행되므로 host를 고정한다.
-    # real 모드에서는 사용자가 지정한 robot_ip를 그대로 사용한다.
-    from launch.substitutions import PythonExpression
-    bringup_host = PythonExpression(
-        ["'127.0.0.1' if '", mode, "' == 'virtual' else '", robot_ip, "'"]
-    )
-
     bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
@@ -102,10 +90,9 @@ def generate_launch_description() -> LaunchDescription:
             ])
         ]),
         launch_arguments={
-            "mode":      mode,
-            "host":      bringup_host,
-            "robot_ip":  robot_ip,
-            "name":      robot_ns,
+            "host":     robot_ip,
+            "robot_ip": robot_ip,
+            "name":     robot_ns,
         }.items(),
     )
 
