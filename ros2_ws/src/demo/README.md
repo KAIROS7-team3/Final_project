@@ -63,15 +63,45 @@ sudo udevadm trigger
 
 ## 빌드
 
+### 0. 서브모듈 초기화 (최초 1회)
+
+`doosan-robot2`와 `easy_handeye2`는 git 서브모듈이다. 워크트리 클론 직후 반드시 초기화한다.
+
+```bash
+# 레포 루트에서 실행
+git submodule update --init --recursive
+```
+
+### 1. Doosan 패키지 빌드
+
 ```bash
 cd ros2_ws
 
-# 1단계: interfaces 먼저
-colcon build --packages-select interfaces
+# dsr_msgs2: 서비스·메시지 타입 (다른 패키지가 의존)
+# dsr_common2: 공통 유틸
+# dsr_description2: URDF/xacro 모델
+# dsr_bringup2: 런치 유틸리티 (bringup_e0509_with_gripper.launch.py)
+# dsr_controller2: 컨트롤러 노드 (motion/move_joint, motion/move_line 서비스 제공)
+# dsr_hardware2: 실물 하드웨어 인터페이스 (real 모드 필수)
+colcon build --packages-select \
+  dsr_msgs2 dsr_common2 dsr_description2 dsr_bringup2 dsr_controller2 dsr_hardware2
 
-# 2단계: 나머지 패키지
 source install/setup.bash
-colcon build --packages-select motion orchestrator dashboard demo
+```
+
+> `virtual` 모드만 사용한다면 `dsr_hardware2`는 생략 가능하다.
+
+### 2. interfaces 빌드
+
+```bash
+colcon build --packages-select interfaces
+source install/setup.bash
+```
+
+### 3. 나머지 패키지 빌드
+
+```bash
+colcon build --packages-select motion orchestrator dashboard demo db plc voice
 
 source install/setup.bash
 ```
