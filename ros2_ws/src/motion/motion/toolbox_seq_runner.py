@@ -496,7 +496,13 @@ class ToolboxSeqRunner(Node):
                     layer_id = int(self._seq_name[-1])
                     self._db.update_drawer_state(layer_id, intent)
                 except Exception as e:
-                    self.get_logger().error(f'[runner] update_drawer_state 실패: {e}')
+                    self.get_logger().error(
+                        f'[runner] update_drawer_state 실패 — DB 불일치, 수동 확인 필요: {e}'
+                    )
+                    try:
+                        self._plc.set_error()
+                    except Exception:
+                        pass
         else:
             self._on_sequence_failure()
             if self._estop_triggered:
@@ -904,6 +910,7 @@ class ToolboxSeqRunner(Node):
         if not pose.valid:
             self.get_logger().error('  [SLOT_XY] slot 좌표 미수신 (/vision/slot_top_pose)')
             return False
+        # Z 이동 목표는 토픽값이 아닌 고정 approach 높이(tool_approach_z_mm) — pose.z 미사용
         if not self._check_vision_coords('SLOT_XY', pose.x, pose.y, self._tool_approach_z_mm):
             return False
         pos = [pose.x, pose.y, self._tool_approach_z_mm] + list(self._tool_approach_ori)
