@@ -189,8 +189,13 @@ def save_yaml(
             },
         },
     }
+    class _IndentDumper(yaml.Dumper):
+        def increase_indent(self, flow=False, indentless=False):
+            return super().increase_indent(flow, indentless=False)
+
     with open(_CONFIG_PATH, 'w') as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        yaml.dump(data, f, Dumper=_IndentDumper,
+                  default_flow_style=False, allow_unicode=True, sort_keys=False)
     logger.info('config/hand_eye.yaml 저장 완료')
 
 
