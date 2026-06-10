@@ -107,10 +107,12 @@ _LATCHED_QOS = QoSProfile(
 )
 
 # S-2: DB gate 적용 대상 시퀀스
-# vision_open/close는 서랍 물리 조작이므로 fetch/return과 동일하게 gate 적용 (tool_id 필수)
-_FETCH_SEQS  = {'vision_fetch', 'socket_fetch', 'vision_open_0', 'vision_open_1'}
-_RETURN_SEQS = {'vision_return', 'socket_return', 'vision_close_0', 'vision_close_1'}
+# fetch/return: 공구 단위 gate (tool_id + check_feasibility)
+# open/close:   서랍(layer) 단위 gate (layer_id + check_drawer_feasibility, tool_id 불필요)
+_FETCH_SEQS  = {'vision_fetch', 'socket_fetch'}
+_RETURN_SEQS = {'vision_return', 'socket_return'}
 _GATE_SEQS   = _FETCH_SEQS | _RETURN_SEQS
+_DRAWER_SEQS = {'vision_open_0', 'vision_open_1', 'vision_close_0', 'vision_close_1'}
 
 
 class ToolboxSeqRunner(Node):
@@ -436,6 +438,30 @@ class ToolboxSeqRunner(Node):
             if not feasible:
                 self.get_logger().error(
                     f'[runner] DB gate 차단 — tool_id={self._tool_id} reason={reason}'
+                )
+                self._plc.set_error()
+                rclpy.shutdown()
+                return
+
+        # S-2: DB gate — open/close 서랍 단위 gate (tool_id 불필요, layer_id로 검사)
+        if self._seq_name in _DRAWER_SEQS:
+            if self._db is None:
+                self.get_logger().error('[runner] DB 연결 없음 — open/close 실행 불가 (S-2)')
+                self._plc.set_error()
+                rclpy.shutdown()
+                return
+            intent    = 'open' if 'open' in self._seq_name else 'close'
+            layer_id  = int(self._seq_name[-1])
+            try:
+                feasible, reason = self._db.check_drawer_feasibility(intent, layer_id)
+            except DBError as e:
+                self.get_logger().error(f'[runner] DB 오류 — open/close 거부 (S-2): {e}')
+                self._plc.set_error()
+                rclpy.shutdown()
+                return
+            if not feasible:
+                self.get_logger().error(
+                    f'[runner] DB gate 차단 — intent={intent} layer={layer_id} reason={reason}'
                 )
                 self._plc.set_error()
                 rclpy.shutdown()
