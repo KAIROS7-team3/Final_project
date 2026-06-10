@@ -450,8 +450,8 @@ class ToolboxSeqRunner(Node):
                 self._plc.set_error()
                 rclpy.shutdown()
                 return
-            intent    = 'open' if 'open' in self._seq_name else 'close'
-            layer_id  = int(self._seq_name[-1])
+            intent   = 'open' if 'open' in self._seq_name else 'close'
+            layer_id = int(self._seq_name[-1])
             try:
                 feasible, reason = self._db.check_drawer_feasibility(intent, layer_id)
             except DBError as e:
@@ -460,6 +460,14 @@ class ToolboxSeqRunner(Node):
                 rclpy.shutdown()
                 return
             if not feasible:
+                if reason == 'already_open':
+                    # 이미 열린 서랍 — 오류 아님, 시퀀스 생략 후 정상 종료
+                    self.get_logger().info(
+                        f'[runner] 서랍 layer={layer_id} 이미 열림 — open 시퀀스 생략'
+                    )
+                    self._is_moving_pub.publish(Bool(data=False))
+                    rclpy.shutdown()
+                    return
                 self.get_logger().error(
                     f'[runner] DB gate 차단 — intent={intent} layer={layer_id} reason={reason}'
                 )
@@ -482,6 +490,13 @@ class ToolboxSeqRunner(Node):
 
         if ok:
             self.get_logger().info(f'[runner] 시퀀스 완료: {self._seq_name}')
+            if self._seq_name in _DRAWER_SEQS and self._db is not None:
+                try:
+                    intent   = 'open' if 'open' in self._seq_name else 'close'
+                    layer_id = int(self._seq_name[-1])
+                    self._db.update_drawer_state(layer_id, intent)
+                except Exception as e:
+                    self.get_logger().error(f'[runner] update_drawer_state 실패: {e}')
         else:
             self._on_sequence_failure()
             if self._estop_triggered:
