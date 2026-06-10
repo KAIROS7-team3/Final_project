@@ -1,12 +1,18 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description() -> LaunchDescription:
+    pointcloud_arg = DeclareLaunchArgument(
+        'pointcloud',
+        default_value='false',
+        description='pointcloud 토픽 활성화 여부 — 캘리브레이션 시에만 true',
+    )
+
     realsense_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([FindPackageShare("realsense2_camera"), "launch", "rs_launch.py"])
@@ -19,7 +25,7 @@ def generate_launch_description() -> LaunchDescription:
             "align_depth.enable": "true",
             "rgb_camera.color_profile": "1280x720x30",
             "depth_module.depth_profile": "848x480x30",
-            "pointcloud.enable": "false",
+            "pointcloud.enable": LaunchConfiguration('pointcloud'),
         }.items(),
     )
 
@@ -30,4 +36,4 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
     )
 
-    return LaunchDescription([realsense_launch, camera_node])
+    return LaunchDescription([pointcloud_arg, realsense_launch, camera_node])
