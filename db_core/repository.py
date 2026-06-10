@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 # DB Gate가 공식적으로 받아들이는 값만 상수로 고정한다.
 VALID_INTENTS = frozenset({"fetch", "return"})
+# 서랍(layer) 단위 DB Gate — 공구 단위 VALID_INTENTS와 분리 (issue #44, Option B).
+VALID_DRAWER_INTENTS = frozenset({"open", "close"})
 VALID_STATUSES = frozenset({"in_slot", "out", "staged", "missing", "fod_alert"})
 VALID_EVENT_TYPES = frozenset(
     {"fetch", "return", "rejected", "error", "timeout", "fod_alert", "reconciled"}
@@ -207,6 +209,49 @@ class ToolRepository:
             current_status,
             f"tool is {current_status}, expected staged",
         )
+
+    def check_drawer_feasibility(self, intent: str, layer_id: int) -> FeasibilityResult:
+        """서랍(layer) 단위 DB Gate (issue #44, Option B).
+
+        fetch/return과 달리 open/close는 특정 공구 상태가 아닌 layer 전체를 검사한다.
+        - open:  해당 layer에 fod_alert 공구가 있으면 차단 (FOD 경보 서랍 개방 금지)
+        - close: 해당 layer에 out/staged 공구가 있으면 차단 (미반납 공구 있는 서랍 닫기 금지)
+
+        서랍 동작은 특정 공구 상태와 무관하므로 tool_id가 없어 rejection event를
+        tool_events에 남기지 않는다. 거부 사유는 반환 reason으로만 전달된다.
+        """
+        intent = intent.strip()
+        if intent not in VALID_DRAWER_INTENTS:
+            return FeasibilityResult(False, f"unsupported drawer intent: {intent}")
+
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT tool_id, current_status FROM tools WHERE home_slot_row = ?",
+                    (layer_id,),
+                ).fetchall()
+        except SchemaValidationError as exc:
+            return FeasibilityResult(False, f"database schema error: {exc}")
+        except sqlite3.Error as exc:
+            return FeasibilityResult(False, f"database unavailable: {exc}")
+
+        if intent == "open":
+            for row in rows:
+                if row["current_status"] == "fod_alert":
+                    return FeasibilityResult(
+                        False,
+                        f"FOD alert active for tool {row['tool_id']} in layer {layer_id}",
+                    )
+            return FeasibilityResult(True, "ok")
+
+        # close: 미반납 공구(out/staged)가 있으면 차단
+        for row in rows:
+            if row["current_status"] in ("out", "staged"):
+                return FeasibilityResult(
+                    False,
+                    f"tool {row['tool_id']} is {row['current_status']} — not returned to layer {layer_id}",
+                )
+        return FeasibilityResult(True, "ok")
 
     def update_tool_status(
         self,
