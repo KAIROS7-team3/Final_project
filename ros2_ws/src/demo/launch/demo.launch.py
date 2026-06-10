@@ -156,8 +156,10 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         parameters=[{
             "db_path":     db_path,
-            "gripper_cam": "/dev/gripper_cam",
-            "top_cam":     "/dev/top_cam",
+            "gripper_cam": "/dev/cam_wrist",
+            # NOTE: /dev/cam_top(99-serial.rules)는 RealSense depth(Z16) 스트림이라
+            # cv2로 프레임을 읽을 수 없음. RGB color 센서(YUYV)인 video6을 직접 지정.
+            "top_cam":     "/dev/video6",
         }],
         condition=IfCondition(dashboard),
     )

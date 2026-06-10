@@ -72,6 +72,8 @@ from unit_actions.toolbox_motion import (  # noqa: E402
     StepKind,
     VEL_L,
     VEL_R,
+    drawer_close_seq,
+    drawer_open_seq,
     full_socket_fetch_seq,
     full_socket_return_seq,
     home_seq,
@@ -87,6 +89,9 @@ DR_MV_MOD_REL = 1
 _QOS_ROBOT_STATUS = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
 _TCP_NAME = "GripperDA_v1"
 _TCP_POS = [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]
+
+# socket_19mm 보관 서랍 (full_socket_fetch_seq/full_socket_return_seq 와 동일 layer)
+_TOOLBOX_LAYER = 1
 
 
 class ToolActionServer(Node):
@@ -177,6 +182,12 @@ class ToolActionServer(Node):
         )
         self._estop_reset_srv = self.create_service(
             Trigger, "~/estop_reset", self._on_estop_reset, callback_group=self._estop_cbg
+        )
+        self._open_toolbox_srv = self.create_service(
+            Trigger, "~/open_toolbox", self._on_open_toolbox, callback_group=self._normal_cbg
+        )
+        self._close_toolbox_srv = self.create_service(
+            Trigger, "~/close_toolbox", self._on_close_toolbox, callback_group=self._normal_cbg
         )
 
         # ── TCP 초기 설정 타이머 ──────────────────────────────────────────
@@ -362,6 +373,67 @@ class ToolActionServer(Node):
         except Exception as exc:
             response.success = False
             response.message = str(exc)
+        finally:
+            self._publish_status(is_moving=False)
+            self._action_lock.release()
+        return response
+
+    def _on_open_toolbox(self, _req, response: Trigger.Response) -> Trigger.Response:
+        """공구함 서랍 열기 (단독 sub-task — fetch/return 없이 서랍만 개방).
+
+        전제조건: 서랍이 닫힌 상태(LAYER{n}_APPROACH 진입 가능)여야 한다.
+        이미 열린 서랍에 호출하면 GRIP_BOX 단계에서 충돌 위험 — 운영자가
+        대시보드에서 서랍 상태를 육안 확인 후 호출할 것.
+        """
+        return self._run_toolbox_seq(
+            seq=drawer_open_seq(_TOOLBOX_LAYER),
+            label="open_toolbox",
+            response=response,
+        )
+
+    def _on_close_toolbox(self, _req, response: Trigger.Response) -> Trigger.Response:
+        """공구함 서랍 닫기 (단독 sub-task — fetch/return 없이 서랍만 폐쇄).
+
+        전제조건: 서랍이 열린 상태(팔이 LAYER{n}_INNER 부근)여야 한다.
+        이미 닫힌 서랍에 호출하면 충돌 위험 — 운영자가 대시보드에서
+        서랍 상태를 육안 확인 후 호출할 것.
+        """
+        return self._run_toolbox_seq(
+            seq=drawer_close_seq(_TOOLBOX_LAYER),
+            label="close_toolbox",
+            response=response,
+        )
+
+    def _run_toolbox_seq(
+        self, seq: list, label: str, response: Trigger.Response
+    ) -> Trigger.Response:
+        if self._estop_latch:
+            response.success = False
+            response.message = "E-stop 래치 — estop_reset 후 재시도"
+            return response
+        if not self._action_lock.acquire(blocking=False):
+            response.success = False
+            response.message = "다른 동작 진행 중"
+            return response
+        try:
+            self.get_logger().info(f"[TAS] {label} 시작")
+            self._set_tcp()
+            self._publish_status(is_moving=True)
+            self._set_plc("moving")
+            ok = self._run_sequence(seq)
+            if ok:
+                response.success = True
+                response.message = f"{label} 완료"
+                self._set_plc("idle")
+            else:
+                response.success = False
+                response.message = f"{label} 실패"
+                self._set_plc("error")
+        except Exception as exc:
+            self.get_logger().error(f"[TAS] {label} 예외: {exc}")
+            response.success = False
+            response.message = str(exc)
+            self._set_plc("error")
         finally:
             self._publish_status(is_moving=False)
             self._action_lock.release()

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
@@ -171,6 +172,12 @@ class DashboardNode(Node):
         self._estop_reset_cli = self.create_client(
             Trigger, "/tool_action_server/estop_reset"
         )
+        self._open_toolbox_cli = self.create_client(
+            Trigger, "/tool_action_server/open_toolbox"
+        )
+        self._close_toolbox_cli = self.create_client(
+            Trigger, "/tool_action_server/close_toolbox"
+        )
 
         # ── 카메라 워커 ───────────────────────────────────────────────────
         gripper_cam_dev = (
@@ -303,7 +310,10 @@ class DashboardNode(Node):
 
         app = FastAPI(title="Robot Demo Dashboard")
 
-        static_dir = Path(__file__).parent.parent / "dashboard_static"
+        try:
+            static_dir = Path(get_package_share_directory("dashboard")) / "dashboard_static"
+        except Exception:
+            static_dir = Path(__file__).parent.parent / "dashboard_static"
 
         @app.get("/", response_class=HTMLResponse)
         async def index():
@@ -376,6 +386,14 @@ class DashboardNode(Node):
         @app.post("/action/estop_reset")
         def action_estop_reset():
             return self._call_trigger(self._estop_reset_cli)
+
+        @app.post("/action/open_toolbox")
+        def action_open_toolbox():
+            return self._call_trigger(self._open_toolbox_cli)
+
+        @app.post("/action/close_toolbox")
+        def action_close_toolbox():
+            return self._call_trigger(self._close_toolbox_cli)
 
         @app.get("/api/db/tools")
         async def api_tools():
