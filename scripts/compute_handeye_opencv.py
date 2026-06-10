@@ -101,25 +101,25 @@ def invert_transforms(
 
 
 def validate_axb(
-    R_cam2base: np.ndarray,
-    t_cam2base: np.ndarray,
+    R_cam2gripper: np.ndarray,
+    t_cam2gripper: np.ndarray,
     R_g2b: list[np.ndarray],
     t_g2b: list[np.ndarray],
     R_t2c: list[np.ndarray],
     t_t2c: list[np.ndarray],
 ) -> tuple[float, float, np.ndarray]:
     """
-    AX=XB 잔차로 캘리브레이션 품질 평가.
-    A_ij = 그리퍼 상대 모션 (base frame)
-    B_ij = 마커 상대 모션 (camera frame)
-    X    = T_cam2base
+    AX=XB 잔차로 캘리브레이션 품질 평가 (eye-in-hand).
+    A_ij = inv(T_g2b[i+1]) * T_g2b[i]  (그리퍼 상대 모션, base frame)
+    B_ij = T_t2c[i+1] * inv(T_t2c[i])  (마커 상대 모션, camera frame)
+    X    = T_cam2gripper
     residual = ||A*X - X*B||_translation  [mm]
     """
-    X = _make_T(R_cam2base, t_cam2base)
+    X = _make_T(R_cam2gripper, t_cam2gripper)
     errs: list[float] = []
     n = len(R_g2b)
     for i in range(n - 1):
-        A = _make_T(R_g2b[i + 1], t_g2b[i + 1]) @ _inv_T(_make_T(R_g2b[i], t_g2b[i]))
+        A = _inv_T(_make_T(R_g2b[i + 1], t_g2b[i + 1])) @ _make_T(R_g2b[i], t_g2b[i])
         B = _make_T(R_t2c[i + 1], t_t2c[i + 1]) @ _inv_T(_make_T(R_t2c[i], t_t2c[i]))
         errs.append(float(np.linalg.norm((A @ X - X @ B)[:3, 3]) * 1000.0))
     arr = np.array(errs)
@@ -134,18 +134,18 @@ def run_calibration(
     method_name: str,
 ) -> tuple[np.ndarray, np.ndarray, float, float]:
     """
-    eye-to-hand calibrateHandEye 실행.
-    반환: (R_cam2base, t_cam2base, mean_axb_mm, max_axb_mm)
+    eye-in-hand calibrateHandEye 실행.
+    입력: T_gripper2base (그대로), T_target2cam (그대로)
+    반환: (R_cam2gripper, t_cam2gripper, mean_axb_mm, max_axb_mm)
     """
-    R_b2g, t_b2g = invert_transforms(R_g2b, t_g2b)
-    R_cam2base, t_cam2base = cv2.calibrateHandEye(
-        R_b2g, t_b2g,
+    R_cam2gripper, t_cam2gripper = cv2.calibrateHandEye(
+        R_g2b, t_g2b,
         R_t2c, [t.reshape(3, 1) for t in t_t2c],
         method=METHODS[method_name],
     )
-    t_cam2base = t_cam2base.flatten()
-    mean_mm, max_mm, _ = validate_axb(R_cam2base, t_cam2base, R_g2b, t_g2b, R_t2c, t_t2c)
-    return R_cam2base, t_cam2base, mean_mm, max_mm
+    t_cam2gripper = t_cam2gripper.flatten()
+    mean_mm, max_mm, _ = validate_axb(R_cam2gripper, t_cam2gripper, R_g2b, t_g2b, R_t2c, t_t2c)
+    return R_cam2gripper, t_cam2gripper, mean_mm, max_mm
 
 
 def save_yaml(
@@ -185,7 +185,8 @@ def save_yaml(
             'tool': 'c270_handeye_collect.py + compute_handeye_opencv.py',
             'frames': {
                 'from': 'c270_optical_frame',
-                'to': 'link_6',
+                'to':   'link_6',
+                'note': 'T_cam2gripper: camera origin expressed in link_6 frame',
             },
         },
     }
@@ -259,7 +260,7 @@ def main() -> None:
                 cam_tilt = float(np.degrees(np.arccos(np.clip(abs(float(R[2, 2])), 0.0, 1.0))))
                 results[name] = (R, t, mean_mm, max_mm)
                 print(f'  {name:12s}  AXB평균 {mean_mm:7.1f}mm  최대 {max_mm:7.1f}mm'
-                      f'  높이 {t[2]:.3f}m  기울기 {cam_tilt:.1f}deg')
+                      f'  Z(link6기준) {t[2]:.3f}m  기울기 {cam_tilt:.1f}deg')
             except Exception as e:
                 print(f'  {name:12s}  실패: {e}')
 
@@ -287,10 +288,10 @@ def main() -> None:
     T[:3, :3] = R_best
     T[:3, 3] = t_best
     cam_tilt = float(np.degrees(np.arccos(np.clip(abs(float(R_best[2, 2])), 0.0, 1.0))))
-    print(f'\n=== 결과 (camera_color_optical_frame → base_link) ===')
+    print(f'\n=== 결과 T_cam2gripper (c270_optical_frame → link_6) ===')
     print(f'변환 행렬:\n{np.round(T, 5)}')
-    print(f'카메라 위치: [{t_best[0]:.3f}, {t_best[1]:.3f}, {t_best[2]:.3f}] m')
-    print(f'카메라 기울기 (수직 기준): {cam_tilt:.1f}deg')
+    print(f'카메라 원점 (link_6 기준): [{t_best[0]:.3f}, {t_best[1]:.3f}, {t_best[2]:.3f}] m')
+    print(f'카메라 기울기 (link_6 Z축 기준): {cam_tilt:.1f}deg')
     print(f'AXB 평균 잔차: {mean_best:.1f}mm  /  최대: {max_best:.1f}mm')
     print(f'사용 샘플: {n_used}/{n_total}')
 

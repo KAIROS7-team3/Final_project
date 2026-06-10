@@ -23,7 +23,7 @@ import numpy as np
 import yaml
 
 # ── 설정 ──────────────────────────────────────────────────────────────────
-DEVICE       = 2          # /dev/video2 = C270
+DEVICE       = 8          # /dev/video8 = C270
 WIDTH        = 640
 HEIGHT       = 480
 FPS          = 30
