@@ -487,6 +487,7 @@ class ToolboxSeqRunner(Node):
                 fut = self._stop_cli.call_async(MoveStop.Request())
                 rclpy.spin_until_future_complete(self, fut, timeout_sec=0.5)
                 self.get_logger().info('[runner] 시퀀스 실패 — DSR move_stop 전송')
+                time.sleep(0.3)  # DSR 감속 완료 대기 — HIL 실측 후 조정
             except Exception as e:
                 self.get_logger().error(f'[runner] move_stop 실패 (무시): {e}')
         else:
