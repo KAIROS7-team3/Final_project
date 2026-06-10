@@ -107,8 +107,9 @@ _LATCHED_QOS = QoSProfile(
 )
 
 # S-2: DB gate 적용 대상 시퀀스
-_FETCH_SEQS  = {'vision_fetch', 'socket_fetch'}
-_RETURN_SEQS = {'vision_return', 'socket_return'}
+# vision_open/close는 서랍 물리 조작이므로 fetch/return과 동일하게 gate 적용 (tool_id 필수)
+_FETCH_SEQS  = {'vision_fetch', 'socket_fetch', 'vision_open_0', 'vision_open_1'}
+_RETURN_SEQS = {'vision_return', 'socket_return', 'vision_close_0', 'vision_close_1'}
 _GATE_SEQS   = _FETCH_SEQS | _RETURN_SEQS
 
 
@@ -456,11 +457,15 @@ class ToolboxSeqRunner(Node):
         if ok:
             self.get_logger().info(f'[runner] 시퀀스 완료: {self._seq_name}')
         else:
+            self._on_sequence_failure()
             if self._estop_triggered:
-                self.get_logger().error(f'[runner] E-stop으로 시퀀스 중단: {self._seq_name}')
+                # S-3: E-stop 상태에서는 홈 복귀 시퀀스 진입 금지 — actuator 명령 누출 차단
+                self.get_logger().error(f'[runner] E-stop으로 시퀀스 중단: {self._seq_name} — 홈 복귀 생략')
+                self._is_moving_pub.publish(Bool(data=False))
+                rclpy.shutdown()
+                return
             else:
                 self.get_logger().error(f'[runner] 시퀀스 실패: {self._seq_name} — 홈 복귀 시도')
-            self._on_sequence_failure()
             home_ok = self._run_sequence(home_seq())
             if not home_ok:
                 self.get_logger().error('[runner] 홈 복귀 실패 — 수동 개입 필요')
@@ -600,6 +605,13 @@ class ToolboxSeqRunner(Node):
             set_req.name = name
             fut = self._set_tcp_cli.call_async(set_req)
             rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+            res = fut.result()
+            if res is None or not getattr(res, 'success', True):
+                self.get_logger().error(
+                    f'[runner] set_current_tcp 응답 실패: name={name} '
+                    f'msg={getattr(res, "message", "timeout")}'
+                )
+                return False
             self.get_logger().info(f'[runner] TCP 활성화 완료: {name}')
             return True
 
