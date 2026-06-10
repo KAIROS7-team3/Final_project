@@ -48,7 +48,7 @@ calibration:
 
   # collect_handeye_data.py — ArUco 감지 파라미터
   aruco_marker_size_m: 0.05     # 마커 한 변 길이 [m] — DICT_4X4_50 5cm×5cm 실측값
-  aruco_dict_id: 0              # cv2.aruco.DICT_4X4_50 (aruco_markers.pdf ID=0/1/2)
+  aruco_dict_id: 0              # cv2.aruco.DICT_4X4_50 (multi_item/markers/aruco_markers.pdf ID=0/1/2)
   aruco_target_id: 0            # 캘리브레이션에 사용할 마커 ID
   min_sample_count: 15          # calibrateHandEye 권장 최소 샘플 수
 
