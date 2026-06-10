@@ -35,11 +35,11 @@ tracker:
 
 aruco:
   # ArUco 마커 스캔 설정 — MarkerScanNode 전용
-  # scripts/aruco_markers/ 에서 생성한 마커와 동일 딕셔너리 사용 필수
+  # scripts/multi_item/markers/ 에서 생성한 마커와 동일 딕셔너리 사용 필수
   dictionary: "DICT_4X4_50"
 
   # 실제 인쇄된 마커 한 변 길이 [m] — 오차 ±1mm 이내로 측정
-  # 현재 출력본: 5×5 cm (scripts/aruco_markers/ ID 0·1·2)
+  # 현재 출력본: 5×5 cm (scripts/multi_item/markers/ ID 0·1·2)
   marker_size_m: 0.05
 
   # 마커 중심 기준 공구 place 허용 반경 [mm]
