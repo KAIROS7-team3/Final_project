@@ -211,47 +211,59 @@ class ToolRepository:
         )
 
     def check_drawer_feasibility(self, intent: str, layer_id: int) -> FeasibilityResult:
-        """서랍(layer) 단위 DB Gate (issue #44, Option B).
+        """서랍(layer) 단위 DB Gate (issue #44).
 
-        fetch/return과 달리 open/close는 특정 공구 상태가 아닌 layer 전체를 검사한다.
-        - open:  해당 layer에 fod_alert 공구가 있으면 차단 (FOD 경보 서랍 개방 금지)
-        - close: 해당 layer에 out/staged 공구가 있으면 차단 (미반납 공구 있는 서랍 닫기 금지)
-
-        서랍 동작은 특정 공구 상태와 무관하므로 tool_id가 없어 rejection event를
-        tool_events에 남기지 않는다. 거부 사유는 반환 reason으로만 전달된다.
+        - open:  drawers 테이블에 해당 layer가 이미 열려 있으면 (False, "already_open") 반환.
+                 호출자는 reason == "already_open"일 때 open 동작을 생략하고 진행한다.
+        - close: 항상 (True, "ok") — DB 레벨 차단 없음. 닫기 완료 후 update_drawer_state 호출.
         """
         intent = intent.strip()
         if intent not in VALID_DRAWER_INTENTS:
             return FeasibilityResult(False, f"unsupported drawer intent: {intent}")
 
+        if intent == "close":
+            return FeasibilityResult(True, "ok")
+
+        # open: drawers 테이블에서 현재 열림 여부 확인
         try:
             with self._connect() as conn:
-                rows = conn.execute(
-                    "SELECT tool_id, current_status FROM tools WHERE home_slot_row = ?",
+                row = conn.execute(
+                    "SELECT is_open FROM drawers WHERE layer_id = ?",
                     (layer_id,),
-                ).fetchall()
+                ).fetchone()
         except SchemaValidationError as exc:
             return FeasibilityResult(False, f"database schema error: {exc}")
         except sqlite3.Error as exc:
             return FeasibilityResult(False, f"database unavailable: {exc}")
 
-        if intent == "open":
-            for row in rows:
-                if row["current_status"] == "fod_alert":
-                    return FeasibilityResult(
-                        False,
-                        f"FOD alert active for tool {row['tool_id']} in layer {layer_id}",
-                    )
-            return FeasibilityResult(True, "ok")
-
-        # close: 미반납 공구(out/staged)가 있으면 차단
-        for row in rows:
-            if row["current_status"] in ("out", "staged"):
-                return FeasibilityResult(
-                    False,
-                    f"tool {row['tool_id']} is {row['current_status']} — not returned to layer {layer_id}",
-                )
+        if row and row["is_open"]:
+            return FeasibilityResult(False, "already_open")
         return FeasibilityResult(True, "ok")
+
+    def update_drawer_state(self, layer_id: int, intent: str) -> UpdateResult:
+        """서랍 열림/닫힘 상태를 drawers 테이블에 기록한다.
+
+        open/close 동작 완료 후 motion이 호출한다.
+        layer_id 행이 없으면 자동 생성(INSERT OR REPLACE).
+        """
+        intent = intent.strip()
+        if intent not in VALID_DRAWER_INTENTS:
+            return UpdateResult(False, f"unsupported drawer intent: {intent}")
+
+        is_open = 1 if intent == "open" else 0
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            with self._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    "INSERT OR REPLACE INTO drawers (layer_id, is_open, last_updated)"
+                    " VALUES (?, ?, ?)",
+                    (layer_id, is_open, now),
+                )
+                conn.commit()
+        except sqlite3.Error as exc:
+            return UpdateResult(False, f"failed to update drawer state: {exc}")
+        return UpdateResult(True, "ok")
 
     def update_tool_status(
         self,

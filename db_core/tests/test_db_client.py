@@ -55,61 +55,59 @@ class TestCheckFeasibility:
 
 
 class TestCheckDrawerFeasibility:
-    """issue #44 Option B — 서랍(layer) 단위 DB Gate."""
+    """issue #44 — 서랍(layer) 단위 DB Gate."""
 
-    def test_open_empty_layer_ok(self, db):
-        feasible, reason = db.check_drawer_feasibility("open", 1)
+    def test_open_unknown_layer_ok(self, db):
+        # drawers 테이블에 row 없음 → 닫혀 있다고 간주 → 열기 허용
+        feasible, reason = db.check_drawer_feasibility("open", 0)
         assert feasible is True
         assert reason == ""
 
-    def test_open_blocked_by_fod_alert(self, db):
-        db._conn.execute(
-            "UPDATE tools SET current_status='fod_alert' WHERE tool_id='wrench_8mm'"
-        )
-        db._conn.commit()
+    def test_open_closed_layer_ok(self, db):
+        db.update_drawer_state(0, "close")
+        feasible, _ = db.check_drawer_feasibility("open", 0)
+        assert feasible is True
+
+    def test_open_already_open_blocked(self, db):
+        db.update_drawer_state(0, "open")
         feasible, reason = db.check_drawer_feasibility("open", 0)
         assert feasible is False
-        assert "FOD" in reason
-        assert "wrench_8mm" in reason
+        assert reason == "already_open"
 
-    def test_open_other_layer_unaffected(self, db):
-        db._conn.execute(
-            "UPDATE tools SET current_status='fod_alert' WHERE tool_id='wrench_8mm'"
-        )
-        db._conn.commit()
-        # wrench_8mm은 layer 0; layer 1은 비어있으므로 통과
+    def test_open_other_layer_independent(self, db):
+        db.update_drawer_state(0, "open")
         feasible, _ = db.check_drawer_feasibility("open", 1)
         assert feasible is True
 
-    def test_close_in_slot_ok(self, db):
-        # wrench_8mm이 in_slot이면 닫기 허용
+    def test_close_always_ok(self, db):
         feasible, reason = db.check_drawer_feasibility("close", 0)
         assert feasible is True
         assert reason == ""
 
-    def test_close_blocked_tool_out(self, db):
-        db._conn.execute(
-            "UPDATE tools SET current_status='out' WHERE tool_id='wrench_8mm'"
-        )
-        db._conn.commit()
-        feasible, reason = db.check_drawer_feasibility("close", 0)
-        assert feasible is False
-        assert "wrench_8mm" in reason
-        assert "out" in reason
-
-    def test_close_blocked_tool_staged(self, db):
-        db._conn.execute(
-            "UPDATE tools SET current_status='staged' WHERE tool_id='wrench_8mm'"
-        )
-        db._conn.commit()
-        feasible, reason = db.check_drawer_feasibility("close", 0)
-        assert feasible is False
-        assert "staged" in reason
+    def test_close_even_when_open(self, db):
+        db.update_drawer_state(0, "open")
+        feasible, _ = db.check_drawer_feasibility("close", 0)
+        assert feasible is True
 
     def test_invalid_intent_rejected(self, db):
         feasible, reason = db.check_drawer_feasibility("fetch", 0)
         assert feasible is False
         assert "unsupported" in reason
+
+
+class TestUpdateDrawerState:
+    def test_open_then_close(self, db):
+        db.update_drawer_state(0, "open")
+        feasible, reason = db.check_drawer_feasibility("open", 0)
+        assert feasible is False and reason == "already_open"
+
+        db.update_drawer_state(0, "close")
+        feasible, _ = db.check_drawer_feasibility("open", 0)
+        assert feasible is True
+
+    def test_invalid_intent_raises(self, db):
+        with pytest.raises(DBError):
+            db.update_drawer_state(0, "fetch")
 
 
 # 한 공구를 합법적으로 반복 순환시키는 fetch/return 전이열 (S-6 2단계 모델).
