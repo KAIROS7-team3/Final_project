@@ -477,7 +477,20 @@ class ToolboxSeqRunner(Node):
         rclpy.shutdown()
 
     def _on_sequence_failure(self) -> None:
-        """E-5: 시퀀스 실패 시 PLC 오류 표시 + DB 시스템 이벤트 기록."""
+        """E-5: 시퀀스 실패 시 DSR 정지 → PLC 오류 표시 + DB 시스템 이벤트 기록.
+
+        home_seq() 진입 전 move_stop을 먼저 호출해 타임아웃된 move_line이
+        컨트롤러 큐에 남아 있는 경우 MoveJoint 충돌을 방지한다.
+        """
+        if self._stop_cli.service_is_ready():
+            try:
+                fut = self._stop_cli.call_async(MoveStop.Request())
+                rclpy.spin_until_future_complete(self, fut, timeout_sec=0.5)
+                self.get_logger().info('[runner] 시퀀스 실패 — DSR move_stop 전송')
+            except Exception as e:
+                self.get_logger().error(f'[runner] move_stop 실패 (무시): {e}')
+        else:
+            self.get_logger().warn('[runner] move_stop 서비스 미준비 — DSR 정지 생략')
         try:
             self._plc.set_error()
         except Exception as e:
