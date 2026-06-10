@@ -3,11 +3,14 @@
 Subscribe : /vision/detections                      (vision_msgs/Detection2DArray)
             /d455f/aligned_depth_to_color/image_raw (sensor_msgs/Image)
 Publish   : /vision/tool_poses                      (vision_msgs/Detection3DArray)
+            /vision/tool_top_pose                   (geometry_msgs/PointStamped)
+              — 신뢰도 최고 공구의 base_link XYZ [m]. 검출 없으면 발행 중단.
 
 처리 흐름:
   1. YOLOv11s bbox 중심 + aligned depth → 3D 점 (카메라 좌표계)
   2. hand_eye.yaml T_cam_to_base 적용 → base_link 좌표계
   3. Detection3D로 발행 (position 확정, orientation 탑뷰 기본값)
+  4. 신뢰도 최고 검출 → PointStamped로 /vision/tool_top_pose 추가 발행
 
 hand_eye.yaml 미캘리브레이션 시: 카메라 좌표계 그대로 발행 + 경고.
 Phase 2에서 ICP/FoundationPose 도입 시 orientation 정밀화 예정.
@@ -24,6 +27,7 @@ from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
+from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import Image
 from vision_msgs.msg import (
     Detection2DArray,
@@ -109,6 +113,9 @@ class PoseNode(Node):
         self._pose_pub = self.create_publisher(
             Detection3DArray, "/vision/tool_poses", _QOS_BEST_EFFORT_5
         )
+        self._tool_top_pub = self.create_publisher(
+            PointStamped, "/vision/tool_top_pose", _QOS_BEST_EFFORT_5
+        )
 
         self.get_logger().info(
             f"[pose_node] ready - calibrated={self._T is not None}"
@@ -166,11 +173,34 @@ class PoseNode(Node):
             pose_array.detections.append(det3d)
 
         self._pose_pub.publish(pose_array)
+        self._publish_tool_top_pose(det_msg.header, pose_array)
 
         if pose_array.detections:
             self.get_logger().debug(
                 f"[pose_node] published {len(pose_array.detections)} poses"
             )
+
+    def _publish_tool_top_pose(self, header, pose_array: Detection3DArray) -> None:
+        """신뢰도 최고 검출을 /vision/tool_top_pose (PointStamped)로 발행.
+
+        검출 없으면 발행하지 않는다 — VS가 이전 좌표로 수렴하는 것을 방지.
+        """
+        if not pose_array.detections:
+            return
+
+        best = max(
+            pose_array.detections,
+            key=lambda d: d.results[0].hypothesis.score,
+        )
+        pos = best.results[0].pose.pose.position
+
+        pt = PointStamped()
+        pt.header = header
+        pt.header.frame_id = pose_array.header.frame_id
+        pt.point.x = pos.x
+        pt.point.y = pos.y
+        pt.point.z = pos.z
+        self._tool_top_pub.publish(pt)
 
     def _build_detection3d(
         self,

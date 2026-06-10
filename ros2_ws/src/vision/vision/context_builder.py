@@ -2,6 +2,8 @@
 
 Subscribe : /vision/tracked_poses  (vision_msgs/Detection3DArray)
 Publish   : /vision/scene_context  (std_msgs/String, JSON)
+            /vision/slot_top_pose  (geometry_msgs/PointStamped)
+              — 빈 슬롯 중 첫 번째의 base_link XYZ [m]. 빈 슬롯 없으면 발행 중단.
 
 Gemma 4 의도 분류 노드(voice/)와 orchestrator(BT)가 이 JSON을 소비한다.
 tool 위치를 toolbox.yaml 슬롯 좌표와 대조해 슬롯 점유 정보를 생성한다.
@@ -34,6 +36,7 @@ from typing import Any
 import numpy as np
 import rclpy
 import yaml
+from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import String
@@ -114,6 +117,9 @@ class ContextBuilder(Node):
         )
         # interfaces.md §4: Reliable / depth 1 (orchestrator 소비)
         self._pub = self.create_publisher(String, "/vision/scene_context", _QOS_RELIABLE_1)
+        self._slot_top_pub = self.create_publisher(
+            PointStamped, "/vision/slot_top_pose", _QOS_BEST_EFFORT_5
+        )
 
         self.get_logger().info(
             f"[context_builder] ready - slots={len(self._slots)} "
@@ -161,6 +167,7 @@ class ContextBuilder(Node):
             })
 
         empty = [s for s in self._all_slots if s not in occupied]
+        self._publish_slot_top_pose(msg.header, empty)
         summary = self._build_summary(tools_visible, empty)
 
         scene: dict[str, Any] = {

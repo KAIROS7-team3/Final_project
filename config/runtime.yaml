@@ -46,11 +46,14 @@ calibration:
   error_warn_mm: 5.0            # 이 값 초과 시 재확인 권장
   error_ok_mm: 3.0              # 이 값 초과 시 추가 수집 권장
 
-  # collect_handeye_data.py — ArUco 감지 파라미터
-  aruco_marker_size_m: 0.05     # 마커 한 변 길이 [m] — DICT_4X4_50 5cm×5cm 실측값
-  aruco_dict_id: 0              # cv2.aruco.DICT_4X4_50 (multi_item/markers/aruco_markers.pdf ID=0/1/2)
-  aruco_target_id: 0            # 캘리브레이션에 사용할 마커 ID
+  # c270_handeye_collect.py — ChArUco 보드 파라미터 (실측값)
+  charuco_squares_x: 5          # 가로 칸 수
+  charuco_squares_y: 7          # 세로 칸 수
+  charuco_square_size_m: 0.038  # 체커보드 칸 한 변 [m] — 실측 38mm
+  charuco_marker_size_m: 0.0315 # ArUco 마커 한 변 [m] — 실측 31.5mm
+  aruco_dict_id: 0              # cv2.aruco.DICT_4X4_50
   min_sample_count: 15          # calibrateHandEye 권장 최소 샘플 수
+  min_charuco_corners: 6        # 포즈 추정에 필요한 최소 ChArUco 코너 수
 
   # collect_handeye_data.py — TF 프레임 이름 (Doosan e0509 ROS2 드라이버 기준)
   base_frame: base_link

@@ -12,7 +12,7 @@ import os
 import sys
 import cv2
 
-DEVICE = 2          # /dev/video2 = C270
+DEVICE = 8          # /dev/video8 = C270
 WIDTH, HEIGHT = 640, 480
 FPS = 30
 SAVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'samples_c270')
