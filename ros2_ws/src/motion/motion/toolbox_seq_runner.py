@@ -72,7 +72,6 @@ from unit_actions.toolbox_motion import (
     StepKind,
     Step,
     VEL_L, ACC_L, VEL_R, ACC_R, VEL_J, ACC_J,
-    TOOL_APPROACH_Z_MM, TOOL_APPROACH_ORI, TOOL_DESCENT_ORI,
     home_seq,
     drawer_open_seq,
     drawer_close_seq,
@@ -106,12 +105,6 @@ _LATCHED_QOS = QoSProfile(
     durability=DurabilityPolicy.TRANSIENT_LOCAL,
     history=HistoryPolicy.KEEP_LAST,
 )
-
-# 비전 좌표 허용 범위 (DSR BASE 좌표계, mm)
-# 실제 비전 좌표 수신 후 config/toolbox.yaml 이관 예정 (E-4)
-_VIS_X_MIN, _VIS_X_MAX = 50.0,  800.0
-_VIS_Y_MIN, _VIS_Y_MAX = -600.0, 600.0
-_VIS_Z_MIN, _VIS_Z_MAX = -5.0,   700.0
 
 # S-2: DB gate 적용 대상 시퀀스
 _FETCH_SEQS  = {'vision_fetch', 'socket_fetch'}
@@ -277,10 +270,50 @@ class ToolboxSeqRunner(Node):
         self._plc = PLCClient()
         self._plc.connect()
 
+        # E-4: config/toolbox.yaml vision_motion 섹션에서 좌표·범위 파라미터 로드
+        self._load_toolbox_config()
+
         self._seq_name = seq_name
         self._done = False
         # 0.5s 후 _run_once 실행 — 그 사이 is_moving 구독 콜백이 retained 값을 수신할 수 있음
         self._timer = self.create_timer(0.5, self._run_once, callback_group=self._cb_group)
+
+    # ── 설정 로딩 ─────────────────────────────────────────────────────────
+
+    def _load_toolbox_config(self) -> None:
+        """E-4: config/toolbox.yaml vision_motion 섹션에서 파라미터 로드."""
+        import yaml
+        cfg_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            '../../../../config/toolbox.yaml',
+        )
+        try:
+            with open(cfg_path, encoding='utf-8') as f:
+                cfg = yaml.safe_load(f)
+            vm = cfg.get('vision_motion', {})
+            self._tool_approach_z_mm: float = float(vm.get('tool_approach_z_mm', 234.0))
+            self._tool_approach_ori: list   = list(vm.get('tool_approach_ori', [53.23, 180.0, -38.07]))
+            self._tool_descent_ori: list    = list(vm.get('tool_descent_ori', [48.74, -180.0, -42.55]))
+            lim = vm.get('workspace_limits', {})
+            x = lim.get('x', [50.0, 800.0])
+            y = lim.get('y', [-600.0, 600.0])
+            z = lim.get('z', [-5.0, 700.0])
+            self._vis_x_min, self._vis_x_max = float(x[0]), float(x[1])
+            self._vis_y_min, self._vis_y_max = float(y[0]), float(y[1])
+            self._vis_z_min, self._vis_z_max = float(z[0]), float(z[1])
+            self.get_logger().info(
+                f'[runner] toolbox.yaml 로드 완료 — '
+                f'approach_z={self._tool_approach_z_mm}mm '
+                f'ws_x=[{self._vis_x_min},{self._vis_x_max}]'
+            )
+        except Exception as e:
+            self.get_logger().error(f'[runner] toolbox.yaml 로드 실패: {e} — 기본값 사용')
+            self._tool_approach_z_mm = 234.0
+            self._tool_approach_ori  = [53.23, 180.0, -38.07]
+            self._tool_descent_ori   = [48.74, -180.0, -42.55]
+            self._vis_x_min, self._vis_x_max = 50.0, 800.0
+            self._vis_y_min, self._vis_y_max = -600.0, 600.0
+            self._vis_z_min, self._vis_z_max = -5.0, 700.0
 
     # ── 콜백 ──────────────────────────────────────────────────────────────
 
@@ -295,7 +328,21 @@ class ToolboxSeqRunner(Node):
             self._estop_event.set()   # VS 루프에 즉시 전달
             self.get_logger().error('[runner] E-stop 수신 — 모션 즉시 중단 요청')
             if self._stop_cli.service_is_ready():
-                self._stop_cli.call_async(MoveStop.Request())
+                fut = self._stop_cli.call_async(MoveStop.Request())
+                fut.add_done_callback(self._on_move_stop_result)
+            else:
+                self.get_logger().error('[runner] move_stop 서비스 미준비 — DSR 정지 명령 전송 불가 (수동 확인 필요)')
+
+    def _on_move_stop_result(self, future) -> None:
+        """S-3: move_stop 응답 확인 — 실패 시 경고 로그."""
+        try:
+            res = future.result()
+            if res is None or not res.success:
+                self.get_logger().error('[runner] move_stop 응답 실패 — DSR 정지 미확인 (수동 확인 필요)')
+            else:
+                self.get_logger().info('[runner] move_stop 응답 확인')
+        except Exception as e:
+            self.get_logger().error(f'[runner] move_stop 응답 처리 오류: {e}')
 
     def _on_handle_pose(self, msg: PointStamped) -> None:
         """VS: 손잡이 중심 좌표 수신 (robot base frame, m → mm 변환)."""
@@ -452,9 +499,9 @@ class ToolboxSeqRunner(Node):
             self.get_logger().error(f'[runner] {label} 좌표 미설정 (0,0,0) — 실행 거부')
             return False
         for val, lo, hi, axis in [
-            (x, _VIS_X_MIN, _VIS_X_MAX, 'x'),
-            (y, _VIS_Y_MIN, _VIS_Y_MAX, 'y'),
-            (z, _VIS_Z_MIN, _VIS_Z_MAX, 'z'),
+            (x, self._vis_x_min, self._vis_x_max, 'x'),
+            (y, self._vis_y_min, self._vis_y_max, 'y'),
+            (z, self._vis_z_min, self._vis_z_max, 'z'),
         ]:
             if not (lo <= val <= hi):
                 self.get_logger().error(
@@ -681,7 +728,7 @@ class ToolboxSeqRunner(Node):
     # ── 공구 접근 VS (vision_fetch) ───────────────────────────────────────────
 
     def _exec_move_l_top_xy(self) -> bool:
-        """③⑦: 탑뷰 D455f XY + TOOL_APPROACH_Z_MM 로 이동."""
+        """③⑦: 탑뷰 D455f XY + self._tool_approach_z_mm 로 이동."""
         with self._top_tool_lock:
             pose = ToolPose(
                 x=self._latest_top_tool.x,
@@ -692,11 +739,11 @@ class ToolboxSeqRunner(Node):
         if not pose.valid:
             self.get_logger().error('  [TOP_XY] 탑뷰 공구 좌표 미수신 (/vision/tool_top_pose)')
             return False
-        if not self._check_vision_coords('TOP_XY', pose.x, pose.y, TOOL_APPROACH_Z_MM):
+        if not self._check_vision_coords('TOP_XY', pose.x, pose.y, self._tool_approach_z_mm):
             return False
-        pos = [pose.x, pose.y, TOOL_APPROACH_Z_MM] + list(TOOL_APPROACH_ORI)
+        pos = [pose.x, pose.y, self._tool_approach_z_mm] + list(self._tool_approach_ori)
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
-        self.get_logger().info(f'  [TOP_XY] → ({pose.x:.1f}, {pose.y:.1f}, {TOOL_APPROACH_Z_MM:.1f}) mm')
+        self.get_logger().info(f'  [TOP_XY] → ({pose.x:.1f}, {pose.y:.1f}, {self._tool_approach_z_mm:.1f}) mm')
         return self._movel(step, DR_MV_MOD_ABS)
 
     def _exec_visual_servo_xy(self) -> bool:
@@ -764,7 +811,7 @@ class ToolboxSeqRunner(Node):
             return False
         if not self._check_vision_coords('TOOL_XYZ', pose.x, pose.y, pose.z):
             return False
-        pos = [pose.x, pose.y, pose.z] + list(TOOL_DESCENT_ORI)
+        pos = [pose.x, pose.y, pose.z] + list(self._tool_descent_ori)
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
         self.get_logger().info(f'  [TOOL_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {pose.z:.1f}) mm')
         return self._movel(step, DR_MV_MOD_ABS)
@@ -779,7 +826,7 @@ class ToolboxSeqRunner(Node):
             )
 
     def _exec_move_l_slot_xy(self) -> bool:
-        """⑧⑫: 탑뷰 D455f slot XY + TOOL_APPROACH_Z_MM 로 이동."""
+        """⑧⑫: 탑뷰 D455f slot XY + self._tool_approach_z_mm 로 이동."""
         with self._slot_top_lock:
             pose = ToolPose(
                 x=self._latest_slot_top.x,
@@ -790,11 +837,11 @@ class ToolboxSeqRunner(Node):
         if not pose.valid:
             self.get_logger().error('  [SLOT_XY] slot 좌표 미수신 (/vision/slot_top_pose)')
             return False
-        if not self._check_vision_coords('SLOT_XY', pose.x, pose.y, TOOL_APPROACH_Z_MM):
+        if not self._check_vision_coords('SLOT_XY', pose.x, pose.y, self._tool_approach_z_mm):
             return False
-        pos = [pose.x, pose.y, TOOL_APPROACH_Z_MM] + list(TOOL_APPROACH_ORI)
+        pos = [pose.x, pose.y, self._tool_approach_z_mm] + list(self._tool_approach_ori)
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
-        self.get_logger().info(f'  [SLOT_XY] → ({pose.x:.1f}, {pose.y:.1f}, {TOOL_APPROACH_Z_MM:.1f}) mm')
+        self.get_logger().info(f'  [SLOT_XY] → ({pose.x:.1f}, {pose.y:.1f}, {self._tool_approach_z_mm:.1f}) mm')
         return self._movel(step, DR_MV_MOD_ABS)
 
     def _movel_delta_xy(self, vx: float, vy: float, dt: float) -> bool:
@@ -810,7 +857,8 @@ class ToolboxSeqRunner(Node):
         req.blend_type = 0
         req.sync_type  = 0
         fut = self._movel_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, fut, timeout_sec=1.0)
+        # S-4: PLC Watchdog(0.5s timeout)은 plc_node 독립 타이머로 운용.
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=0.45)
         res = fut.result()
         return res is not None and res.success
 
@@ -848,7 +896,9 @@ class ToolboxSeqRunner(Node):
         req.blend_type = 0
         req.sync_type  = 0
         fut = self._movel_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, fut, timeout_sec=1.0)
+        # S-4: PLC Watchdog(0.5s timeout)은 plc_node 독립 타이머로 운용 — 이 블로킹과 무관.
+        # timeout을 0.45s로 제한해 Watchdog 경계 내에서 서비스 무응답을 감지.
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=0.45)
         res = fut.result()
         return res is not None and res.success
 

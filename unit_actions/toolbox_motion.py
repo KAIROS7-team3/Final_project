@@ -132,11 +132,9 @@ LAYER1_CLOSE_END:      list = [380.61, 291.56, 115.7,  89.99, 89.99, 90.0]
 LAYER_HEIGHT_Z_MM: float = 115.68 - 65.45   # ≈ 50.23 mm
 
 
-# ── 공구 접근 고정 파라미터 (MOVE_L_TOP_XY / MOVE_L_TOOL_XYZ 스텝에서 사용) ──────────────
-# ⚠️ 현재 소켓 TW 실측값 기반 — 비전팀 확정 후 공구별 조정 + config/toolbox.yaml 이관 예정 (E-4)
-TOOL_APPROACH_Z_MM: float = 234.0           # 공구 위 대기 높이 (mm)
-TOOL_APPROACH_ORI:  list  = [53.23, 180.0, -38.07]   # approach 자세 (rx,ry,rz, deg)
-TOOL_DESCENT_ORI:   list  = [48.74, -180.0, -42.55]  # 하강 자세 (rx,ry,rz, deg)
+# ── 공구 접근 파라미터 ──────────────────────────────────────────────────────────
+# E-4: config/toolbox.yaml vision_motion 섹션으로 이관 완료.
+# toolbox_seq_runner.py가 __init__에서 로드 후 self._tool_approach_z_mm 등으로 사용.
 
 
 # ── socket 공구 위치 (toolboxapproach_box2_socket_*.tw 실측값, DSR BASE 좌표계, mm/deg) ──
