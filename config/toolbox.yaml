@@ -114,6 +114,20 @@ tools:
     grasp_approach: top
     notes: "임의값 — 실측 후 갱신"
 
+# ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────
+# toolbox_seq_runner.py가 __init__에서 이 섹션을 로드. 값 변경 시 재시작 필요.
+# 실기 검증 후 공구별로 분리 예정.
+vision_motion:
+  tool_approach_z_mm: 234.0                    # 공구 위 대기 높이 (mm, DSR BASE)
+  tool_approach_ori: [53.23, 180.0, -38.07]    # approach 자세 [rx,ry,rz] (deg)
+  tool_descent_ori: [48.74, -180.0, -42.55]    # 하강 자세 [rx,ry,rz] (deg)
+  # 비전 좌표 허용 범위 (DSR BASE 좌표계, mm) — S-5 소프트 workspace 리밋
+  # ⚠️ 실제 비전 좌표 수신 후 실측값으로 갱신 필요
+  workspace_limits:
+    x: [50.0, 800.0]
+    y: [-600.0, 600.0]
+    z: [-5.0, 700.0]
+
 # 수락 기준 (docs/conventions.md):
 # - 공구 분류 정확도 ≥ 95% (실험실 조명)
 # - 스캔 후 DB 갱신까지 지연 ≤ 1s
