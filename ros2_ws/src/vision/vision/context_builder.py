@@ -188,6 +188,27 @@ class ContextBuilder(Node):
             f"occupied={len(occupied)} empty={len(empty)}"
         )
 
+    def _publish_slot_top_pose(self, header, empty_slots: list[list[int]]) -> None:
+        """빈 슬롯 중 첫 번째의 중심 좌표를 /vision/slot_top_pose로 발행.
+
+        빈 슬롯 없으면 발행 중단 — motion 팀이 이전 좌표로 수렴하는 것을 방지.
+        """
+        if not empty_slots:
+            return
+
+        row, col = empty_slots[0]
+        slot_info = next((s for s in self._slots if s.row == row and s.col == col), None)
+        if slot_info is None:
+            return
+
+        pt = PointStamped()
+        pt.header = header
+        pt.header.frame_id = "base_link"
+        pt.point.x = float(slot_info.center[0])
+        pt.point.y = float(slot_info.center[1])
+        pt.point.z = float(slot_info.center[2])
+        self._slot_top_pub.publish(pt)
+
     @staticmethod
     def _build_summary(tools: list[dict], empty_slots: list[list[int]]) -> str:
         if not tools:
