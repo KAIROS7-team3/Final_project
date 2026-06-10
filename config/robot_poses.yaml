@@ -65,6 +65,16 @@ tcp:
   name: GripperDA_v1
   offset_mm: [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]   # flange → tool tip
 
+# ── Tool (payload) 설정 (E-4) ─────────────────────────────────────────────────
+# 단위: weight kg, cog mm (DSR 네이티브, flange 기준)
+tool:
+  name: GripperDA_v1
+  weight_kg: 0.5
+  cog_mm: [0.0, 0.0, 80.0]        # 그리퍼 무게중심 — flange 기준 Z 80mm (TCP 절반)
+  inertia_kgm2: [0.00127, 0.00127, 0.0004, 0.0, 0.0, 0.0]
+  # [Ixx, Iyy, Izz, Ixy, Ixz, Iyz] — RH-P12-RN 원통 근사 (r=40mm, h=160mm, m=0.5kg)
+  # 실측 CAD 값 확보 시 교체 필요
+
 # 안전 제약 (safety.md S-5):
 # - 모든 포즈는 e0509 operational range 내
 # - 소프트 리밋이 하드웨어 리밋보다 항상 좁아야 함

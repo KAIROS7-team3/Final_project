@@ -417,6 +417,7 @@ class ToolboxSeqRunner(Node):
             home_ok = self._run_sequence(home_seq())
             if not home_ok:
                 self.get_logger().error('[runner] 홈 복귀 실패 — 수동 개입 필요')
+                self._is_moving_pub.publish(Bool(data=False))  # S-7: 모든 종료 경로에서 발행
                 rclpy.shutdown()
                 return
 
@@ -652,7 +653,11 @@ class ToolboxSeqRunner(Node):
             if self._estop_triggered:
                 return False
 
-            cmd = ctrl.tick()
+            try:
+                cmd = ctrl.tick()
+            except RuntimeError as e:
+                self.get_logger().error(f'  [VS] EE 위치 조회 실패 — 루프 중단: {e}')
+                return False
 
             if cmd.stop:
                 time.sleep(_DT)
@@ -687,6 +692,8 @@ class ToolboxSeqRunner(Node):
         if not pose.valid:
             self.get_logger().error('  [TOP_XY] 탑뷰 공구 좌표 미수신 (/vision/tool_top_pose)')
             return False
+        if not self._check_vision_coords('TOP_XY', pose.x, pose.y, TOOL_APPROACH_Z_MM):
+            return False
         pos = [pose.x, pose.y, TOOL_APPROACH_Z_MM] + list(TOOL_APPROACH_ORI)
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
         self.get_logger().info(f'  [TOP_XY] → ({pose.x:.1f}, {pose.y:.1f}, {TOOL_APPROACH_Z_MM:.1f}) mm')
@@ -718,7 +725,11 @@ class ToolboxSeqRunner(Node):
             if self._estop_triggered:
                 return False
 
-            cmd = ctrl.tick()
+            try:
+                cmd = ctrl.tick()
+            except RuntimeError as e:
+                self.get_logger().error(f'  [VS_XY] EE 위치 조회 실패 — 루프 중단: {e}')
+                return False
 
             if cmd.stop:
                 time.sleep(_DT)
@@ -751,6 +762,8 @@ class ToolboxSeqRunner(Node):
         if not pose.valid:
             self.get_logger().error('  [TOOL_XYZ] 그리퍼 캠 공구 좌표 미수신 (/vision/tool_gripper_pose)')
             return False
+        if not self._check_vision_coords('TOOL_XYZ', pose.x, pose.y, pose.z):
+            return False
         pos = [pose.x, pose.y, pose.z] + list(TOOL_DESCENT_ORI)
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
         self.get_logger().info(f'  [TOOL_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {pose.z:.1f}) mm')
@@ -776,6 +789,8 @@ class ToolboxSeqRunner(Node):
             )
         if not pose.valid:
             self.get_logger().error('  [SLOT_XY] slot 좌표 미수신 (/vision/slot_top_pose)')
+            return False
+        if not self._check_vision_coords('SLOT_XY', pose.x, pose.y, TOOL_APPROACH_Z_MM):
             return False
         pos = [pose.x, pose.y, TOOL_APPROACH_Z_MM] + list(TOOL_APPROACH_ORI)
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
@@ -809,15 +824,14 @@ class ToolboxSeqRunner(Node):
             )
 
     def _get_ee_pose_mm(self) -> tuple[float, float, float]:
-        """현재 EE 포즈 (DSR BASE 좌표계, mm) 반환."""
+        """현재 EE 포즈 (DSR BASE 좌표계, mm) 반환. 실패 시 RuntimeError (E-5: silent fallback 금지)."""
         req = GetCurrentPosx.Request()
         req.ref = DR_BASE
         fut = self._get_posx_cli.call_async(req)
         rclpy.spin_until_future_complete(self, fut, timeout_sec=2.0)
         res = fut.result()
         if res is None or not res.success:
-            self.get_logger().warn('  [VS] get_current_posx 실패 — (0,0,0) 반환')
-            return (0.0, 0.0, 0.0)
+            raise RuntimeError('get_current_posx 서비스 실패 — VS 루프 즉시 중단')
         pos = res.task_pos_info[0].data  # [x, y, z, rx, ry, rz]
         return (pos[0], pos[1], pos[2])
 

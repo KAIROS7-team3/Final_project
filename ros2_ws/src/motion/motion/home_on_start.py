@@ -1,33 +1,50 @@
 """home_on_start.py
 ──────────────────
-bringup 직후 TCP 설정 후 모드별 동작:
-  virtual: TCP 설정 → 홈 자세 [0, 0, 90, 0, 90, 0]deg 이동
-  real:    TCP 설정만 수행 (홈 이동 스킵 — 현재 자세 불명으로 충돌 위험)
+bringup 직후 TCP/Tool 설정 후 모드별 동작:
+  virtual: TCP + Tool 설정 → 홈 자세 이동
+  real:    TCP + Tool 설정만 수행 (홈 이동 스킵 — 현재 자세 불명으로 충돌 위험)
 
-TCP 설정값은 config/robot_poses.yaml tcp 섹션에서 로드 (E-4).
+설정값은 config/robot_poses.yaml에서 로드 (E-4).
 dsr_controller2 spawner 종료 후 TimerAction으로 트리거된다.
 완료 또는 실패 후 rclpy.shutdown()으로 종료.
 """
 
 import os
-from typing import Optional
 
 import yaml
 import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-from dsr_msgs2.srv import MoveJoint, ConfigCreateTcp, SetCurrentTcp
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
+from std_msgs.msg import Bool
+from dsr_msgs2.srv import MoveJoint, ConfigCreateTcp, SetCurrentTcp, ConfigCreateTool, SetCurrentTool
 
+# DSR 네이티브 단위: degree (MoveJoint 서비스 직접 전달용)
 JOINT_HOME_DEG = [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]
-VEL_J  = 30.0
-ACC_J  = 50.0
 
-_DEFAULT_TCP_NAME   = 'GripperDA_v1'
-_DEFAULT_TCP_OFFSET = [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]
+_DEFAULT_TCP_NAME     = 'GripperDA_v1'
+_DEFAULT_TCP_OFFSET   = [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]
+
+_DEFAULT_TOOL_NAME    = 'GripperDA_v1'
+_DEFAULT_TOOL_WEIGHT  = 0.5
+_DEFAULT_TOOL_COG     = [0.0, 0.0, 80.0]
+# RH-P12-RN 원통 근사 (r=40mm, h=160mm, m=0.5kg) — [Ixx, Iyy, Izz, Ixy, Ixz, Iyz] kg·m²
+_DEFAULT_TOOL_INERTIA = [0.00127, 0.00127, 0.0004, 0.0, 0.0, 0.0]
+
+_DEFAULT_VEL_J = 12.0   # config/robot_poses.yaml motion_limits 기본값과 일치
+_DEFAULT_ACC_J = 20.0
+
+# S-3/S-7: Transient Local QoS — retained 값 즉시 수신
+_LATCHED_QOS = QoSProfile(
+    depth=1,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    history=HistoryPolicy.KEEP_LAST,
+)
 
 
-def _load_tcp_config() -> tuple[str, list[float]]:
+def _load_robot_poses_yaml() -> dict:
     candidates = [
         os.environ.get('FINAL_PROJECT_ROOT', ''),
         os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..'),
@@ -36,10 +53,34 @@ def _load_tcp_config() -> tuple[str, list[float]]:
         path = os.path.join(base, 'config', 'robot_poses.yaml')
         if os.path.isfile(path):
             with open(path, encoding='utf-8') as f:
-                data = yaml.safe_load(f)
-            tcp = data.get('tcp', {})
-            return tcp.get('name', _DEFAULT_TCP_NAME), tcp.get('offset_mm', _DEFAULT_TCP_OFFSET)
-    return _DEFAULT_TCP_NAME, _DEFAULT_TCP_OFFSET
+                return yaml.safe_load(f) or {}
+    return {}
+
+
+def _load_tcp_config() -> tuple[str, list[float]]:
+    data = _load_robot_poses_yaml()
+    tcp = data.get('tcp', {})
+    return tcp.get('name', _DEFAULT_TCP_NAME), tcp.get('offset_mm', _DEFAULT_TCP_OFFSET)
+
+
+def _load_tool_config() -> tuple[str, float, list[float], list[float]]:
+    data = _load_robot_poses_yaml()
+    tool = data.get('tool', {})
+    return (
+        tool.get('name', _DEFAULT_TOOL_NAME),
+        float(tool.get('weight_kg', _DEFAULT_TOOL_WEIGHT)),
+        tool.get('cog_mm', _DEFAULT_TOOL_COG),
+        tool.get('inertia_kgm2', _DEFAULT_TOOL_INERTIA),
+    )
+
+
+def _load_motion_limits() -> tuple[float, float]:
+    data = _load_robot_poses_yaml()
+    limits = data.get('motion_limits', {})
+    return (
+        float(limits.get('vel_j_deg_s', _DEFAULT_VEL_J)),
+        float(limits.get('acc_j_deg_s2', _DEFAULT_ACC_J)),
+    )
 
 
 class HomeOnStart(Node):
@@ -48,24 +89,40 @@ class HomeOnStart(Node):
 
         self.declare_parameter('robot_ns', 'dsr01')
         self.declare_parameter('mode', 'virtual')
-        ns        = self.get_parameter('robot_ns').get_parameter_value().string_value
+        ns         = self.get_parameter('robot_ns').get_parameter_value().string_value
         self._mode = self.get_parameter('mode').get_parameter_value().string_value
 
         self._tcp_name, self._tcp_offset = _load_tcp_config()
+        self._tool_name, self._tool_weight, self._tool_cog, self._tool_inertia = _load_tool_config()
+        self._vel_j, self._acc_j = _load_motion_limits()
+
+        # S-3: E-stop 플래그
+        self._estop_triggered: bool = False
 
         self._cb = ReentrantCallbackGroup()
         p = f'/{ns}'
-        self._create_tcp_cli = self.create_client(
-            ConfigCreateTcp, f'{p}/tcp/config_create_tcp', callback_group=self._cb
+
+        self._create_tcp_cli  = self.create_client(ConfigCreateTcp,  f'{p}/tcp/config_create_tcp',  callback_group=self._cb)
+        self._set_tcp_cli     = self.create_client(SetCurrentTcp,    f'{p}/tcp/set_current_tcp',    callback_group=self._cb)
+        self._create_tool_cli = self.create_client(ConfigCreateTool, f'{p}/tool/config_create_tool', callback_group=self._cb)
+        self._set_tool_cli    = self.create_client(SetCurrentTool,   f'{p}/tool/set_current_tool',  callback_group=self._cb)
+        self._movej_cli       = self.create_client(MoveJoint,        f'{p}/motion/move_joint',      callback_group=self._cb)
+
+        # S-7: is_moving 발행 — Transient Local로 toolbox_seq_runner가 retained 값 수신
+        self._is_moving_pub = self.create_publisher(Bool, '/motion/is_moving', _LATCHED_QOS)
+
+        # S-3: E-stop 구독 — bringup 중 E-stop 수신 시 홈 이동 차단
+        self._estop_sub = self.create_subscription(
+            Bool, '/plc/e_stop', self._on_estop, _LATCHED_QOS, callback_group=self._cb
         )
-        self._set_tcp_cli = self.create_client(
-            SetCurrentTcp, f'{p}/tcp/set_current_tcp', callback_group=self._cb
-        )
-        self._movej_cli = self.create_client(
-            MoveJoint, f'{p}/motion/move_joint', callback_group=self._cb
-        )
+
         self._timer = self.create_timer(0.5, self._run_once, callback_group=self._cb)
         self._done = False
+
+    def _on_estop(self, msg: Bool) -> None:
+        if msg.data and not self._estop_triggered:
+            self._estop_triggered = True
+            self.get_logger().error('[home] E-stop 수신 — 홈 이동 중단')
 
     def _run_once(self) -> None:
         if self._done:
@@ -73,33 +130,89 @@ class HomeOnStart(Node):
         self._done = True
         self._timer.cancel()
 
-        self._setup_tcp()
+        if not self._setup_tcp():
+            rclpy.shutdown()
+            return
 
+        if not self._setup_tool():
+            rclpy.shutdown()
+            return
+
+        # S-3: E-stop 확인 후 홈 이동
         if self._mode == 'virtual':
-            self._move_home()
+            if self._estop_triggered:
+                self.get_logger().error('[home] E-stop 수신 — 홈 이동 스킵')
+            else:
+                self._is_moving_pub.publish(Bool(data=True))   # S-7
+                self._move_home()
+                self._is_moving_pub.publish(Bool(data=False))  # S-7
 
         rclpy.shutdown()
 
-    def _setup_tcp(self) -> None:
+    def _setup_tcp(self) -> bool:
         if self._create_tcp_cli.wait_for_service(timeout_sec=5.0):
             req = ConfigCreateTcp.Request()
             req.name = self._tcp_name
             req.pos  = [float(v) for v in self._tcp_offset]
             fut = self._create_tcp_cli.call_async(req)
             rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+            res = fut.result()
+            if res is None or not res.success:
+                self.get_logger().error(f'[home] TCP 등록 실패: {self._tcp_name}')
+                return False
             self.get_logger().info(f'[home] TCP 등록: {self._tcp_name} offset={self._tcp_offset}')
         else:
             self.get_logger().warn('[home] config_create_tcp 서비스 미준비 — 건너뜀')
 
         if not self._set_tcp_cli.wait_for_service(timeout_sec=10.0):
             self.get_logger().error('[home] set_current_tcp 서비스 없음 — TCP 활성화 실패')
-            return
+            return False
 
         req = SetCurrentTcp.Request()
         req.name = self._tcp_name
         fut = self._set_tcp_cli.call_async(req)
         rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+        res = fut.result()
+        if res is None or not res.success:
+            self.get_logger().error(f'[home] TCP 활성화 실패: {self._tcp_name}')
+            return False
         self.get_logger().info(f'[home] TCP 활성화: {self._tcp_name}')
+        return True
+
+    def _setup_tool(self) -> bool:
+        if self._create_tool_cli.wait_for_service(timeout_sec=5.0):
+            req = ConfigCreateTool.Request()
+            req.name    = self._tool_name
+            req.weight  = self._tool_weight
+            req.cog     = [float(v) for v in self._tool_cog]
+            req.inertia = [float(v) for v in self._tool_inertia]
+            fut = self._create_tool_cli.call_async(req)
+            rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+            res = fut.result()
+            if res is None or not res.success:
+                self.get_logger().error(f'[home] Tool 등록 실패: {self._tool_name}')
+                return False
+            self.get_logger().info(
+                f'[home] Tool 등록: {self._tool_name} '
+                f'weight={self._tool_weight}kg cog={self._tool_cog}mm'
+            )
+        else:
+            self.get_logger().warn('[home] config_create_tool 서비스 미준비 — 건너뜀')
+
+        if not self._set_tool_cli.wait_for_service(timeout_sec=10.0):
+            self.get_logger().error('[home] set_current_tool 서비스 없음 — payload 활성화 실패')
+            return False
+
+        req = SetCurrentTool.Request()
+        req.name = self._tool_name
+        fut = self._set_tool_cli.call_async(req)
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+        res = fut.result()
+        if res is None or not res.success:
+            self.get_logger().error(f'[home] Tool 활성화 실패: {self._tool_name}')
+            return False
+        self.get_logger().info(f'[home] Tool 활성화: {self._tool_name}')
+        return True
 
     def _move_home(self) -> None:
         if not self._movej_cli.wait_for_service(timeout_sec=15.0):
@@ -108,15 +221,15 @@ class HomeOnStart(Node):
 
         req = MoveJoint.Request()
         req.pos        = [float(v) for v in JOINT_HOME_DEG]
-        req.vel        = VEL_J
-        req.acc        = ACC_J
+        req.vel        = self._vel_j
+        req.acc        = self._acc_j
         req.time       = 0.0
         req.radius     = 0.0
         req.mode       = 0
         req.blend_type = 0
         req.sync_type  = 0
 
-        self.get_logger().info(f'[home] 홈 이동 중: {JOINT_HOME_DEG}')
+        self.get_logger().info(f'[home] 홈 이동 중: {JOINT_HOME_DEG} vel={self._vel_j}deg/s')
         fut = self._movej_cli.call_async(req)
         rclpy.spin_until_future_complete(self, fut, timeout_sec=25.0)
         res = fut.result()
