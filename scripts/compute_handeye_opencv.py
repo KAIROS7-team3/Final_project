@@ -34,8 +34,8 @@ logger = logging.getLogger('compute_handeye')
 
 # ── 경로 ──────────────────────────────────────────────────────────────────────
 _SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
-_DATA_PATH    = os.path.join(_SCRIPT_DIR, 'handeye_data.npz')
-_CONFIG_PATH  = os.path.join(_SCRIPT_DIR, '..', 'config', 'hand_eye.yaml')
+_DEFAULT_DATA  = os.path.join(_SCRIPT_DIR, 'c270_handeye_data.npz')
+_CONFIG_PATH   = os.path.join(_SCRIPT_DIR, '..', 'config', 'c270_hand_eye.yaml')
 _RUNTIME_PATH = os.path.join(_SCRIPT_DIR, '..', 'config', 'runtime.yaml')
 
 # ArUco 품질 필터 기준값
@@ -182,10 +182,10 @@ def save_yaml(
             'cam_tilt_deg': cam_tilt,
             'cam_height_m': float(t[2]),
             'operator': None,
-            'tool': 'collect_handeye_data.py + compute_handeye_opencv.py',
+            'tool': 'c270_handeye_collect.py + compute_handeye_opencv.py',
             'frames': {
-                'from': 'camera_color_optical_frame',
-                'to': 'base_link',
+                'from': 'c270_optical_frame',
+                'to': 'link_6',
             },
         },
     }
@@ -196,12 +196,14 @@ def save_yaml(
     with open(_CONFIG_PATH, 'w') as f:
         yaml.dump(data, f, Dumper=_IndentDumper,
                   default_flow_style=False, allow_unicode=True, sort_keys=False)
-    logger.info('config/hand_eye.yaml 저장 완료')
+    logger.info('config/c270_hand_eye.yaml 저장 완료')
 
 
 # ── 메인 ───────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--input', default=_DEFAULT_DATA,
+                        help='입력 npz 파일 경로 (기본: c270_handeye_data.npz)')
     parser.add_argument('--method', default='PARK', choices=list(METHODS),
                         help='사용할 알고리즘 (기본: PARK)')
     parser.add_argument('--all', action='store_true',
@@ -210,12 +212,13 @@ def main() -> None:
                         help='품질 필터 비활성화 (전체 샘플 사용)')
     args = parser.parse_args()
 
-    if not os.path.exists(_DATA_PATH):
-        logger.error('데이터 파일 없음: %s', _DATA_PATH)
-        logger.error('collect_handeye_data.py 를 먼저 실행하세요.')
+    data_path = os.path.abspath(args.input)
+    if not os.path.exists(data_path):
+        logger.error('데이터 파일 없음: %s', data_path)
+        logger.error('c270_handeye_collect.py 를 먼저 실행하세요.')
         sys.exit(1)
 
-    data = np.load(_DATA_PATH)
+    data = np.load(data_path)
     R_g2b = list(data['R_gripper2base'])
     t_g2b = list(data['t_gripper2base'])
     R_t2c = list(data['R_target2cam'])
