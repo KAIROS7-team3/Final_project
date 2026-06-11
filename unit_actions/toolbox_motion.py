@@ -20,7 +20,7 @@ ROS2 의존성 없음 — 단독 테스트 가능.
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional
+from typing import Literal, Optional
 
 
 # ── StepKind / Step (chamjo motion_library.py 동일 패턴) ──────────────────
@@ -34,6 +34,9 @@ class StepKind(Enum):
     WAIT       = auto()
 
 
+PickPlaceMarker = Literal["pick", "place"]
+
+
 @dataclass
 class Step:
     kind:  StepKind
@@ -42,6 +45,24 @@ class Step:
     acc:   Optional[float] = None
     pulse: Optional[int]   = None
     sec:   Optional[float] = None
+    marker: Optional[PickPlaceMarker] = None  # 물리적 집기/놓기 시점 표시 (action feedback용)
+
+
+def marked(step: Step, marker: PickPlaceMarker) -> Step:
+    """시퀀스 빌더가 특정 step을 pick/place로 표시한다.
+
+    tool_action_server는 marker가 설정된 step 실행 직후 action feedback으로
+    phase=marker를 발행한다 (예: orchestrator의 DB 상태 전이 트리거).
+    좌표가 비전 기반으로 동적 계산되더라도, 시퀀스 빌더는 항상 "이 step이
+    pick/place다"라는 역할을 알고 있으므로 동일하게 적용 가능하다.
+
+    marker는 "pick"/"place"만 허용한다 — 오타로 인한 DB 상태 전이 누락(S-8 영향)을
+    방지하기 위해 런타임에도 검증한다.
+    """
+    if marker not in ("pick", "place"):
+        raise ValueError(f"marker는 'pick' 또는 'place'여야 함: {marker!r}")
+    step.marker = marker
+    return step
 
 
 # ── 속도 / 가속도 기본값 (TaskWriter MainRoutine 설정값) ──────────────────
@@ -318,15 +339,17 @@ def full_socket_fetch_seq() -> list[Step]:
     """
     return [
         *drawer_open_seq(1),
+        JOINT_HOME(),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_APPROACH_Z),
-        GRIP_SOCKET(),
+        marked(GRIP_SOCKET(), "pick"),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_BOTTOM),
-        GRIP_RELEASE(),
+        marked(GRIP_RELEASE(), "place"),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_CATCH_HOME_L),
+        JOINT_HOME(),
         *drawer_close_seq(1),
         JOINT_HOME(),
     ]
@@ -346,15 +369,17 @@ def full_socket_return_seq() -> list[Step]:
     """
     return [
         *drawer_open_seq(1),
+        JOINT_HOME(),
         ml_abs(SOCKET_CATCH_HOME_L),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_BOTTOM),
-        GRIP_SOCKET(),
+        marked(GRIP_SOCKET(), "pick"),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_APPROACH_Z),
-        GRIP_RELEASE(),
+        marked(GRIP_RELEASE(), "place"),
         ml_abs(SOCKET_APPROACH_XY),
+        JOINT_HOME(),
         *drawer_close_seq(1),
         JOINT_HOME(),
     ]

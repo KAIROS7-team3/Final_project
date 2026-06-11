@@ -21,6 +21,10 @@ class RunAction(py_trees.behaviour.Behaviour):
         action_client: rclpy ActionClient 인스턴스.
         build_goal_fn: blackboard → goal 객체 생성 함수.
         timeout_sec: 액션 완료 대기 타임아웃 (초).
+        feedback_callback: action feedback의 phase 문자열을 받는 콜백.
+            tool_action_server는 step.marker가 설정된 step("pick"/"place")
+            실행 직후 phase=marker로 feedback을 발행한다 (E-9: 콜백은 빠르게
+            반환하거나 자체적으로 blocking 호출을 감당할 수 있어야 함).
     """
 
     def __init__(
@@ -29,11 +33,13 @@ class RunAction(py_trees.behaviour.Behaviour):
         action_client: Any,
         build_goal_fn: Callable,
         timeout_sec: float = 120.0,
+        feedback_callback: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(name=name)
         self._client = action_client
         self._build_goal_fn = build_goal_fn
         self._timeout = timeout_sec
+        self._feedback_callback = feedback_callback
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
             key=KEY_ACTIVE_TOOL_ID, access=py_trees.common.Access.READ
@@ -63,7 +69,17 @@ class RunAction(py_trees.behaviour.Behaviour):
             result_holder.append(future.result())
             done.set()
 
-        self._client.send_goal_async(goal).add_done_callback(_on_goal_response)
+        def _on_feedback(feedback_msg):
+            if self._feedback_callback is None:
+                return
+            try:
+                self._feedback_callback(feedback_msg.feedback.phase)
+            except Exception as exc:
+                self.logger.error(f"[{self.name}] feedback 콜백 예외: {exc}")
+
+        self._client.send_goal_async(
+            goal, feedback_callback=_on_feedback
+        ).add_done_callback(_on_goal_response)
 
         if not done.wait(timeout=self._timeout):
             self.logger.error(f"[{self.name}] 액션 타임아웃 ({self._timeout}s)")

@@ -36,8 +36,7 @@ _QOS_SCENE_CONTEXT = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIAB
 _QOS_ROBOT_STATUS = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
 
 _MAX_PENDING_S7_LOGS = 16
-_STATUS_AFTER_FETCH = "staged"
-_STATUS_AFTER_RETURN = "in_slot"
+_UPDATE_STATUS_TIMEOUT_S = 5.0
 
 
 class OrchestratorNode(Node):
@@ -88,13 +87,19 @@ class OrchestratorNode(Node):
         )
 
         # ── BT 서브트리 조립 (클라이언트 주입) ───────────────────────────
+        # on_pick/on_place: action feedback(phase="pick"/"place")에 맞춰
+        # DB 상태를 물리적 집기/놓기 시점에 즉시 전이시킨다 (BT 완료 대기 X).
         self._fetch_tree = build_fetch_subtree(
             feasibility_client=self._feasibility_cli,
             place_at_staging_client=self._place_cli,
+            on_pick=self._on_fetch_pick,
+            on_place=self._on_fetch_place,
         )
         self._return_tree = build_return_subtree(
             feasibility_client=self._feasibility_cli,
             return_to_slot_client=self._return_cli,
+            on_pick=self._on_return_pick,
+            on_place=self._on_return_place,
         )
         self._fetch_tree.setup(timeout=5)
         self._return_tree.setup(timeout=5)
@@ -140,18 +145,15 @@ class OrchestratorNode(Node):
 
     def _on_intent(self, msg: Intent) -> None:
         if self._is_moving:
-            self.get_logger().warn(
+            self.get_logger().warning(
                 "[OrchestratorNode] intent ignored — robot is moving (S-7): "
-                "type=%s tool_id=%s",
-                msg.intent_type,
-                msg.tool_id,
+                f"type={msg.intent_type} tool_id={msg.tool_id}"
             )
             self._log_s7_rejection(msg)
             return
         self.get_logger().info(
-            "[OrchestratorNode] intent received - type=%s tool_id=%s",
-            msg.intent_type,
-            msg.tool_id,
+            f"[OrchestratorNode] intent received - type={msg.intent_type} "
+            f"tool_id={msg.tool_id}"
         )
         self._active_tool_id = msg.tool_id
         self._bb.intent = msg.intent_type
@@ -167,8 +169,8 @@ class OrchestratorNode(Node):
     def _tick_bt(self, intent_type: str, tool_id: str) -> None:
         """BT를 실행 전용 스레드에서 tick한다. blocking OK."""
         if not self._bt_lock.acquire(blocking=False):
-            self.get_logger().warn(
-                "[OrchestratorNode] BT 이미 실행 중 — intent 무시: type=%s", intent_type
+            self.get_logger().warning(
+                f"[OrchestratorNode] BT 이미 실행 중 — intent 무시: type={intent_type}"
             )
             return
         try:
@@ -177,52 +179,125 @@ class OrchestratorNode(Node):
             elif intent_type == "return":
                 tree = self._return_tree
             else:
-                self.get_logger().warn(
-                    "[OrchestratorNode] 알 수 없는 intent: %s", intent_type
+                self.get_logger().warning(
+                    f"[OrchestratorNode] 알 수 없는 intent: {intent_type}"
                 )
                 return
 
             self.get_logger().info(
-                "[OrchestratorNode] BT tick 시작: intent=%s tool_id=%s",
-                intent_type, tool_id,
+                f"[OrchestratorNode] BT tick 시작: intent={intent_type} tool_id={tool_id}"
             )
             self._set_plc("moving")
             status = tree.tick_once()
 
             if status == py_trees.common.Status.SUCCESS:
                 self.get_logger().info(
-                    "[OrchestratorNode] BT 성공: intent=%s tool_id=%s",
-                    intent_type, tool_id,
+                    f"[OrchestratorNode] BT 성공: intent={intent_type} tool_id={tool_id}"
                 )
                 self._set_plc("idle")
-                self._update_tool_status_after(intent_type, tool_id)
             else:
                 self.get_logger().error(
-                    "[OrchestratorNode] BT 실패: intent=%s tool_id=%s status=%s",
-                    intent_type, tool_id, status,
+                    f"[OrchestratorNode] BT 실패: intent={intent_type} "
+                    f"tool_id={tool_id} status={status}"
                 )
                 self._set_plc("error")
         except Exception as exc:
-            self.get_logger().error("[OrchestratorNode] BT tick 예외: %s", exc)
+            self.get_logger().error(f"[OrchestratorNode] BT tick 예외: {exc}")
             self._set_plc("error")
         finally:
             self._bt_lock.release()
 
-    def _update_tool_status_after(self, intent_type: str, tool_id: str) -> None:
+    def _on_fetch_pick(self) -> None:
+        """fetch: 슬롯에서 공구를 집는 순간 (action feedback phase="pick")."""
+        self._dispatch_update_status(
+            self._active_tool_id, "fetch", "out", "fetch pick - 슬롯에서 집어듦"
+        )
+
+    def _on_fetch_place(self) -> None:
+        """fetch: Staging Area에 거치하는 순간 (action feedback phase="place")."""
+        self._dispatch_update_status(
+            self._active_tool_id, "fetch", "staged", "fetch place - Staging Area에 거치"
+        )
+
+    def _on_return_pick(self) -> None:
+        """return: Staging Area에서 공구를 집는 순간 (action feedback phase="pick")."""
+        self._dispatch_update_status(
+            self._active_tool_id, "return", "out", "return pick - Staging에서 집어듦"
+        )
+
+    def _on_return_place(self) -> None:
+        """return: 슬롯에 반납하는 순간 (action feedback phase="place")."""
+        self._dispatch_update_status(
+            self._active_tool_id, "return", "in_slot", "return place - 슬롯에 반납"
+        )
+
+    def _dispatch_update_status(
+        self, tool_id: str, event_type: str, new_status: str, notes: str
+    ) -> None:
+        """_call_update_status를 별도 daemon thread에서 실행한다 (E-9).
+
+        이 메서드는 action feedback 콜백(rclpy executor 스레드)에서
+        동기 호출되므로, 최대 5초까지 블로킹되는 _call_update_status를
+        직접 호출하면 그 시간 동안 같은 콜백 그룹의 다른 콜백
+        (/robot/status 등) 처리가 지연된다. 모션 진행 중인 시점이라
+        fire-and-forget으로 분리한다.
+        """
+        def _run() -> None:
+            if not self._call_update_status(tool_id, event_type, new_status, notes):
+                self._set_plc("error")
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _call_update_status(
+        self, tool_id: str, event_type: str, new_status: str, notes: str
+    ) -> bool:
         if not self._update_status_cli.service_is_ready():
-            self.get_logger().warn("[OrchestratorNode] UpdateToolStatus 서비스 미준비")
-            return
+            self.get_logger().error(
+                "[OrchestratorNode] UpdateToolStatus 서비스 미준비 - "
+                f"tool_id={tool_id} new_status={new_status}"
+            )
+            return False
         req = UpdateToolStatus.Request()
         req.tool_id = tool_id
-        req.event_type = intent_type
+        req.event_type = event_type
         req.track = "A"
-        if intent_type == "fetch":
-            req.new_status = _STATUS_AFTER_FETCH
-            req.notes = "fetch 완료 — BT 성공"
-        else:
-            req.new_status = _STATUS_AFTER_RETURN
-            req.notes = "return 완료 — BT 성공"
-        self._update_status_cli.call_async(req)
+        req.new_status = new_status
+        req.notes = notes
+
+        future = self._update_status_cli.call_async(req)
+        done = threading.Event()
+        result_holder: list = []
+
+        def _on_done(f) -> None:
+            try:
+                result_holder.append(f.result())
+            except Exception as exc:
+                self.get_logger().error(
+                    f"[OrchestratorNode] UpdateToolStatus 호출 예외 - tool_id={tool_id} "
+                    f"new_status={new_status}: {exc}"
+                )
+            finally:
+                done.set()
+
+        future.add_done_callback(_on_done)
+        if not done.wait(timeout=_UPDATE_STATUS_TIMEOUT_S):
+            self.get_logger().error(
+                "[OrchestratorNode] UpdateToolStatus 타임아웃 - "
+                f"tool_id={tool_id} new_status={new_status}"
+            )
+            return False
+        if not result_holder or not result_holder[0].success:
+            message = result_holder[0].message if result_holder else "no response"
+            self.get_logger().error(
+                "[OrchestratorNode] UpdateToolStatus 실패 - "
+                f"tool_id={tool_id} new_status={new_status} message={message}"
+            )
+            return False
+        self.get_logger().info(
+            f"[OrchestratorNode] UpdateToolStatus 성공 - tool_id={tool_id} "
+            f"new_status={new_status}"
+        )
+        return True
 
     def _set_plc(self, state: str) -> None:
         msg = String()

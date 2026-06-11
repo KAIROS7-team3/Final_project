@@ -500,6 +500,15 @@ class ToolActionServer(Node):
             if not ok:
                 self.get_logger().error(f"  step {i+1} 실패 — 중단")
                 return False
+
+            # step.marker("pick"/"place")가 설정된 step은 실행 직후 추가
+            # feedback을 발행한다 — orchestrator가 이를 받아 DB 상태를
+            # 물리적 집기/놓기 시점에 맞춰 전이시킨다.
+            if goal_handle is not None and action_class is not None and step.marker:
+                fb = action_class.Feedback()
+                fb.phase = step.marker
+                fb.progress = float(i + 1) / float(total)
+                goal_handle.publish_feedback(fb)
         return True
 
     def _exec_step(self, step) -> bool:
