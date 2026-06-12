@@ -1,0 +1,3 @@
+demo:
+  tool_id: socket_19mm
+  db_path: ~/robot_tools.db

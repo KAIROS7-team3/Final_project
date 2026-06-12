@@ -244,14 +244,16 @@ def test_error_and_estop_led_contract() -> None:
     assert STATE_LED_MAP[SystemState.MOVING] == (LEDColor.RED, LEDMode.PULSE)
 
 
-def test_pythonpath_environment_hook_points_to_workspace_root() -> None:
-    environment_dir = PLC_PACKAGE_ROOT / "environment"
+def test_plc_node_bootstraps_project_root_for_plc_core_import() -> None:
+    plc_node_text = (PLC_PACKAGE_ROOT / "plc" / "plc_node.py").read_text(encoding="utf-8")
 
-    sh_text = (environment_dir / "plc_core_pythonpath.sh").read_text(encoding="utf-8")
-
-    assert not (environment_dir / "plc_core_pythonpath.dsv").exists()
-    assert '${AMENT_CURRENT_PREFIX}/../..' in sh_text
-    assert '${AMENT_CURRENT_PREFIX}/../../..' not in sh_text
+    # plc_core는 colcon 패키지가 아닌 프로젝트 루트의 순수 Python 모듈이므로,
+    # plc_node.py가 __file__의 상위 디렉터리를 거슬러 올라가며 plc_core/를
+    # 찾아 sys.path에 추가해 import해야 한다 (symlink-install/일반 install
+    # 양쪽의 서로 다른 디렉터리 깊이를 모두 지원).
+    assert '"plc_core").is_dir()' in plc_node_text
+    assert "sys.path.insert" in plc_node_text
+    assert not (PLC_PACKAGE_ROOT / "environment").exists()
 
 
 def test_watchdog_hook_targets_dedicated_m050_coil() -> None:

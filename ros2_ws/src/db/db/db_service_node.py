@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import rclpy
+from pathlib import Path
+
 from db_core.repository import ToolRepository
 from interfaces.srv import CheckToolFeasibility, LogEvent, UpdateToolStatus
 from rclpy.node import Node
@@ -19,7 +21,9 @@ class DbServiceNode(Node):
         self.declare_parameter("busy_timeout_ms", 5000)
         # DB 접근 로직은 repository에 모아 ROS2와 순수 DB 코드를 분리한다.
         self._repository = ToolRepository(
-            self.get_parameter("db_path").get_parameter_value().string_value,
+            Path(
+                self.get_parameter("db_path").get_parameter_value().string_value
+            ).expanduser(),
             self.get_parameter("operator_id").get_parameter_value().string_value,
             busy_timeout_ms=self.get_parameter("busy_timeout_ms")
             .get_parameter_value()

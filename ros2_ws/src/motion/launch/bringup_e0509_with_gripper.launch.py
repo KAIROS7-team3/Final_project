@@ -68,7 +68,6 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     robot_controllers = [
-        PathJoinSubstitution([FindPackageShare("dsr_controller2"), "config", "dsr_update_rate.yaml"]),
         PathJoinSubstitution([FindPackageShare("dsr_controller2"), "config", "dsr_controller2.yaml"]),
     ]
 
@@ -192,7 +191,7 @@ def generate_launch_description() -> LaunchDescription:
                 gripper_service_node,
                 joint_state_merger_node,
                 rviz_node,
-                # virtual: TCP 설정 + 홈 이동 / real: TCP 설정만
+                # virtual: TCP 설정 + 홈 이동 / real: TCP 설정만 (S-5)
                 TimerAction(period=3.0, actions=[home_on_start_node]),
             ],
         )

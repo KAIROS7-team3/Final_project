@@ -20,7 +20,7 @@ ROS2 의존성 없음 — 단독 테스트 가능.
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional
+from typing import Literal, Optional
 
 
 # ── StepKind / Step (chamjo motion_library.py 동일 패턴) ──────────────────
@@ -39,6 +39,9 @@ class StepKind(Enum):
     MOVE_L_SLOT_XY  = auto()   # 탑뷰 slot XY + 고정 Z 이동 — runner가 /vision/slot_top_pose 좌표 사용
 
 
+PickPlaceMarker = Literal["pick", "place"]
+
+
 @dataclass
 class Step:
     kind:  StepKind
@@ -47,6 +50,24 @@ class Step:
     acc:   Optional[float] = None
     pulse: Optional[int]   = None
     sec:   Optional[float] = None
+    marker: Optional[PickPlaceMarker] = None  # 물리적 집기/놓기 시점 표시 (action feedback용)
+
+
+def marked(step: Step, marker: PickPlaceMarker) -> Step:
+    """시퀀스 빌더가 특정 step을 pick/place로 표시한다.
+
+    tool_action_server는 marker가 설정된 step 실행 직후 action feedback으로
+    phase=marker를 발행한다 (예: orchestrator의 DB 상태 전이 트리거).
+    좌표가 비전 기반으로 동적 계산되더라도, 시퀀스 빌더는 항상 "이 step이
+    pick/place다"라는 역할을 알고 있으므로 동일하게 적용 가능하다.
+
+    marker는 "pick"/"place"만 허용한다 — 오타로 인한 DB 상태 전이 누락(S-8 영향)을
+    방지하기 위해 런타임에도 검증한다.
+    """
+    if marker not in ("pick", "place"):
+        raise ValueError(f"marker는 'pick' 또는 'place'여야 함: {marker!r}")
+    step.marker = marker
+    return step
 
 
 # ── 속도 / 가속도 기본값 (TaskWriter MainRoutine 설정값) ──────────────────
@@ -458,3 +479,63 @@ def return_to_drawer_seq(
                None이면 하드코딩 CLOSE_END 웨이포인트 사용.
     """
     return drawer_close_seq(layer, tool_pose=tool_pose)
+
+
+def full_socket_fetch_seq() -> list[Step]:
+    """서랍 열기 → 소켓 파지 → 스테이징 거치 → 서랍 닫기 전체 시퀀스.
+
+    layer 1(2층 서랍) 사용. 데모 전용 — vision 미구현, 좌표 하드코딩.
+
+    흐름:
+      1. drawer_open_seq(1): home + 서랍 열기, 종료 위치=LAYER1_INNER
+      2. SOCKET_APPROACH_XY→Z: 소켓 슬롯 하강 후 파지
+      3. SOCKET_BOTTOM_XY→BOTTOM: 스테이징 거치
+      4. drawer_close_seq(1): joint 이동으로 시작하므로 직전 위치 무관
+      5. JOINT_HOME
+    """
+    return [
+        *drawer_open_seq(1),
+        JOINT_HOME(),
+        ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_APPROACH_Z),
+        marked(GRIP_SOCKET(), "pick"),
+        ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_BOTTOM),
+        marked(GRIP_RELEASE(), "place"),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_CATCH_HOME_L),
+        JOINT_HOME(),
+        *drawer_close_seq(1),
+        JOINT_HOME(),
+    ]
+
+
+def full_socket_return_seq() -> list[Step]:
+    """서랍 열기 → 스테이징 픽업 → 서랍 슬롯 반납 → 서랍 닫기 전체 시퀀스.
+
+    layer 1(2층 서랍) 사용. 데모 전용 — vision 미구현, 좌표 하드코딩.
+
+    흐름:
+      1. drawer_open_seq(1): home + 서랍 열기, 종료 위치=LAYER1_INNER
+      2. SOCKET_BOTTOM_XY→BOTTOM: 스테이징에서 소켓 픽업
+      3. SOCKET_APPROACH_XY→Z: 서랍 슬롯 반납
+      4. drawer_close_seq(1): joint 이동으로 시작하므로 직전 위치 무관
+      5. JOINT_HOME
+    """
+    return [
+        *drawer_open_seq(1),
+        JOINT_HOME(),
+        ml_abs(SOCKET_CATCH_HOME_L),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_BOTTOM),
+        marked(GRIP_SOCKET(), "pick"),
+        ml_abs(SOCKET_BOTTOM_XY),
+        ml_abs(SOCKET_APPROACH_XY),
+        ml_abs(SOCKET_APPROACH_Z),
+        marked(GRIP_RELEASE(), "place"),
+        ml_abs(SOCKET_APPROACH_XY),
+        JOINT_HOME(),
+        *drawer_close_seq(1),
+        JOINT_HOME(),
+    ]

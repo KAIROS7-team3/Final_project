@@ -1,24 +1,17 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>orchestrator</name>
+  <name>demo</name>
   <version>0.1.0</version>
-  <description>Behavior Tree orchestrator + unit_action_server for Track A/B.</description>
+  <description>데모 런치 패키지 — voice→DB Gate→motion→PLC 통합 실행</description>
   <maintainer email="team@example.com">KAIROS7-team3</maintainer>
   <license>Apache-2.0</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
-
-  <depend>rclpy</depend>
-  <depend>interfaces</depend>
-  <depend>std_msgs</depend>
-  <depend>vision_msgs</depend>
-  <depend version_gte="2.4.0">py_trees</depend>
+  <exec_depend>ros2launch</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
-  <test_depend>pytest</test_depend>
 
   <export>
     <build_type>ament_python</build_type>

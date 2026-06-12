@@ -62,6 +62,9 @@
   - rationale: 이전엔 형식 설명이 모호해 `wrench_8mm`(2-part)·`screwdriver_phillips_small`(3-part) 혼재.
 - `srv/UpdateToolStatus.srv`의 `event_type` enum 값 명시: `fetch`, `return`, `rejected`, `error`, `fod_alert`, `reconciled`.
   - rationale: 이전엔 "tool_events 테이블 참조"라고만 표기되어 인터페이스 문서에서 허용 값 확인 불가.
+- `PlaceAtStaging.action`/`ReturnToSlot.action` 공통 Feedback `phase` 필드에 `"pick"`/`"place"` 마커 의미 추가 (`docs/interfaces.md §3` 갱신).
+  - rationale: DB 상태(`in_slot<->out<->staged`)를 BT 완료 대기 없이 물리적 집기/놓기 시점에 즉시 전이시키기 위해, `unit_actions.toolbox_motion.Step.marker`가 설정된 step 실행 직후 `phase="pick"`/`"place"`를 추가 발행한다. 기존 `StepKind` 이름(대문자) 기반 진행 단계 phase와 공존한다.
+  - migration: 액션 필드 타입 변경 없음 (additive). 기존 소비자는 무시해도 무방. `orchestrator_node`만 신규 phase 값을 구독해 DB 상태 전이를 트리거.
 
 ### Changed
 - `msg/PLCState.msg` → `msg/PLCStatus.msg` 리네이밍.
