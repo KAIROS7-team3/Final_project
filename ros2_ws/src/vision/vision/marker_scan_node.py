@@ -233,10 +233,16 @@ class MarkerScanNode(Node):
         pos_cam_m = np.array([x_cam, y_cam, z_m], dtype=np.float64)
 
         # ArUco rvec → 마커 방향 (카메라 좌표)
-        rvec, _, _ = cv2.aruco.estimatePoseSingleMarkers(
-            [corner], self._marker_size_m, self._K, self._D
-        )
-        R_cam, _ = cv2.Rodrigues(rvec[0, 0])
+        # estimatePoseSingleMarkers는 OpenCV 4.8+에서 제거됨 → solvePnP로 대체
+        half = self._marker_size_m / 2.0
+        obj_pts = np.array([
+            [-half,  half, 0.0],
+            [ half,  half, 0.0],
+            [ half, -half, 0.0],
+            [-half, -half, 0.0],
+        ], dtype=np.float32)
+        _, rvec, _ = cv2.solvePnP(obj_pts, corner[0].astype(np.float32), self._K, self._D)
+        R_cam, _ = cv2.Rodrigues(rvec)
 
         if self._calibrated and self._T is not None:
             pos_out_m = camera_to_base(pos_cam_m, self._T)

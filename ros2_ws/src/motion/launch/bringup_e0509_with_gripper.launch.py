@@ -8,7 +8,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler, TimerAction
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
@@ -130,6 +130,18 @@ def generate_launch_description() -> LaunchDescription:
         )],
     )
 
+    # real 전용: TCP/Tool 설정만 수행 (홈 이동은 스킵 — 현재 자세 불명으로 충돌 위험)
+    home_on_start_node = Node(
+        package="motion",
+        executable="home_on_start",
+        name="home_on_start",
+        output="screen",
+        parameters=[
+            {"robot_ns": LaunchConfiguration("name")},
+            {"mode": "real"},
+        ],
+    )
+
     delay_after_controller = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=robot_controller_spawner,
@@ -137,6 +149,8 @@ def generate_launch_description() -> LaunchDescription:
                 gripper_service_node,
                 joint_state_merger_node,
                 rviz_node,
+                # real: TCP 설정만 (S-5 — 이전 데모 실패 원인인 TCP Z+160 미적용 방지)
+                TimerAction(period=3.0, actions=[home_on_start_node]),
             ],
         )
     )

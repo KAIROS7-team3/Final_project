@@ -26,12 +26,17 @@ from typing import Literal, Optional
 # ── StepKind / Step (chamjo motion_library.py 동일 패턴) ──────────────────
 
 class StepKind(Enum):
-    MOVE_L_ABS = auto()
-    MOVE_L_REL = auto()
-    MOVE_J_ABS = auto()
-    MOVE_J_REL = auto()
-    GRIP       = auto()
-    WAIT       = auto()
+    MOVE_L_ABS      = auto()
+    MOVE_L_REL      = auto()
+    MOVE_J_ABS      = auto()
+    MOVE_J_REL      = auto()
+    GRIP            = auto()
+    WAIT            = auto()
+    VISUAL_SERVO_XZ = auto()   # 손잡이 XZ 정렬 VS — runner에서 HandleServoController 실행
+    MOVE_L_TOP_XY   = auto()   # 탑뷰 XY + 고정 Z 이동 — runner가 /vision/tool_top_pose 좌표 사용
+    VISUAL_SERVO_XY = auto()   # 공구 XY 정렬 VS — runner에서 ToolServoController 실행
+    MOVE_L_TOOL_XYZ = auto()   # 그리퍼 캠 XYZ 하강 — runner가 /vision/tool_gripper_pose 좌표 사용
+    MOVE_L_SLOT_XY  = auto()   # 탑뷰 slot XY + 고정 Z 이동 — runner가 /vision/slot_top_pose 좌표 사용
 
 
 PickPlaceMarker = Literal["pick", "place"]
@@ -148,6 +153,11 @@ LAYER1_CLOSE_END:      list = [380.61, 291.56, 115.7,  89.99, 89.99, 90.0]
 LAYER_HEIGHT_Z_MM: float = 115.68 - 65.45   # ≈ 50.23 mm
 
 
+# ── 공구 접근 파라미터 ──────────────────────────────────────────────────────────
+# E-4: config/toolbox.yaml vision_motion 섹션으로 이관 완료.
+# toolbox_seq_runner.py가 __init__에서 로드 후 self._tool_approach_z_mm 등으로 사용.
+
+
 # ── socket 공구 위치 (toolboxapproach_box2_socket_*.tw 실측값, DSR BASE 좌표계, mm/deg) ──
 SOCKET_APPROACH_XY:  list = [269.98, 362.81, 234.0,   53.23,  180.0,  -38.07]
 SOCKET_APPROACH_Z:   list = [269.98, 362.8,  122.8,   48.74, -180.0,  -42.55]
@@ -218,12 +228,18 @@ def _wp(layer: int, key: str) -> list:
     return _LAYER_WP[layer][key]
 
 
-def drawer_open_seq(layer: int) -> list[Step]:
+def drawer_open_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """서랍 열기 시퀀스 (TW: toolboxapproach_box{n}_open.tw 기준).
 
     layer: 0 = 1층, 1 = 2층
-    종료 후 팔은 LAYER{n}_INNER 위치에 있음.
+    tool_pose: 비전에서 받은 공구 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 INNER 웨이포인트 사용.
+    종료 후 팔은 tool_pose 또는 LAYER{n}_INNER 위치에 있음.
     """
+    inner = tool_pose if tool_pose is not None else _wp(layer, "inner")
     return [
         GRIP_RELEASE(),
         mj_abs(_wp(layer, "setup_j")),
@@ -232,17 +248,46 @@ def drawer_open_seq(layer: int) -> list[Step]:
         ml_abs(_wp(layer, "open")),
         ml_abs(_wp(layer, "silence")),
         GRIP_RELEASE(),
-        ml_abs(_wp(layer, "inner")),
+        ml_abs(inner),
+        JOINT_HOME(),
     ]
 
 
-def drawer_close_seq(layer: int) -> list[Step]:
+def vision_drawer_open_seq(layer: int) -> list[Step]:
+    """손잡이 XZ Visual Servoing 포함 서랍 열기 시퀀스.
+
+    ③ APPROACH까지 하드코딩 웨이포인트로 이동 후 VS로 XZ 정렬.
+    VS(DETECT→ALIGN_XZ) 완료 후 GRIP_BOX → 서랍 당기기.
+
+    layer: 0 = 1층, 1 = 2층
+    """
+    return [
+        GRIP_RELEASE(),                            # ①
+        mj_abs(_wp(layer, "setup_j")),             # ②
+        ml_abs(_wp(layer, "approach")),            # ③ 하드코딩 APPROACH — 손잡이 정면
+        Step(kind=StepKind.VISUAL_SERVO_XZ),       # ④⑤ VS: DETECT → ALIGN_XZ
+        GRIP_BOX(),                                # ⑥
+        ml_abs(_wp(layer, "open")),                # ⑦ 서랍 당김
+        ml_abs(_wp(layer, "silence")),             # ⑧ Z 9mm 하강
+        GRIP_RELEASE(),                            # ⑨
+        ml_abs(_wp(layer, "inner")),               # ⑩
+        JOINT_HOME(),                              # ⑪
+    ]
+
+
+def drawer_close_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """서랍 닫기 시퀀스 (TW: toolboxapproach_box{n}_close.tw 기준).
 
     layer: 0 = 1층, 1 = 2층
     drawer_open_seq() 이후 호출 전제 (팔이 INNER에 있는 상태).
-    종료 후 팔은 LAYER{n}_CLOSE_END 위치에 있음.
+    tool_pose: 공구 반납 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 CLOSE_END 웨이포인트 사용.
+    종료 후 팔은 tool_pose 또는 LAYER{n}_CLOSE_END 위치에 있음.
     """
+    close_end = tool_pose if tool_pose is not None else _wp(layer, "close_end")
     return [
         GRIP_RELEASE(),
         mj_abs(_wp(layer, "close_setup_j")),
@@ -251,28 +296,62 @@ def drawer_close_seq(layer: int) -> list[Step]:
         ml_abs(_wp(layer, "open")),
         ml_abs(_wp(layer, "approach")),
         GRIP_RELEASE(),
-        ml_abs(_wp(layer, "close_end")),
+        ml_abs(close_end),
+        JOINT_HOME(),
     ]
 
 
-def approach_tool_seq(layer: int) -> list[Step]:
+def vision_drawer_close_seq(layer: int) -> list[Step]:
+    """손잡이 XZ Visual Servoing 포함 서랍 닫기 시퀀스.
+
+    ③ OPENDOWN까지 하드코딩 웨이포인트로 이동 후 VS로 XZ 정렬.
+    VS 완료 후 GRIP_BOX → 서랍 밀기.
+
+    layer: 0 = 1층, 1 = 2층
+    """
+    return [
+        GRIP_RELEASE(),                            # ①
+        mj_abs(_wp(layer, "close_setup_j")),       # ②
+        ml_abs(_wp(layer, "opendown")),            # ③ 하드코딩 OPENDOWN — 손잡이 정면
+        Step(kind=StepKind.VISUAL_SERVO_XZ),       # ④⑤ VS: DETECT → ALIGN_XZ
+        GRIP_BOX(),                                # ⑥
+        ml_abs(_wp(layer, "open")),                # ⑦
+        ml_abs(_wp(layer, "approach")),            # ⑧ 서랍 밀기
+        GRIP_RELEASE(),                            # ⑨
+        ml_abs(_wp(layer, "close_end")),           # ⑩
+        JOINT_HOME(),                              # ⑪
+    ]
+
+
+def approach_tool_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """서랍이 이미 열린 상태에서 공구 접근 위치로만 이동.
 
     drawer_open_seq() 후 팔이 이미 inner 위치에 있으면 불필요.
     서랍 열기 없이 inner 위치만 필요할 때 단독 사용.
+    tool_pose: 비전에서 받은 공구 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 INNER 웨이포인트 사용.
     """
+    inner = tool_pose if tool_pose is not None else _wp(layer, "inner")
     return [
         mj_abs(_wp(layer, "setup_j")),
-        ml_abs(_wp(layer, "inner")),
+        ml_abs(inner),
     ]
 
 
-def fetch_from_drawer_seq(layer: int) -> list[Step]:
+def fetch_from_drawer_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """서랍 열기 → 공구 접근까지 전체 시퀀스 (공구 파지는 caller가 수행).
 
     drawer_open_seq()의 alias. 가독성용.
+    tool_pose: 비전에서 받은 공구 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 INNER 웨이포인트 사용.
     """
-    return drawer_open_seq(layer)
+    return drawer_open_seq(layer, tool_pose=tool_pose)
 
 
 def socket_fetch_seq() -> list[Step]:
@@ -293,6 +372,41 @@ def socket_fetch_seq() -> list[Step]:
         GRIP_RELEASE(),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_CATCH_HOME_L),
+    ]
+
+
+def vision_fetch_seq() -> list[Step]:
+    """탑뷰 XY + 그리퍼 캠 VS 기반 공구 fetch 시퀀스 (12단계).
+
+    ① JOINT_HOME
+    ② GRIP_RELEASE
+    ③ MOVE_L_TOP_XY   — runner가 /vision/tool_top_pose XY + TOOL_APPROACH_Z_MM 로 이동
+    ④ VISUAL_SERVO_XY — 그리퍼 캠 /vision/tool_gripper_pose 구독, XY P제어 수렴
+    ⑤ MOVE_L_TOOL_XYZ — VS 완료 후 그리퍼 캠 XYZ 로 공구 위치로 하강
+    ⑥ GRIP_SOCKET
+    ⑦ MOVE_L_TOP_XY   — 다시 TOOL_APPROACH_Z_MM 높이로 상승 (③과 동일)
+    ⑧ MoveL → SOCKET_BOTTOM_XY  (staging 위)
+    ⑨ MoveL → SOCKET_BOTTOM     (staging 하강)
+    ⑩ GRIP_RELEASE
+    ⑪ MoveL → SOCKET_BOTTOM_XY  (staging 위)
+    ⑫ JOINT_HOME
+
+    호출 전 팔이 홈 자세에 있어야 함.
+    좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리 (파라미터 불필요).
+    """
+    return [
+        JOINT_HOME(),                           # ①
+        GRIP_RELEASE(),                         # ②
+        Step(kind=StepKind.MOVE_L_TOP_XY),      # ③ 탑뷰 XY + 고정 Z
+        Step(kind=StepKind.VISUAL_SERVO_XY),    # ④ 그리퍼 캠 XY VS
+        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑤ 그리퍼 캠 XYZ 하강
+        GRIP_SOCKET(),                          # ⑥
+        Step(kind=StepKind.MOVE_L_TOP_XY),      # ⑦ 상승 (③과 동일)
+        ml_abs(SOCKET_BOTTOM_XY),              # ⑧ staging 위
+        ml_abs(SOCKET_BOTTOM),                 # ⑨ staging 하강
+        GRIP_RELEASE(),                        # ⑩
+        ml_abs(SOCKET_BOTTOM_XY),             # ⑪ staging 위
+        JOINT_HOME(),                          # ⑫
     ]
 
 
@@ -317,12 +431,54 @@ def socket_return_seq() -> list[Step]:
     ]
 
 
-def return_to_drawer_seq(layer: int) -> list[Step]:
+def vision_return_seq() -> list[Step]:
+    """탑뷰 XY + 그리퍼 캠 VS 기반 공구 return 시퀀스 (13단계).
+
+    ① JOINT_HOME
+    ② GRIP_RELEASE
+    ③ MOVE_L_TOP_XY   — 탑뷰 /vision/tool_top_pose XY + 고정 Z (staging 위)
+    ④ VISUAL_SERVO_XY — 그리퍼 캠 XY VS → staging 공구 정밀 정렬
+    ⑤ MOVE_L_TOOL_XYZ — 그리퍼 캠 XYZ 로 staging 공구 위치로 하강
+    ⑥ GRIP_SOCKET
+    ⑦ MOVE_L_TOP_XY   — staging 위로 상승 (③과 동일)
+    ⑧ MOVE_L_SLOT_XY  — 탑뷰 /vision/slot_top_pose XY + 고정 Z (slot 위)
+    ⑨ VISUAL_SERVO_XY — 그리퍼 캠 XY VS → slot 위치 정밀 정렬
+    ⑩ MOVE_L_TOOL_XYZ — 그리퍼 캠 XYZ 로 slot 위치로 하강
+    ⑪ GRIP_RELEASE
+    ⑫ MOVE_L_SLOT_XY  — slot 위로 상승 (⑧과 동일)
+    ⑬ JOINT_HOME
+
+    호출 전 팔이 홈 자세에 있어야 함.
+    좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리 (파라미터 불필요).
+    """
+    return [
+        JOINT_HOME(),                           # ①
+        GRIP_RELEASE(),                         # ②
+        Step(kind=StepKind.MOVE_L_TOP_XY),      # ③ staging 탑뷰 XY + 고정 Z
+        Step(kind=StepKind.VISUAL_SERVO_XY),    # ④ staging 그리퍼 캠 XY VS
+        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑤ staging 그리퍼 캠 XYZ 하강
+        GRIP_SOCKET(),                          # ⑥
+        Step(kind=StepKind.MOVE_L_TOP_XY),      # ⑦ staging 위로 상승
+        Step(kind=StepKind.MOVE_L_SLOT_XY),     # ⑧ slot 탑뷰 XY + 고정 Z
+        Step(kind=StepKind.VISUAL_SERVO_XY),    # ⑨ slot 그리퍼 캠 XY VS
+        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑩ slot 그리퍼 캠 XYZ 하강
+        GRIP_RELEASE(),                         # ⑪
+        Step(kind=StepKind.MOVE_L_SLOT_XY),     # ⑫ slot 위로 상승
+        JOINT_HOME(),                           # ⑬
+    ]
+
+
+def return_to_drawer_seq(
+    layer: int,
+    tool_pose: Optional[list] = None,
+) -> list[Step]:
     """공구 반납 후 서랍 닫기 전체 시퀀스 (공구 release는 caller가 수행).
 
     drawer_close_seq()의 alias. 가독성용.
+    tool_pose: 공구 반납 위치 [x, y, z, rx, ry, rz] — DSR BASE 좌표계 (mm, deg).
+               None이면 하드코딩 CLOSE_END 웨이포인트 사용.
     """
-    return drawer_close_seq(layer)
+    return drawer_close_seq(layer, tool_pose=tool_pose)
 
 
 def full_socket_fetch_seq() -> list[Step]:

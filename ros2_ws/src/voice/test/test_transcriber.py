@@ -33,6 +33,9 @@ def test_transcriber_uses_korean_deterministic_settings() -> None:
     assert "스패너 16mm" in fake_model.kwargs["initial_prompt"]
     assert fake_model.kwargs["temperature"] == 0.0
     assert fake_model.kwargs["condition_on_previous_text"] is False
+    assert fake_model.kwargs["no_speech_threshold"] == 0.6
+    assert fake_model.kwargs["logprob_threshold"] == -1.0
+    assert fake_model.kwargs["compression_ratio_threshold"] == 2.4
     assert fake_model.kwargs["fp16"] is False
 
 

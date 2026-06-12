@@ -28,6 +28,24 @@
 ## [Unreleased]
 
 ### Added
+- 신규 토픽 4종 — vision_fetch / vision_open / vision_close 시퀀스용 비전 좌표 입력 (Track B Phase 1, `feat/track-b-vision-sequences`):
+  - `/vision/tool_top_pose` (`geometry_msgs/PointStamped`): 탑뷰 D455f가 제공하는 공구 중심 XY 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+    - 단위: m (runner 내부에서 ×1000 → mm 변환). frame_id: `base_link`.
+    - rationale: vision_fetch 시퀀스 step ③ 공구 위 이동(MOVE_L_TOP_XY)에 탑뷰 rough XY 좌표 공급.
+    - migration: 신규 토픽. 비전팀이 발행 미구현 시 해당 step에서 "좌표 미수신" 오류로 시퀀스 실패.
+  - `/vision/tool_gripper_pose` (`geometry_msgs/PointStamped`): 그리퍼 캠 C270이 제공하는 공구 중심 XYZ 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+    - 단위: m. frame_id: `base_link`.
+    - rationale: vision_fetch step ④ ToolServoController XY VS 정렬 및 step ⑤ 하강 Z 좌표 공급.
+    - migration: 신규 토픽.
+  - `/vision/handle_pose` (`geometry_msgs/PointStamped`): 그리퍼 캠 C270이 제공하는 서랍 손잡이 중심 XZ 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+    - 단위: m. frame_id: `base_link`. (Y는 HandleServoController에서 미사용 — XZ만 보정)
+    - rationale: vision_open/close step ④⑤ HandleServoController XZ VS 정렬 좌표 공급.
+    - migration: 신규 토픽.
+  - `/vision/slot_top_pose` (`geometry_msgs/PointStamped`): 탑뷰 D455f가 제공하는 슬롯 XY 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+    - 단위: m. frame_id: `base_link`.
+    - rationale: vision_return 시퀀스 슬롯 복귀 정렬(MOVE_L_SLOT_XY) 좌표 공급.
+    - migration: 신규 토픽.
+  > **비전팀 확인 필요**: 토픽명·메시지 타입·단위·frame_id는 비전팀과 합의 전 잠정 정의. 확정 후 이 항목 갱신 필수.
 - `srv/GripperSetPosition.srv`: RH-P12-RN 그리퍼 위치 제어 서비스 추가 (Track B Phase 1, PR #35).
   - 필드: request `position`(pulse), `current`(mA), `timeout_sec` / response `success`, `message`, `final_position`, `final_current`.
   - `gripper_node`가 `/gripper/set_position`으로 호스팅. Doosan 컨트롤러 TCP(port 9105) 경유 Modbus RTU로 RH-P12-RN 제어.

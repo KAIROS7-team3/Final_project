@@ -54,6 +54,62 @@ class TestCheckFeasibility:
         assert feasible is False
 
 
+class TestCheckDrawerFeasibility:
+    """issue #44 — 서랍(layer) 단위 DB Gate."""
+
+    def test_open_unknown_layer_ok(self, db):
+        # drawers 테이블에 row 없음 → 닫혀 있다고 간주 → 열기 허용
+        feasible, reason = db.check_drawer_feasibility("open", 0)
+        assert feasible is True
+        assert reason == ""
+
+    def test_open_closed_layer_ok(self, db):
+        db.update_drawer_state(0, "close")
+        feasible, _ = db.check_drawer_feasibility("open", 0)
+        assert feasible is True
+
+    def test_open_already_open_blocked(self, db):
+        db.update_drawer_state(0, "open")
+        feasible, reason = db.check_drawer_feasibility("open", 0)
+        assert feasible is False
+        assert reason == "already_open"
+
+    def test_open_other_layer_independent(self, db):
+        db.update_drawer_state(0, "open")
+        feasible, _ = db.check_drawer_feasibility("open", 1)
+        assert feasible is True
+
+    def test_close_always_ok(self, db):
+        feasible, reason = db.check_drawer_feasibility("close", 0)
+        assert feasible is True
+        assert reason == ""
+
+    def test_close_even_when_open(self, db):
+        db.update_drawer_state(0, "open")
+        feasible, _ = db.check_drawer_feasibility("close", 0)
+        assert feasible is True
+
+    def test_invalid_intent_rejected(self, db):
+        feasible, reason = db.check_drawer_feasibility("fetch", 0)
+        assert feasible is False
+        assert "unsupported" in reason
+
+
+class TestUpdateDrawerState:
+    def test_open_then_close(self, db):
+        db.update_drawer_state(0, "open")
+        feasible, reason = db.check_drawer_feasibility("open", 0)
+        assert feasible is False and reason == "already_open"
+
+        db.update_drawer_state(0, "close")
+        feasible, _ = db.check_drawer_feasibility("open", 0)
+        assert feasible is True
+
+    def test_invalid_intent_raises(self, db):
+        with pytest.raises(DBError):
+            db.update_drawer_state(0, "fetch")
+
+
 # 한 공구를 합법적으로 반복 순환시키는 fetch/return 전이열 (S-6 2단계 모델).
 #   in_slot --fetch--> out --fetch--> staged --return--> out --return--> in_slot ...
 # status_before는 무시되고(repository가 DB에서 직접 읽음) status_after만 목표로 쓰인다.

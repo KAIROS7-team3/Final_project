@@ -59,7 +59,11 @@ class WhisperConfig:
     beam_size: int = 10           # 기본 5 → 10
     best_of: int = 5
     temperature: float = 0.0      # 결정론적 출력
+    no_speech_threshold: float = 0.6
+    logprob_threshold: float = -1.0
+    compression_ratio_threshold: float = 2.4
     initial_prompt: str = (
+        "코봇, 코버, 코보, 코부, 고봇, 고버, 고보, 고부, 꼬부, "
         "공구함, 두산 로봇, 스테이징, 십자 드라이버, 커터칼, 라쳇 렌치, "
         "멕가이버, 스패너 16mm, 복스 소켓 19mm, 가져와, 꺼내줘, 반납, "
         "돌려놔, 취소"
@@ -112,6 +116,9 @@ class WhisperTranscriber:
             temperature=self.config.temperature,
             initial_prompt=self.config.initial_prompt or None,
             condition_on_previous_text=self.config.condition_on_previous_text,
+            no_speech_threshold=self.config.no_speech_threshold,
+            logprob_threshold=self.config.logprob_threshold,
+            compression_ratio_threshold=self.config.compression_ratio_threshold,
             fp16=self._device == "cuda",
         )
         return str(result.get("text", "")).strip()
