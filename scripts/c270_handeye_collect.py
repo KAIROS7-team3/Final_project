@@ -35,7 +35,7 @@ _CONFIG_DIR  = os.path.join(_SCRIPT_DIR, '..', 'config')
 OUTPUT_PATH  = os.path.join(_SCRIPT_DIR, 'c270_handeye_data.npz')
 RESUME_PATH  = os.path.join(_SCRIPT_DIR, 'c270_handeye_data_tmp.npz')  # 자동 백업
 
-DEVICE        = 8
+DEVICE        = 2
 WIDTH, HEIGHT = 640, 480
 MIN_SAMPLES   = 15
 
@@ -76,46 +76,40 @@ CHARUCO_BOARD = cv2.aruco.CharucoBoard_create(
 
 # ── 자동 저장 / 이어받기 ────────────────────────────────────────────────────────
 def autosave(R_g2b: list, t_g2b: list, R_t2c: list, t_t2c: list,
-             pose_idx: int) -> None:
+             pose_idx: int, out_path: str, tmp_path: str) -> None:
     arrays = dict(
         R_gripper2base=np.stack(R_g2b),
         t_gripper2base=np.stack(t_g2b),
         R_target2cam  =np.stack(R_t2c),
         t_target2cam  =np.stack(t_t2c),
     )
-    np.savez(RESUME_PATH, **arrays, pose_idx=np.array(pose_idx))
-    # 기존 OUTPUT_PATH보다 적은 수로 덮어쓰지 않음 (세션 초기화로 인한 데이터 손실 방지)
-    if os.path.exists(OUTPUT_PATH):
-        try:
-            n_existing = len(np.load(OUTPUT_PATH)['R_gripper2base'])
-            if len(R_g2b) < n_existing:
-                return
-        except Exception:
-            pass
-    np.savez(OUTPUT_PATH, **arrays)
+    np.savez(tmp_path, **arrays, pose_idx=np.array(pose_idx))
+    np.savez(out_path, **arrays)
 
 
-def load_resume() -> tuple[list, list, list, list, int] | None:
-    # tmp 파일 우선, 없으면 최종 출력 파일 확인
-    if os.path.exists(RESUME_PATH):
-        path, has_idx = RESUME_PATH, True
-    elif os.path.exists(OUTPUT_PATH):
-        path, has_idx = OUTPUT_PATH, False
+def load_resume(out_path: str, tmp_path: str, auto: bool = False) -> tuple[list, list, list, list, int] | None:
+    # tmp 파일 우선(pose_idx 포함), 없으면 출력 파일 확인
+    if os.path.exists(tmp_path):
+        path, has_idx = tmp_path, True
+    elif os.path.exists(out_path):
+        path, has_idx = out_path, False
     else:
         return None
     d = np.load(path)
     n = len(d['R_gripper2base'])
     if n == 0:
         return None
-    # pose_idx: tmp 파일엔 저장돼 있고, 출력 파일엔 없으므로 샘플 수로 추정
     pose_idx = int(d['pose_idx']) if (has_idx and 'pose_idx' in d) else n
-    print(f'\n[이어받기] 기존 데이터 발견 — {n}쌍 저장됨 (다음 TW 포즈: {pose_idx + 1}번)')
-    ans = input('이어서 진행할까요? [Y/n]: ').strip().lower()
-    if ans in ('', 'y'):
-        return (list(d['R_gripper2base']), list(d['t_gripper2base']),
-                list(d['R_target2cam']),   list(d['t_target2cam']),
-                pose_idx)
-    return None  # 새로 시작
+    print(f'\n[이어받기] 기존 데이터 발견 — {n}쌍 (다음 TW 포즈: {pose_idx + 1}번)')
+    if auto:
+        print('  --resume 플래그: 자동 이어받기')
+    else:
+        ans = input('이어서 진행할까요? [Y/n]: ').strip().lower()
+        if ans not in ('', 'y'):
+            return None
+    return (list(d['R_gripper2base']), list(d['t_gripper2base']),
+            list(d['R_target2cam']),   list(d['t_target2cam']),
+            pose_idx)
 
 
 # ── TW 파일 파서 ───────────────────────────────────────────────────────────────
@@ -167,7 +161,7 @@ def parse_dart_tcp(line: str) -> tuple[np.ndarray, np.ndarray] | None:
 
 
 # ── ChArUco 감지 ───────────────────────────────────────────────────────────────
-def detect(frame: np.ndarray):
+def detect(frame: np.ndarray, relax: bool = False):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     corners, ids, _ = cv2.aruco.detectMarkers(gray, _ARUCO_DICT, parameters=_ARUCO_PARAMS)
 
@@ -180,11 +174,12 @@ def detect(frame: np.ndarray):
 
     cv2.aruco.drawDetectedMarkers(disp, corners, ids)
 
+    min_corners = 4 if relax else MIN_CORNERS
     retval, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
         corners, ids, gray, CHARUCO_BOARD, CAMERA_MATRIX, DIST_COEFFS)
 
-    if retval < MIN_CORNERS:
-        cv2.putText(disp, f'corners={retval} (min {MIN_CORNERS})', (10, 35),
+    if retval < min_corners:
+        cv2.putText(disp, f'corners={retval} (min {min_corners})', (10, 35),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 165, 255), 2)
         return None, None, disp, f'corners={retval}'
 
@@ -205,7 +200,8 @@ def detect(frame: np.ndarray):
     cos_a  = abs(float(R[2, 2]))
     angle  = float(np.degrees(np.arccos(np.clip(cos_a, 0.0, 1.0))))
 
-    qual_ok = (angle <= MAX_FACE_ANGLE_DEG and MIN_DIST_M <= dist_m <= MAX_DIST_M)
+    max_angle = 80.0 if relax else MAX_FACE_ANGLE_DEG
+    qual_ok = (angle <= max_angle and MIN_DIST_M <= dist_m <= MAX_DIST_M)
     color   = (0, 255, 0) if qual_ok else (0, 165, 255)
     tag     = 'OK' if qual_ok else f'BAD ang={angle:.0f}° dist={dist_m:.2f}m'
 
@@ -215,7 +211,12 @@ def detect(frame: np.ndarray):
                 f'corners={retval}  dist={dist_m:.3f}m  ang={angle:.1f}deg  [{tag}]',
                 (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, color, 2)
 
+    # --relax: 품질 미달이어도 R/t 반환 (회전 다양성 확보 우선)
     if not qual_ok:
+        if relax:
+            cv2.putText(disp, '[RELAX] ENTER로 강제 저장 가능', (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+            return R, t, disp, tag
         return None, None, disp, tag
     return R, t, disp, 'OK'
 
@@ -225,9 +226,18 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--tw', default=None,
                         help='DART TW 파일 경로. 지정 시 TCP 자동 로드.')
-    parser.add_argument('--offset', type=int, default=0,
-                        help='저장 순번 오프셋 (예: --offset 23 → 첫 저장이 [24]로 표시)')
+    parser.add_argument('--output', default=None,
+                        help='출력 npz 경로 (기본: scripts/c270_handeye_data.npz)')
+    parser.add_argument('--resume', action='store_true',
+                        help='중단된 세션 자동 이어받기 (Y/n 프롬프트 없이)')
+    parser.add_argument('--tw-start', type=int, default=1, metavar='N',
+                        help='TW 파일 N번 포즈부터 수집 시작 (기본: 1). 새 세션에서만 적용; --resume 시 저장된 위치 우선')
+    parser.add_argument('--relax', action='store_true',
+                        help='품질 기준 완화 (각도·코너 수 미달 포즈도 저장 허용). 회전 다양성 확보용')
     args = parser.parse_args()
+
+    out_path = os.path.abspath(args.output) if args.output else OUTPUT_PATH
+    tmp_path = out_path.replace('.npz', '_tmp.npz')
 
     tw_poses: list[dict] = []
     tw_mode = False
@@ -247,16 +257,19 @@ def main() -> None:
     t_t2c_list: list = []
     pose_idx = 0
 
-    resumed = load_resume()
+    resumed = load_resume(out_path, tmp_path, auto=args.resume)
     if resumed is not None:
         R_g2b_list, t_g2b_list, R_t2c_list, t_t2c_list, pose_idx = resumed
         log.info('이어받기 완료 — %d쌍, 다음 TW 포즈: %d번', len(R_g2b_list), pose_idx + 1)
+    elif args.tw_start > 1:
+        pose_idx = args.tw_start - 1
+        log.info('--tw-start %d → TW %d번 포즈부터 시작', args.tw_start, args.tw_start)
 
     def _save_and_exit(sig=None, frame=None) -> None:
         n = len(R_g2b_list)
         if n > 0:
-            autosave(R_g2b_list, t_g2b_list, R_t2c_list, t_t2c_list, pose_idx)
-            log.info('인터럽트 감지 — %d쌍 저장: %s', n, OUTPUT_PATH)
+            autosave(R_g2b_list, t_g2b_list, R_t2c_list, t_t2c_list, pose_idx, out_path, tmp_path)
+            log.info('인터럽트 감지 — %d쌍 저장: %s', n, out_path)
         cap.release()
         cv2.destroyAllWindows()
         sys.exit(0)
@@ -290,7 +303,7 @@ def main() -> None:
             log.error('프레임 읽기 실패')
             break
 
-        R_t2c, t_t2c, disp, qual = detect(frame)
+        R_t2c, t_t2c, disp, qual = detect(frame, relax=args.relax)
         if R_t2c is not None:
             last_R_t2c, last_t_t2c = R_t2c, t_t2c
 
@@ -299,7 +312,7 @@ def main() -> None:
         if tw_mode and pose_idx < len(tw_poses):
             p = tw_poses[pose_idx]
             cv2.putText(disp,
-                        f'Pose {pose_idx+1}/{len(tw_poses)}  ann={p["ann"]}  saved={n + args.offset}',
+                        f'Pose {pose_idx+1}/{len(tw_poses)}  ann={p["ann"]}  saved={n}',
                         (10, HEIGHT - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 1)
             cv2.putText(disp,
                         f'X={p["X"]:.1f} Y={p["Y"]:.1f} Z={p["Z"]:.1f}',
@@ -326,7 +339,7 @@ def main() -> None:
                 R_g2b, t_g2b = dart_tcp_to_Rt(p['X'], p['Y'], p['Z'],
                                                p['A'], p['B'], p['C'])
                 log.info('[%d] 저장  포즈%s  TCP=[%.3f, %.3f, %.3f]m',
-                         n + 1 + args.offset, p['ann'], t_g2b[0], t_g2b[1], t_g2b[2])
+                         n + 1, p['ann'], t_g2b[0], t_g2b[1], t_g2b[2])
                 pose_idx += 1
             else:
                 cv2.destroyWindow('C270 Eye-in-Hand Collect')
@@ -340,13 +353,13 @@ def main() -> None:
                     continue
                 R_g2b, t_g2b = result
                 log.info('[%d] 저장  TCP=[%.3f, %.3f, %.3f]m',
-                         n + 1 + args.offset, t_g2b[0], t_g2b[1], t_g2b[2])
+                         n + 1, t_g2b[0], t_g2b[1], t_g2b[2])
 
             R_g2b_list.append(R_g2b); t_g2b_list.append(t_g2b)
             R_t2c_list.append(cap_R); t_t2c_list.append(cap_t)
 
             # 저장마다 자동 백업
-            autosave(R_g2b_list, t_g2b_list, R_t2c_list, t_t2c_list, pose_idx)
+            autosave(R_g2b_list, t_g2b_list, R_t2c_list, t_t2c_list, pose_idx, out_path, tmp_path)
 
         elif key == ord('d') and R_g2b_list:
             R_g2b_list.pop(); t_g2b_list.pop()
@@ -355,7 +368,7 @@ def main() -> None:
                 pose_idx -= 1
             log.info('마지막 삭제 — 남은 %d쌍', len(R_g2b_list))
             if R_g2b_list:
-                autosave(R_g2b_list, t_g2b_list, R_t2c_list, t_t2c_list, pose_idx)
+                autosave(R_g2b_list, t_g2b_list, R_t2c_list, t_t2c_list, pose_idx, out_path, tmp_path)
 
         elif key in (ord('q'), 27):
             break
@@ -367,17 +380,16 @@ def main() -> None:
     print(f'\n수집: {n}쌍')
     if n == 0:
         print('데이터 없음.')
-        if os.path.exists(RESUME_PATH):
-            os.remove(RESUME_PATH)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
         return
     if n < MIN_SAMPLES:
         log.warning('%d쌍 수집 — 최소 %d쌍 권장', n, MIN_SAMPLES)
 
-    # OUTPUT_PATH는 autosave에서 이미 매 포즈마다 갱신됨
-    log.info('완료 — %d쌍: %s', n, OUTPUT_PATH)
+    log.info('완료 — %d쌍: %s', n, out_path)
 
-    if os.path.exists(RESUME_PATH):
-        os.remove(RESUME_PATH)
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
 
     print('다음: python3 scripts/compute_handeye_opencv.py')
 

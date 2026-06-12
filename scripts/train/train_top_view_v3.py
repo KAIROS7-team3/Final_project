@@ -6,7 +6,7 @@
 # ── Cell 1: 패키지 설치 ──────────────────────────────────────
 # !pip install ultralytics roboflow -q
 
-# ── Cell 2: 데이터셋 다운로드 (Roboflow v2) ──────────────────
+# ── Cell 2: 데이터셋 다운로드 (Roboflow v2, segmentation 포맷) ──
 # !pip install roboflow
 #
 # import os
@@ -14,12 +14,12 @@
 # rf = Roboflow(api_key=os.environ["ROBOFLOW_API_KEY"])  # Colab Secrets에서 설정
 # project = rf.workspace("yeonseop9999-gmail-com").project("final-project-kir4p")
 # version = project.version(2)
-# dataset = version.download("yolov11")
+# dataset = version.download("yolov11-seg")  # ← "yolov11" 에서 변경 (폴리곤 마스크 포함)
 
 # ── Cell 3: 학습 ─────────────────────────────────────────────
 from ultralytics import YOLO
 
-model = YOLO("yolo11s.pt")
+model = YOLO("yolo11s-seg.pt")  # ← detection → segmentation 베이스 모델
 
 model.train(
     data="/content/final-project-kir4p-2/data.yaml",
@@ -32,7 +32,7 @@ model.train(
     lrf=0.01,
     device=0,
     project="/content/runs/yolo",
-    name="top_view_v3",
+    name="top_view_v3_seg",  # ← 이름 구분
     exist_ok=False,
     plots=True,
     verbose=True,

@@ -5,16 +5,13 @@
     python3 scripts/examples/infer_topview_demo.py 10   # 10초 실행 후 자동 종료
 
 출력: scripts/infer_snapshots/ 에 's' 키로 annotated 이미지 저장
-종료: 'q' 또는 Ctrl+C
+종료: 'q' 또는 Ctrl+C  (창의 X 버튼도 가능)
 """
 from __future__ import annotations
 
 import logging
-import select
 import sys
-import termios
 import time
-import tty
 from pathlib import Path
 
 import cv2
@@ -32,13 +29,7 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _CONFIG_PATH  = _PROJECT_ROOT / "config" / "vision.yaml"
 _SNAPSHOT_DIR = _PROJECT_ROOT / "scripts" / "infer_snapshots"
-
-
-def _keypress() -> str | None:
-    """non-blocking 단일 키 감지 — 눌린 키 반환, 없으면 None."""
-    if select.select([sys.stdin], [], [], 0)[0]:
-        return sys.stdin.read(1)
-    return None
+_WIN_NAME     = "TopView D455f — s:스냅샷  q:종료"
 
 
 def main() -> None:
@@ -68,17 +59,16 @@ def main() -> None:
     pipeline_cfg.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
     logger.info("D455f 스트림 시작...")
     pipeline.start(pipeline_cfg)
-    logger.info("스트림 시작 완료 | 's': 스냅샷  'q'/Ctrl+C: 종료")
+    logger.info("스트림 시작 완료 | 창에서 's': 스냅샷  'q'/Ctrl+C: 종료")
 
-    frame_count   = 0
-    fps_time      = time.time()
-    last_annotated: np.ndarray | None = None
-    t_start       = time.monotonic()
-    fd            = sys.stdin.fileno()
-    old_tty       = termios.tcgetattr(fd)
+    cv2.namedWindow(_WIN_NAME, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(_WIN_NAME, 1280, 720)
+
+    frame_count = 0
+    fps_time    = time.time()
+    t_start     = time.monotonic()
 
     try:
-        tty.setraw(fd)
         while True:
             if run_sec is not None and time.monotonic() - t_start >= run_sec:
                 break
@@ -91,14 +81,12 @@ def main() -> None:
             img       = np.asanyarray(color_frame.get_data())
             results   = model(img, conf=conf, iou=iou, verbose=False)
             annotated = results[0].plot()
-            last_annotated = annotated
 
             frame_count += 1
             if frame_count % 30 == 0:
                 fps = 30 / (time.time() - fps_time)
                 fps_time = time.time()
-                sys.stdout.write(f"\r[FPS] {fps:.1f}  ")
-                sys.stdout.flush()
+                logger.info("FPS %.1f", fps)
 
             boxes = results[0].boxes
             if boxes is not None and len(boxes):
@@ -107,23 +95,23 @@ def main() -> None:
                     f"({s:.2f})"
                     for c, s in zip(boxes.cls.tolist(), boxes.conf.tolist())
                 ]
-                sys.stdout.write(f"\r[DETECT] {', '.join(detections)}          \n")
-                sys.stdout.flush()
+                logger.info("[DETECT] %s", ", ".join(detections))
 
-            key = _keypress()
-            if key == "s" and last_annotated is not None:
+            cv2.imshow(_WIN_NAME, annotated)
+            key = cv2.waitKey(1) & 0xFF
+
+            if key == ord("s"):
                 ts        = time.strftime("%Y%m%d_%H%M%S")
                 snap_path = _SNAPSHOT_DIR / f"snap_{ts}.jpg"
-                cv2.imwrite(str(snap_path), last_annotated)
-                sys.stdout.write(f"\r[SNAP] 저장: {snap_path.name}\n")
-                sys.stdout.flush()
-            elif key in ("q", "\x03"):
+                cv2.imwrite(str(snap_path), annotated)
+                logger.info("[SNAP] 저장: %s", snap_path.name)
+            elif key in (ord("q"), 27):
                 break
 
     except KeyboardInterrupt:
         pass
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_tty)
+        cv2.destroyAllWindows()
         pipeline.stop()
         logger.info("종료 | %d프레임 | 스냅샷 경로: %s", frame_count, _SNAPSHOT_DIR)
 
