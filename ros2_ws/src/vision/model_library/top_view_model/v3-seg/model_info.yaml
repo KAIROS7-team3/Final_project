@@ -1,0 +1,105 @@
+# =============================================================================
+# top_view_model / v3-seg — 모델 정보
+# =============================================================================
+# 카메라: Intel RealSense D455f (탑뷰 고정 마운트)
+# 역할: 공구함 전체를 위에서 내려다보며 공구 6종의 위치 + 인스턴스 마스크 탐지
+# 태스크: Instance Segmentation (bounding box → mask)
+# 상태: 신규 (active: false — 검증 후 전환 예정)
+#
+# [v3-2 detection → v3-seg segmentation 변경 요약]
+#   - 기존 bbox 데이터셋을 SAM (Segment Anything Model)으로 마스크 변환
+#   - 변환된 COCO Segmentation 포맷 데이터셋을 Roboflow에 업로드
+#   - Roboflow Train (YOLOv11 Instance Segmentation Nano) 학습
+#   - mAP@50: 0.977 (v3-2 detection 0.952 대비 향상)
+# =============================================================================
+
+version: v3-seg
+description: "탑뷰 D455f 기준 공구 6종 인스턴스 세그멘테이션 모델"
+
+active: false   # 검증 완료 후 true로 변경, vision.yaml 동시 갱신
+
+# -----------------------------------------------------------------------------
+# 모델 파일
+# -----------------------------------------------------------------------------
+model:
+  file: weights/best.pt
+  base: yolo11n-seg.pt         # Nano segmentation 베이스
+  image_size: 640
+  task: segment                # detect → segment
+
+# -----------------------------------------------------------------------------
+# 학습에 사용한 데이터셋
+# -----------------------------------------------------------------------------
+dataset:
+  name: final-project-seg-v1
+  source_images: 926            # SAM 변환 전 원본 (bbox 기준)
+  generated_images: 1574        # Roboflow v1 augmentation 포함
+  split:
+    train: 1296
+    valid: 185
+    test: 93
+  roboflow:
+    workspace: "yeonseop9999-gmail-com"
+    project: "final-project-seg"  # 인스턴스 세그멘테이션 전용 프로젝트
+    version: 1
+  conversion:
+    method: "SAM (Segment Anything Model) — bbox prompt → mask"
+    script: "scripts/train/convert_bbox_to_seg_sam.py"
+    source_format: "COCO bbox"
+    output_format: "COCO Segmentation"
+    quality_check: "중복 마스크 2~3건 수동 확인 후 정리, 오분류 없음"
+
+# -----------------------------------------------------------------------------
+# 학습 설정
+# -----------------------------------------------------------------------------
+training:
+  platform: "Roboflow Train"        # 클라우드 GPU 사용
+  engine: "Custom Training"
+  architecture: "YOLOv11 Instance Segmentation Nano"
+  resize: "640x640"
+  augmentation: "Auto-Orient ON, minimal augmentation (baseline)"
+  credits_used: 1.61
+  trained_at: "2026-06-12"
+
+# -----------------------------------------------------------------------------
+# 학습 결과
+# -----------------------------------------------------------------------------
+results:
+  map50: 0.977
+  precision: 0.969
+  recall: 0.934
+  f1: 0.951
+
+  notes: "Roboflow Train 제공 메트릭 — mask IoU 기준 mAP@50"
+
+# -----------------------------------------------------------------------------
+# 모델 접근
+# -----------------------------------------------------------------------------
+# weights/best.pt: Roboflow Deploy 또는 .pt export 다운로드 후 여기에 배치
+# Roboflow 팀 초대로 프로젝트 직접 접근 가능 (권장)
+roboflow_deploy:
+  model_id: "final-project-seg/1"    # 팀원 Roboflow API로 직접 추론 가능
+  inference_example: "scripts/examples/infer_topview_seg_roboflow.py"
+
+drive_url: ""   # weights export 후 Drive 업로드 시 기입
+
+# -----------------------------------------------------------------------------
+# 클래스 인덱스 (v2/v3-2 와 동일 — 알파벳순)
+# ⚠️  config/vision.yaml 의 class_names 와 반드시 일치해야 함
+# -----------------------------------------------------------------------------
+classes:
+  0: multi_tool
+  1: ratchet_wrench
+  2: screwdriver
+  3: socket_19mm
+  4: spanner_16mm
+  5: utility_knife
+
+# -----------------------------------------------------------------------------
+# 비고
+# -----------------------------------------------------------------------------
+notes:
+  - "detection(v3-2) 대비 segmentation 전환 — 마스크 기반 정밀 위치 추정 가능"
+  - "Nano 크기이므로 추론 속도는 v3-2(Small) 대비 빠름"
+  - "active: true 전환 시 config/vision.yaml의 top_view_model_path 동시 갱신 필수"
+  - "Roboflow 팀 워크스페이스 초대로 UI 테스트·버전 관리 공유 권장"

@@ -1,0 +1,13 @@
+train: /home/iys/Final_project/datasets/tools/top_view_seg/train/images
+val: /home/iys/Final_project/datasets/tools/top_view_seg/valid/images
+test: /home/iys/Final_project/datasets/tools/top_view_seg/test/images
+
+nc: 6
+names: ['multi_tool', 'ratchet_wrench', 'screwdriver', 'socket_19mm', 'spanner_16mm', 'utility_knife']
+
+roboflow:
+  workspace: yeonseop9999-gmail-com
+  project: final-project_segmentation
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/yeonseop9999-gmail-com/final-project_segmentation/dataset/1

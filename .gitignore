@@ -80,6 +80,18 @@ datasets/tools/**/valid/
 datasets/tools/**/test/
 datasets/tools/top_view/auto_labels/
 
+# SAM 변환 결과물 (246MB, Roboflow 업로드 완료 — 로컬 전용)
+Final_project_coco_segmentation/
+
+# 세그멘테이션 학습 데이터셋 이미지 (Roboflow 관리 — 로컬 전용, data.yaml만 추적)
+datasets/tools/top_view_seg/train/
+datasets/tools/top_view_seg/valid/
+datasets/tools/top_view_seg/test/
+datasets/tools/top_view_seg/README*.txt
+
+# 핸드아이 캘리브레이션 수집 데이터 (로컬 전용)
+scripts/*.npz
+
 # YOLO 학습 결과물
 runs/
 
