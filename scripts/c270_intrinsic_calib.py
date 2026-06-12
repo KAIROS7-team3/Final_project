@@ -23,7 +23,7 @@ import numpy as np
 import yaml
 
 # ── 설정 ──────────────────────────────────────────────────────────────────
-DEVICE       = 8          # /dev/video8 = C270
+DEVICE       = 2          # /dev/video2 = C270
 WIDTH        = 640
 HEIGHT       = 480
 FPS          = 30
@@ -95,13 +95,8 @@ def save_config(K, dist, img_size, n_frames, rms):
         'camera_matrix_row_major': K.tolist(),
     }
     path = os.path.abspath(CONFIG_OUT)
-    class _IndentDumper(yaml.Dumper):
-        def increase_indent(self, flow=False, indentless=False):
-            return super().increase_indent(flow, indentless=False)
-
     with open(path, 'w') as f:
-        yaml.dump(data, f, Dumper=_IndentDumper,
-                  default_flow_style=False, allow_unicode=True)
+        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
     log.info(f'저장 완료: {path}')
     log.info(f'RMS 재투영 오차: {rms:.4f} px  (목표 < 0.5px)')
 

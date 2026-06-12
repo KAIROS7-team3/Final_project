@@ -12,6 +12,42 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+
+DEFAULT_WAKE_WORDS: tuple[str, ...] = (
+    "코봇",
+    "코 봇",
+    "코보",
+    "코 보",
+    "코부",
+    "코 부",
+    "코브",
+    "코 브",
+    "코버",
+    "코 버",
+    "고봇",
+    "고 봇",
+    "고보",
+    "고 보",
+    "고부",
+    "고 부",
+    "고브",
+    "고 브",
+    "고버",
+    "고 버",
+    "코벗",
+    "코 벗",
+    "고벗",
+    "고 벗",
+    "꼬보",
+    "꼬 보",
+    "꼬부",
+    "꼬 부",
+    "코보트",
+    "코 보트",
+    "고보트",
+    "고 보트",
+)
 
 
 @dataclass(frozen=True)
@@ -47,7 +83,52 @@ def apply_wake_word_gate(
             continue
         # startswith를 써서 "로봇 스패너 가져와" 형태만 허용한다.
         if lowered.startswith(candidate):
-            # 원본 normalized 문자열에서 wake word 길이만큼 잘라 공백을 제거한다.
-            return WakeWordResult(True, normalized[len(stripped_wake_word) :].strip())
+            return WakeWordResult(True, _strip_wake_word_prefix(normalized, stripped_wake_word))
 
     return WakeWordResult(False, "")
+
+
+def _strip_wake_word_prefix(text: str, wake_word: str) -> str:
+    """wake word가 잡힌 경우 command 본문만 남긴다.
+
+    단일 토큰 wake word의 경우 STT가 `코부츠`처럼 끝을 덧붙여도 첫 토큰 전체를
+    제거해 잔여 음절이 남지 않게 한다.
+    """
+
+    stripped_text = text.lstrip()
+    stripped_wake_word = wake_word.strip()
+    if not stripped_wake_word:
+        return stripped_text
+
+    if " " in stripped_wake_word:
+        remainder = stripped_text[len(stripped_wake_word) :]
+        return remainder.lstrip(" \t\n\r,，.。!?！？-")
+
+    remainder = stripped_text[len(stripped_wake_word) :]
+    remainder = remainder.lstrip(" \t\n\r,，.。!?！？-")
+    return _strip_spurious_leading_token(remainder)
+
+
+def _strip_spurious_leading_token(text: str) -> str:
+    """wake word 뒤에 붙은 한 글자짜리 오인식 잔여물을 걷어낸다."""
+
+    stripped_text = text.lstrip()
+    if not stripped_text:
+        return ""
+
+    index = 0
+    while index < len(stripped_text) and _is_token_char(stripped_text[index]):
+        index += 1
+    leading_token = stripped_text[:index]
+    if 0 < len(leading_token) <= 1:
+        while index < len(stripped_text) and not _is_token_char(stripped_text[index]):
+            index += 1
+        return stripped_text[index:].lstrip(" \t\n\r,，.。!?！？-")
+
+    return stripped_text
+
+
+def _is_token_char(character: str) -> bool:
+    """wake word 토큰의 일부로 볼 문자만 남긴다."""
+
+    return bool(re.match(r"[0-9A-Za-z가-힣]", character))

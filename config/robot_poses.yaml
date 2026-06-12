@@ -47,6 +47,34 @@ poses:
     joints: [0.0, -0.785, 1.571, 0.0, 0.785, 0.0]
     description: "Hand-eye 캘리브레이션 첫 포즈. 이후 자동으로 다양한 자세 순회."
 
+# ── 모션 속도·가속도 상한 (S-5/E-4) ─────────────────────────────────────
+# toolbox_seq_runner --ros-args -p vel_l:=<value> 로 오버라이드 가능.
+# 단위: DSR 네이티브 (mm/s, deg/s) — toolbox_motion.py와 동일 단위계.
+# 참조: .claude/rules/safety.md S-5, .claude/rules/engineering.md E-4
+motion_limits:
+  vel_l_mm_s: 50.0      # Cartesian 선속도 상한 (S-5: 협동 모드 250mm/s 이하)
+  acc_l_mm_s2: 200.0    # Cartesian 선가속도 상한
+  vel_r_deg_s: 15.3     # Cartesian 회전 속도 상한
+  acc_r_deg_s2: 61.2    # Cartesian 회전 가속도 상한
+  vel_j_deg_s: 12.0     # 관절 속도 상한
+  acc_j_deg_s2: 20.0    # 관절 가속도 상한
+
+# ── TCP 설정 (E-4) ───────────────────────────────────────────────────────────
+# 단위: DSR 네이티브 (mm, deg) — ConfigCreateTcp pos 배열 [x, y, z, rx, ry, rz]
+tcp:
+  name: GripperDA_v1
+  offset_mm: [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]   # flange → tool tip
+
+# ── Tool (payload) 설정 (E-4) ─────────────────────────────────────────────────
+# 단위: weight kg, cog mm (DSR 네이티브, flange 기준)
+tool:
+  name: GripperDA_v1
+  weight_kg: 0.5
+  cog_mm: [0.0, 0.0, 80.0]        # 그리퍼 무게중심 — flange 기준 Z 80mm (TCP 절반)
+  inertia_kgm2: [0.00127, 0.00127, 0.0004, 0.0, 0.0, 0.0]
+  # [Ixx, Iyy, Izz, Ixy, Ixz, Iyz] — RH-P12-RN 원통 근사 (r=40mm, h=160mm, m=0.5kg)
+  # 실측 CAD 값 확보 시 교체 필요
+
 # 안전 제약 (safety.md S-5):
 # - 모든 포즈는 e0509 operational range 내
 # - 소프트 리밋이 하드웨어 리밋보다 항상 좁아야 함

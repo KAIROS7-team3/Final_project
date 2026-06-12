@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KAIROS7 Demo Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d1117;
+    --card:     #161b22;
+    --border:   #30363d;
+    --text:     #e6edf3;
+    --muted:    #8b949e;
+    --green:    #2ea043;
+    --blue:     #1f6feb;
+    --orange:   #d29922;
+    --red:      #da3633;
+    --teal:     #39c5cf;
+    --accent:   #58a6ff;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── 헤더 ── */
+  #header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+    flex-shrink: 0;
+  }
+  #header h1 { font-size: 16px; font-weight: 600; letter-spacing: .5px; }
+  #header h1 span { color: var(--teal); }
+  #ws-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red); flex-shrink: 0;
+    transition: background .3s;
+  }
+  #ws-dot.ok { background: var(--green); }
+  #ws-label { color: var(--muted); font-size: 11px; }
+  .spacer { flex: 1; }
+  #clock { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+  /* ── 메인 그리드 ── */
+  #main {
+    display: grid;
+    grid-template-columns: 340px 1fr 280px;
+    gap: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .panel {
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel:last-child { border-right: none; }
+
+  .panel-title {
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  /* ── 카드 ── */
+  .card {
+    border-bottom: 1px solid var(--border);
+    padding: 12px 14px;
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  /* ── 카메라 패널 ── */
+  #cam-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    overflow: hidden;
+  }
+  .cam-slot {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    min-height: 0;
+  }
+  .cam-slot:last-child { border-bottom: none; }
+  .cam-slot img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .cam-label {
+    position: absolute;
+    top: 4px; left: 6px;
+    font-size: 10px;
+    color: rgba(230,237,243,.7);
+    background: rgba(0,0,0,.55);
+    padding: 1px 6px;
+    border-radius: 3px;
+    pointer-events: none;
+  }
+
+  /* ── 음성 카드 ── */
+  #heard-text {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    min-height: 22px;
+    word-break: break-all;
+  }
+  #intent-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .intent-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--blue);
+    color: #fff;
+  }
+  .intent-badge.fetch { background: var(--blue); }
+  .intent-badge.return { background: var(--orange); }
+  .intent-badge.unknown { background: var(--border); color: var(--muted); }
+  #intent-tool { color: var(--text); font-weight: 500; }
+  #intent-conf { color: var(--muted); font-size: 11px; }
+  #intent-ts { color: var(--muted); font-size: 11px; margin-left: auto; }
+
+  /* ── DB 테이블 ── */
+  .db-table { width: 100%; border-collapse: collapse; }
+  .db-table th {
+    text-align: left; font-size: 10px; color: var(--muted);
+    padding: 3px 6px; font-weight: 600;
+  }
+  .db-table td { padding: 4px 6px; font-size: 12px; border-top: 1px solid var(--border); }
+  .db-table td:first-child { font-family: monospace; color: var(--accent); }
+  .status-badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .s-in_slot  { background: rgba(46,160,67,.2);  color: #3fb950; }
+  .s-out      { background: rgba(210,153,34,.2); color: #e3b341; }
+  .s-staged   { background: rgba(31,111,235,.2); color: #79c0ff; }
+  .s-missing  { background: rgba(218,54,51,.2);  color: #f85149; }
+  .s-fod_alert{ background: rgba(218,54,51,.2);  color: #f85149; }
+  .s-unknown  { background: rgba(139,148,158,.15); color: var(--muted); }
+  #db-empty   { color: var(--muted); font-size: 12px; padding: 4px 0; }
+
+  /* ── 이벤트 로그 ── */
+  #log-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 14px;
+  }
+  #log-scroll::-webkit-scrollbar { width: 4px; }
+  #log-scroll::-webkit-scrollbar-track { background: transparent; }
+  #log-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .log-entry {
+    display: flex;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(48,54,61,.5);
+    font-size: 11px;
+    align-items: baseline;
+  }
+  .log-ts   { color: var(--muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .log-tag  {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 0 5px;
+    border-radius: 4px;
+    line-height: 16px;
+  }
+  .tag-fetch   { background: rgba(31,111,235,.25); color: #79c0ff; }
+  .tag-return  { background: rgba(210,153,34,.25); color: #e3b341; }
+  .tag-error   { background: rgba(218,54,51,.25);  color: #f85149; }
+  .tag-gate    { background: rgba(57,197,207,.15); color: var(--teal); }
+  .tag-intent  { background: rgba(88,166,255,.15); color: var(--accent); }
+  .tag-info    { background: rgba(139,148,158,.15); color: var(--muted); }
+  .log-msg  { color: var(--text); flex: 1; word-break: break-all; }
+
+  /* ── 컨트롤 패널 ── */
+  #btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .trigger-btn {
+    flex: 1;
+    padding: 10px 0;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: .5px;
+    transition: opacity .15s, transform .1s;
+    position: relative;
+  }
+  .trigger-btn:active { transform: scale(.97); }
+  .trigger-btn:disabled { opacity: .45; cursor: not-allowed; }
+  #btn-fetch  { background: var(--blue);   color: #fff; }
+  #btn-return { background: var(--orange); color: #fff; }
+  #trigger-status { color: var(--muted); font-size: 11px; margin-top: 6px; min-height: 16px; }
+  #tool-id-display {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--accent);
+    margin-top: 4px;
+  }
+
+  /* ── PLC 상태 ── */
+  #plc-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #plc-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background .3s;
+  }
+  #plc-state { font-size: 15px; font-weight: 600; }
+  #plc-detail { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  .plc-idle    { background: var(--green) !important; }
+  .plc-moving  { background: var(--blue)  !important; }
+  .plc-error   { background: var(--red)   !important; }
+  .plc-estop   { background: var(--red)   !important; animation: blink 0.5s infinite; }
+  .plc-offline { background: var(--muted) !important; }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: .2; }
+  }
+
+  /* ── 그리퍼 차트 ── */
+  #gripper-val {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 8px;
+    font-size: 11px;
+  }
+  .gval-item span:first-child { color: var(--muted); }
+  .gval-item span:last-child  { font-weight: 600; color: var(--teal); }
+  #gripper-canvas-wrap {
+    position: relative;
+    height: 100px;
+  }
+  #gripper-na { color: var(--muted); font-size: 12px; padding: 20px 0; text-align: center; }
+
+  /* ── scrollbar global ── */
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+</style>
+</head>
+<body>
+
+<!-- 헤더 -->
+<div id="header">
+  <div id="ws-dot"></div>
+  <span id="ws-label">연결 중...</span>
+  <h1>🤖 <span>KAIROS7</span> Demo Dashboard</h1>
+  <div class="spacer"></div>
+  <div id="clock">--:--:--</div>
+</div>
+
+<!-- 메인 3열 그리드 -->
+<div id="main">
+
+  <!-- ① 카메라 패널 -->
+  <div class="panel">
+    <div class="panel-title">Camera</div>
+    <div id="cam-wrap">
+      <div class="cam-slot">
+        <span class="cam-label">C270 · 그리퍼</span>
+        <img class="cam-img" src="/camera/2" alt="c270" onerror="this.style.display='none'">
+      </div>
+      <div class="cam-slot">
+        <span class="cam-label">RealSense · 탑뷰</span>
+        <img class="cam-img" src="/camera/8" alt="realsense" onerror="this.style.display='none'">
+      </div>
+    </div>
+  </div>
+
+  <!-- ② 중앙 패널: 음성 + DB + 로그 -->
+  <div class="panel">
+    <!-- 음성 카드 -->
+    <div class="card">
+      <div class="card-title">Voice</div>
+      <div id="heard-text">대기 중…</div>
+      <div id="intent-row">
+        <span class="intent-badge unknown" id="intent-badge">-</span>
+        <span id="intent-tool">-</span>
+        <span id="intent-conf"></span>
+        <span id="intent-ts"></span>
+      </div>
+    </div>
+
+    <!-- DB 상태 카드 -->
+    <div class="card">
+      <div class="card-title">DB State</div>
+      <div id="db-empty">DB 연결 대기 중…</div>
+      <table class="db-table" id="db-table" style="display:none">
+        <thead>
+          <tr>
+            <th>Tool ID</th>
+            <th>Status</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody id="db-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- 이벤트 로그 (스크롤) -->
+    <div class="panel-title" style="flex-shrink:0">Event Log</div>
+    <div id="log-scroll"></div>
+  </div>
+
+  <!-- ③ 오른쪽 패널: 컨트롤 + PLC + 그리퍼 -->
+  <div class="panel">
+
+    <!-- 컨트롤 -->
+    <div class="card">
+      <div class="card-title">Controls</div>
+      <div id="tool-id-display">tool: loading…</div>
+      <div id="btn-row" style="margin-top:10px">
+        <button class="trigger-btn" id="btn-fetch"  onclick="trigger('fetch')">▶ FETCH</button>
+        <button class="trigger-btn" id="btn-return" onclick="trigger('return')">◀ RETURN</button>
+      </div>
+      <div id="trigger-status"></div>
+    </div>
+
+    <!-- PLC 상태 -->
+    <div class="card">
+      <div class="card-title">PLC Status</div>
+      <div id="plc-indicator">
+        <div id="plc-dot" class="plc-offline"></div>
+        <div id="plc-state">Offline</div>
+      </div>
+      <div id="plc-detail">-</div>
+    </div>
+
+    <!-- 그리퍼 전류 -->
+    <div class="card" style="flex:1; display:flex; flex-direction:column">
+      <div class="card-title">Gripper Current</div>
+      <div id="gripper-val">
+        <div class="gval-item"><span>Current </span><span id="gv-cur">-- mA</span></div>
+        <div class="gval-item"><span>Position </span><span id="gv-pos">-- pulse</span></div>
+      </div>
+      <div id="gripper-canvas-wrap">
+        <canvas id="gripper-chart"></canvas>
+      </div>
+      <div id="gripper-na" style="display:none">
+        그리퍼 데이터 없음<br><small>/gripper/state 토픽 확인</small>
+      </div>
+    </div>
+
+  </div><!-- right panel -->
+</div><!-- main -->
+
+<script>
+// ── 설정 ──────────────────────────────────────────────────────────────────────
+const WS_URL   = `ws://${location.host}/ws`;
+const MAX_LOG  = 60;     // 로그 최대 줄 수
+const MAX_PTS  = 300;    // 차트 최대 포인트 (30s @ 10Hz)
+const GRIPPER_TIMEOUT_MS = 5000;  // 이 시간 안 오면 "없음" 표시
+
+// ── 상태 ──────────────────────────────────────────────────────────────────────
+let ws = null;
+let wsRetry = 0;
+let logEntries = [];
+let gripperLastSeen = 0;
+let gripperData = [];
+let gripperLabels = [];
+
+// ── 시계 ──────────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toTimeString().slice(0, 8);
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    wsRetry = 0;
+    const dot = document.getElementById('ws-dot');
+    dot.className = 'ok';
+    document.getElementById('ws-label').textContent = '연결됨';
+  };
+
+  ws.onclose = () => {
+    document.getElementById('ws-dot').className = '';
+    document.getElementById('ws-label').textContent = '재연결 중…';
+    const delay = Math.min(5000, 500 * Math.pow(1.5, wsRetry++));
+    setTimeout(connectWS, delay);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = (e) => {
+    try { handleEvent(JSON.parse(e.data)); }
+    catch (_) {}
+  };
+}
+
+function handleEvent(ev) {
+  switch (ev.type) {
+    case 'voice_text':  onVoiceText(ev);   break;
+    case 'intent':      onIntent(ev);      break;
+    case 'plc_status':  onPLC(ev);         break;
+    case 'gripper':     onGripper(ev);     break;
+    case 'db_state':    onDBState(ev);     break;
+    case 'log':         addLog(ev.ts, ev.level || 'info', ev.msg); break;
+  }
+}
+
+// ── 음성 ──────────────────────────────────────────────────────────────────────
+function onVoiceText(ev) {
+  document.getElementById('heard-text').textContent = ev.text || '-';
+  addLog(ev.ts, 'info', `들림: "${ev.text}"`);
+}
+
+function onIntent(ev) {
+  const badge = document.getElementById('intent-badge');
+  badge.textContent = ev.intent_type || '-';
+  badge.className = `intent-badge ${ev.intent_type}`;
+  document.getElementById('intent-tool').textContent = ev.tool_id || '-';
+  document.getElementById('intent-conf').textContent =
+    ev.confidence != null ? `${(ev.confidence * 100).toFixed(0)}%` : '';
+  document.getElementById('intent-ts').textContent = ev.ts || '';
+
+  const tag = ev.intent_type === 'fetch' ? 'fetch' :
+              ev.intent_type === 'return' ? 'return' : 'intent';
+  addLog(ev.ts, tag, `intent: ${ev.intent_type} / ${ev.tool_id} (${(ev.confidence*100).toFixed(0)}%)`);
+}
+
+// ── PLC ───────────────────────────────────────────────────────────────────────
+const PLC_DOT_CLASS = {
+  'idle':   'plc-idle',
+  'moving': 'plc-moving',
+  'error':  'plc-error',
+  'e_stop': 'plc-estop',
+  'E_STOP': 'plc-estop',
+  'ERROR':  'plc-error',
+  'MOVING': 'plc-moving',
+  'IDLE':   'plc-idle',
+};
+
+function onPLC(ev) {
+  const state = ev.state || 'unknown';
+  const dot = document.getElementById('plc-dot');
+  dot.className = `plc-dot ${PLC_DOT_CLASS[state] || 'plc-offline'}`;
+  document.getElementById('plc-state').textContent = state;
+  document.getElementById('plc-detail').textContent =
+    `${ev.led_color || '-'} / ${ev.led_mode || '-'}`;
+}
+
+// ── 그리퍼 ───────────────────────────────────────────────────────────────────
+const gripperCtx = document.getElementById('gripper-chart').getContext('2d');
+const gripperChart = new Chart(gripperCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      data: [],
+      borderColor: '#39c5cf',
+      backgroundColor: 'rgba(57,197,207,.12)',
+      fill: true,
+      pointRadius: 0,
+      borderWidth: 1.5,
+      tension: 0.2,
+    }]
+  },
+  options: {
+    animation: false,
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: {
+        min: 0, max: 700,
+        grid: { color: 'rgba(48,54,61,.6)' },
+        ticks: {
+          color: '#8b949e', font: { size: 10 },
+          callback: v => v + ' mA',
+          maxTicksLimit: 5,
+        }
+      }
+    }
+  }
+});
+
+let gripperEverSeen = false;
+
+function onGripper(ev) {
+  gripperLastSeen = Date.now();
+
+  if (!gripperEverSeen) {
+    gripperEverSeen = true;
+    document.getElementById('gripper-na').style.display = 'none';
+    document.getElementById('gripper-canvas-wrap').style.display = 'block';
+  }
+
+  document.getElementById('gv-cur').textContent = `${ev.current_ma} mA`;
+  document.getElementById('gv-pos').textContent = `${ev.position} pulse`;
+
+  gripperData.push(ev.current_ma);
+  gripperLabels.push('');
+  if (gripperData.length > MAX_PTS) {
+    gripperData.shift();
+    gripperLabels.shift();
+  }
+  gripperChart.data.labels = gripperLabels;
+  gripperChart.data.datasets[0].data = gripperData;
+  gripperChart.update('none');
+}
+
+// 일정 시간 데이터 없으면 "없음" 표시
+setInterval(() => {
+  if (!gripperEverSeen) {
+    document.getElementById('gripper-na').style.display = 'block';
+    document.getElementById('gripper-canvas-wrap').style.display = 'none';
+  }
+}, 6000);
+
+// ── DB 상태 ───────────────────────────────────────────────────────────────────
+function onDBState(ev) {
+  const tools = ev.tools || [];
+  const events = ev.events || [];
+
+  const empty = document.getElementById('db-empty');
+  const table = document.getElementById('db-table');
+  const tbody = document.getElementById('db-tbody');
+
+  if (tools.length === 0) {
+    empty.textContent = ev.error ? `DB 오류: ${ev.error}` : 'DB에 공구 없음 (seed_demo_db.py 실행 필요)';
+    empty.style.display = 'block';
+    table.style.display = 'none';
+  } else {
+    empty.style.display = 'none';
+    table.style.display = 'table';
+    tbody.innerHTML = tools.map(t => `
+      <tr>
+        <td>${t.tool_id}</td>
+        <td><span class="status-badge s-${t.status}">${t.status}</span></td>
+        <td style="color:var(--muted);font-size:10px">${t.updated.slice(11) || ''}</td>
+      </tr>`).join('');
+  }
+
+  // DB 이벤트를 로그에 추가 (새 항목만)
+  if (events.length > 0) {
+    const newest = events[0];
+    const key = `${newest.tool_id}-${newest.event}-${newest.ts}`;
+    if (key !== window._lastDbKey) {
+      window._lastDbKey = key;
+      const tag = newest.event === 'error' ? 'error' :
+                  newest.event === 'rejected' ? 'error' :
+                  newest.event === 'fetch' ? 'fetch' :
+                  newest.event === 'return' ? 'return' : 'gate';
+      addLog(
+        newest.ts.slice(11),
+        tag,
+        `[DB] ${newest.tool_id}: ${newest.before}→${newest.after} (${newest.event}${newest.track ? ', Track '+newest.track : ''})`
+      );
+    }
+  }
+
+  // tool_id 표시 업데이트
+  if (tools.length > 0) {
+    document.getElementById('tool-id-display').textContent =
+      `tool: ${tools.map(t => t.tool_id).join(', ')}`;
+  }
+}
+
+// ── 이벤트 로그 ───────────────────────────────────────────────────────────────
+function addLog(ts, tag, msg) {
+  const scroll = document.getElementById('log-scroll');
+  const atBottom = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 20;
+
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = `
+    <span class="log-ts">${ts}</span>
+    <span class="log-tag tag-${tag}">${tag}</span>
+    <span class="log-msg">${escHtml(msg)}</span>`;
+
+  scroll.appendChild(div);
+  logEntries.push(div);
+
+  if (logEntries.length > MAX_LOG) {
+    const old = logEntries.shift();
+    old.remove();
+  }
+
+  if (atBottom) scroll.scrollTop = scroll.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+// ── 트리거 버튼 ───────────────────────────────────────────────────────────────
+async function trigger(intentType) {
+  const btn = document.getElementById(`btn-${intentType}`);
+  const status = document.getElementById('trigger-status');
+  btn.disabled = true;
+  status.textContent = `${intentType} 전송 중…`;
+
+  try {
+    const res = await fetch(`/trigger/${intentType}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      status.textContent = `✓ ${intentType} 전송됨`;
+      addLog(new Date().toTimeString().slice(0,8), intentType, `[UI 버튼] ${intentType} 트리거`);
+    } else {
+      status.textContent = `✗ ${data.error || '실패'}`;
+    }
+  } catch (err) {
+    status.textContent = `✗ 연결 실패`;
+  } finally {
+    setTimeout(() => {
+      btn.disabled = false;
+      status.textContent = '';
+    }, 2000);
+  }
+}
+
+// ── 시작 ──────────────────────────────────────────────────────────────────────
+connectWS();
+addLog(new Date().toTimeString().slice(0,8), 'info', '대시보드 시작');
+</script>
+</body>
+</html>

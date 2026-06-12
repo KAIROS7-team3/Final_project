@@ -102,7 +102,7 @@ def config() -> ModbusPLCConfig:
         estop_input_label="P010",
         estop_input_address=10,
         system_state_outputs={
-            SystemState.IDLE: (),
+            SystemState.IDLE: ("M0000",),
             SystemState.LISTENING: ("M0001",),
             SystemState.INFERRING: ("M0001",),
             SystemState.MOVING: ("M0002",),
@@ -148,10 +148,10 @@ def test_m_topic_suffix_uses_xg5000_hex_bit_label() -> None:
 def test_parse_system_state_outputs_supports_empty_and_comma_labels() -> None:
     outputs = ModbusPLCConfig.parse_system_state_outputs(
         ("idle", "moving", "error"),
-        ("none", "M0001,M0002", "M0004"),
+        ("M0000", "M0001,M0002", "M0004"),
     )
 
-    assert outputs[SystemState.IDLE] == ()
+    assert outputs[SystemState.IDLE] == ("M0000",)
     assert outputs[SystemState.MOVING] == ("M0001", "M0002")
     assert outputs[SystemState.ERROR] == ("M0004",)
 
@@ -288,8 +288,8 @@ def test_set_system_state_resets_then_pulses_configured_output(
     status = plc.set_system_state(SystemState.MOVING)
 
     assert status.system_state == SystemState.MOVING
-    assert status.led_color == LEDColor.GREEN
-    assert status.led_mode == LEDMode.SOLID
+    assert status.led_color == LEDColor.RED
+    assert status.led_mode == LEDMode.PULSE
     assert fake_client.calls[-4:] == [
         ("write_coil", {"address": 256, "value": True, "device_id": 1}),
         ("write_coil", {"address": 256, "value": False, "device_id": 1}),

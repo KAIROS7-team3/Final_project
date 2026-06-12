@@ -155,6 +155,13 @@ string phase        # 진행 단계 — 예: "moving_to_pregrasp", "closing_grip
 float32 progress    # 0.0 ~ 1.0
 ```
 
+`PlaceAtStaging`/`ReturnToSlot`의 `phase` 필드는 두 가지 어휘를 함께 전달한다:
+
+- `unit_actions.toolbox_motion.StepKind` 멤버 이름 (대문자, 예: `"GRIP"`, `"MOVE_L_ABS"`) — 매 step 실행 직전 발행되는 진행 단계
+- `"pick"` / `"place"` (소문자) — `unit_actions.toolbox_motion.Step.marker`가 설정된 step 실행 *직후* 추가로 발행되는 물리적 집기/놓기 시점 마커. `orchestrator_node`가 이를 구독해 DB 상태(`in_slot<->out<->staged`)를 BT 완료 대기 없이 즉시 전이시킨다.
+
+두 어휘는 대소문자 컨벤션(`StepKind`=대문자, marker=소문자)으로만 구분되며 구조적으로 강제되지 않는다. 새 `StepKind` 멤버를 추가할 때 `"pick"`/`"place"`와 충돌하는 이름(대소문자 무관)을 사용하지 않는다.
+
 ### `MoveToPose.action`
 
 ```
@@ -226,8 +233,13 @@ int32 slot_col
 | `/plc/e_stop` | `std_msgs/Bool` | `plc_node` | safety/orchestrator | Reliable + Transient Local / depth 1 |
 | `/vision/marker/map` | `interfaces/MarkerMap` | `marker_scan_node` | `orchestrator` BT ScanMarkers | Reliable / depth 1 |
 | `/vision/marker/debug/image` | `sensor_msgs/Image` | `marker_scan_node` | (디버그용) | Best Effort / depth 1 |
+| `/vision/tool_top_pose` | `geometry_msgs/PointStamped` | `vision` (탑뷰 D455f) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
+| `/vision/tool_gripper_pose` | `geometry_msgs/PointStamped` | `vision` (그리퍼 캠 C270) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
+| `/vision/handle_pose` | `geometry_msgs/PointStamped` | `vision` (그리퍼 캠 C270) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
+| `/vision/slot_top_pose` | `geometry_msgs/PointStamped` | `vision` (탑뷰 D455f) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
 
 > **QoS 선택 기준:** 센서 데이터(비전, STT)는 Best Effort — 최신 프레임이 중요. 상태/의도 토픽은 Reliable — 손실 허용 불가.
+> **비전 좌표 토픽 주의:** `/vision/tool_top_pose`, `/vision/tool_gripper_pose`, `/vision/handle_pose`, `/vision/slot_top_pose` 4종은 비전팀과 잠정 합의된 인터페이스. 단위 m, frame_id `base_link`. runner 내부에서 ×1000 → mm 변환 적용. 확정 전 변경 가능.
 
 ---
 

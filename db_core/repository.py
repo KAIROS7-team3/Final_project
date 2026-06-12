@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 # DB Gate가 공식적으로 받아들이는 값만 상수로 고정한다.
 VALID_INTENTS = frozenset({"fetch", "return"})
+# 서랍(layer) 단위 DB Gate — 공구 단위 VALID_INTENTS와 분리 (issue #44, Option B).
+VALID_DRAWER_INTENTS = frozenset({"open", "close"})
 VALID_STATUSES = frozenset({"in_slot", "out", "staged", "missing", "fod_alert"})
 VALID_EVENT_TYPES = frozenset(
     {"fetch", "return", "rejected", "error", "timeout", "fod_alert", "reconciled"}
@@ -207,6 +209,61 @@ class ToolRepository:
             current_status,
             f"tool is {current_status}, expected staged",
         )
+
+    def check_drawer_feasibility(self, intent: str, layer_id: int) -> FeasibilityResult:
+        """서랍(layer) 단위 DB Gate (issue #44).
+
+        - open:  drawers 테이블에 해당 layer가 이미 열려 있으면 (False, "already_open") 반환.
+                 호출자는 reason == "already_open"일 때 open 동작을 생략하고 진행한다.
+        - close: 항상 (True, "ok") — DB 레벨 차단 없음. 닫기 완료 후 update_drawer_state 호출.
+        """
+        intent = intent.strip()
+        if intent not in VALID_DRAWER_INTENTS:
+            return FeasibilityResult(False, f"unsupported drawer intent: {intent}")
+
+        if intent == "close":
+            return FeasibilityResult(True, "ok")
+
+        # open: drawers 테이블에서 현재 열림 여부 확인
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT is_open FROM drawers WHERE layer_id = ?",
+                    (layer_id,),
+                ).fetchone()
+        except SchemaValidationError as exc:
+            return FeasibilityResult(False, f"database schema error: {exc}")
+        except sqlite3.Error as exc:
+            return FeasibilityResult(False, f"database unavailable: {exc}")
+
+        if row and row["is_open"]:
+            return FeasibilityResult(False, "already_open")
+        return FeasibilityResult(True, "ok")
+
+    def update_drawer_state(self, layer_id: int, intent: str) -> UpdateResult:
+        """서랍 열림/닫힘 상태를 drawers 테이블에 기록한다.
+
+        open/close 동작 완료 후 motion이 호출한다.
+        layer_id 행이 없으면 자동 생성(INSERT OR REPLACE).
+        """
+        intent = intent.strip()
+        if intent not in VALID_DRAWER_INTENTS:
+            return UpdateResult(False, f"unsupported drawer intent: {intent}")
+
+        is_open = 1 if intent == "open" else 0
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            with self._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    "INSERT OR REPLACE INTO drawers (layer_id, is_open, last_updated)"
+                    " VALUES (?, ?, ?)",
+                    (layer_id, is_open, now),
+                )
+                conn.commit()
+        except sqlite3.Error as exc:
+            return UpdateResult(False, f"failed to update drawer state: {exc}")
+        return UpdateResult(True, "ok")
 
     def update_tool_status(
         self,

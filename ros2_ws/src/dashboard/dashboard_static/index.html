@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Robot Demo Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+    --border: #30363d; --text: #e6edf3; --text2: #8b949e;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff;
+    --orange: #e3b341;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 14px; }
+  header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  .ws-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); transition: background .3s; }
+  .ws-dot.ok { background: var(--green); }
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--bg2); padding: 0 20px; }
+  .tab { padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text2); font-size: 14px; user-select: none; }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .tab-content { display: none; padding: 20px; }
+  .tab-content.active { display: block; }
+  .grid { display: grid; gap: 16px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card-title { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--text2); margin-bottom: 10px; }
+  .cam-img { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 4px; background: #000; }
+  .cam-error { width: 100%; aspect-ratio: 4/3; background: var(--bg3); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--red); font-size: 13px; }
+  .status-val { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge-green { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+  .badge-red   { background: rgba(248,81,73,.15);  color: var(--red);   border: 1px solid rgba(248,81,73,.3); }
+  .badge-yellow{ background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid rgba(210,153,34,.3); }
+  .badge-gray  { background: rgba(139,148,158,.1); color: var(--text2);  border: 1px solid var(--border); }
+  .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: opacity .15s; }
+  .btn:hover { opacity: .85; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-blue   { background: var(--blue); color: #000; }
+  .btn-green  { background: var(--green); color: #000; }
+  .btn-gray   { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+  .btn-red    { background: var(--red); color: #fff; font-size: 16px; padding: 14px 28px; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .health-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .health-item { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .h-ok   { background: rgba(63,185,80,.15); color: var(--green); }
+  .h-err  { background: rgba(248,81,73,.15);  color: var(--red); }
+  .h-stale{ background: rgba(139,148,158,.1); color: var(--text2); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { color: var(--text2); font-weight: 500; background: var(--bg3); }
+  tr:last-child td { border-bottom: none; }
+  #chart-container { height: 160px; }
+  .moving-indicator { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  #toast { position: fixed; bottom: 20px; right: 20px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; display: none; max-width: 280px; z-index: 999; }
+</style>
+</head>
+<body>
+<header>
+  <div class="ws-dot" id="ws-dot"></div>
+  <h1>🤖 Robot Demo Dashboard</h1>
+  <span id="moving-badge" style="display:none">
+    <span class="badge badge-yellow moving-indicator">🔄 이동 중</span>
+  </span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('realtime', this)">실시간</div>
+  <div class="tab" onclick="switchTab('db', this)">DB 상태</div>
+  <div class="tab" onclick="switchTab('logs', this)">이벤트 로그</div>
+</div>
+
+<!-- 실시간 탭 -->
+<div id="tab-realtime" class="tab-content active">
+  <div class="grid grid-2" style="max-width:1200px">
+    <!-- 카메라 -->
+    <div class="card">
+      <div class="card-title">그리퍼 캠 (C270)</div>
+      <img id="cam-gripper" class="cam-img" src="/cam/gripper"
+           onerror="showCamError('cam-gripper', 'gripper-err')" alt="gripper">
+      <div id="gripper-err" class="cam-error" style="display:none">CAM OFFLINE</div>
+    </div>
+    <div class="card">
+      <div class="card-title">탑뷰 캠 (RealSense D455f)</div>
+      <img id="cam-top" class="cam-img" src="/cam/top"
+           onerror="showCamError('cam-top', 'top-err')" alt="top">
+      <div id="top-err" class="cam-error" style="display:none">CAM OFFLINE</div>
+    </div>
+
+    <!-- 상태 카드들 -->
+    <div class="card">
+      <div class="card-title">시스템 상태</div>
+      <div class="grid grid-3" style="margin-top:8px">
+        <div>
+          <div style="color:var(--text2);font-size:11px">로봇</div>
+          <div class="status-val" id="st-robot">—</div>
+        </div>
+        <div>
+          <div style="color:var(--text2);font-size:11px">PLC</div>
+          <div class="status-val" id="st-plc">—</div>
+        </div>
+        <div>
+          <div style="color:var(--text2);font-size:11px">공구 상태</div>
+          <div class="status-val" id="st-tool">—</div>
+        </div>
+      </div>
+      <div class="health-row" id="health-row"></div>
+    </div>
+
+    <!-- 버튼 -->
+    <div class="card">
+      <div class="card-title">명령</div>
+      <div class="btn-row" style="margin-bottom:12px">
+        <select id="tool-select" class="btn btn-gray" style="cursor:pointer">
+          <option value="socket_19mm">복스 소켓 19mm (실제 동작)</option>
+          <option value="screwdriver">십자 드라이버 (더미)</option>
+          <option value="utility_knife">커터칼 (더미)</option>
+          <option value="ratchet_wrench">라쳇 렌치 (더미)</option>
+          <option value="multi_tool">멕가이버 (더미)</option>
+          <option value="spanner_16mm">스패너 16mm (더미)</option>
+        </select>
+        <button class="btn btn-blue" onclick="doAction('fetch')">⬇ Fetch</button>
+        <button class="btn btn-green" onclick="doAction('return')">⬆ Return</button>
+        <button class="btn btn-gray" onclick="doAction('home')">🏠 Home</button>
+      </div>
+      <div class="btn-row" style="margin-bottom:12px">
+        <button class="btn btn-gray" onclick="doAction('open_toolbox')">📂 공구함 열기</button>
+        <button class="btn btn-gray" onclick="doAction('close_toolbox')">📁 공구함 닫기</button>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;gap:10px">
+        <button class="btn btn-red" onclick="doEstop()">⚡ E-STOP</button>
+        <button class="btn btn-gray" onclick="doAction('estop_reset')">✓ Reset</button>
+      </div>
+    </div>
+
+    <!-- 그리퍼 전류 파형 -->
+    <div class="card" style="grid-column:span 2">
+      <div class="card-title">그리퍼 전류 파형 (mA)</div>
+      <div id="chart-container">
+        <canvas id="current-chart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DB 상태 탭 -->
+<div id="tab-db" class="tab-content">
+  <div class="card" style="max-width:900px">
+    <div class="card-title" style="margin-bottom:12px">
+      공구 목록
+      <button class="btn btn-gray" style="float:right;padding:4px 12px;font-size:12px" onclick="loadDB()">새로고침</button>
+    </div>
+    <table id="tools-table">
+      <thead><tr><th>tool_id</th><th>표시명</th><th>상태</th><th>슬롯(row,col)</th><th>갱신</th></tr></thead>
+      <tbody id="tools-body"><tr><td colspan="5" style="color:var(--text2)">로딩 중...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 로그 탭 -->
+<div id="tab-logs" class="tab-content">
+  <div class="card" style="max-width:1100px">
+    <div class="card-title" style="margin-bottom:12px">
+      최근 이벤트 (최대 100건)
+      <button class="btn btn-gray" style="float:right;padding:4px 12px;font-size:12px" onclick="loadLogs()">새로고침</button>
+    </div>
+    <table id="logs-table">
+      <thead><tr><th>시간</th><th>tool_id</th><th>event_type</th><th>track</th><th>notes</th></tr></thead>
+      <tbody id="logs-body"><tr><td colspan="5" style="color:var(--text2)">로딩 중...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── WebSocket ────────────────────────────────────────────────────────────────
+let ws, wsReconnectTimer;
+const dot = document.getElementById('ws-dot');
+
+function connectWS() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { dot.classList.add('ok'); clearTimeout(wsReconnectTimer); };
+  ws.onclose = () => { dot.classList.remove('ok'); wsReconnectTimer = setTimeout(connectWS, 3000); };
+  ws.onmessage = (e) => { try { updateState(JSON.parse(e.data)); } catch(_){} };
+}
+connectWS();
+
+// ── Chart.js ─────────────────────────────────────────────────────────────────
+const chartCtx = document.getElementById('current-chart').getContext('2d');
+const chart = new Chart(chartCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: '전류 (mA)',
+      data: [],
+      borderColor: '#58a6ff',
+      backgroundColor: 'rgba(88,166,255,.08)',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.2,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    scales: {
+      x: { display: false },
+      y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, min: 0 }
+    },
+    plugins: { legend: { display: false } }
+  }
+});
+
+// ── 상태 업데이트 ────────────────────────────────────────────────────────────
+function statusBadge(val, map) {
+  const cfg = map[val] || map['_default'] || { cls: 'badge-gray', label: val || '—' };
+  return `<span class="badge ${cfg.cls}">${cfg.label}</span>`;
+}
+const robotMap = {
+  true:  { cls: 'badge-yellow', label: '이동 중' },
+  false: { cls: 'badge-green',  label: '대기' },
+  _default: { cls: 'badge-gray', label: '—' },
+};
+const plcMap = {
+  idle:    { cls: 'badge-green',  label: '정상' },
+  moving:  { cls: 'badge-yellow', label: '이동' },
+  error:   { cls: 'badge-red',    label: '오류' },
+  e_stop:  { cls: 'badge-red',    label: 'E-STOP' },
+  _default:{ cls: 'badge-gray',   label: '—' },
+};
+const toolMap = {
+  in_slot:   { cls: 'badge-green',  label: 'in_slot' },
+  staged:    { cls: 'badge-blue',   label: 'staged'  },
+  out:       { cls: 'badge-yellow', label: 'out'     },
+  missing:   { cls: 'badge-red',    label: 'missing' },
+  fod_alert: { cls: 'badge-red',    label: 'FOD!'    },
+  _default:  { cls: 'badge-gray',   label: '—'       },
+};
+
+function updateState(s) {
+  // 이동 중 표시
+  document.getElementById('moving-badge').style.display = s.is_moving ? 'inline' : 'none';
+  document.getElementById('st-robot').innerHTML = statusBadge(String(s.is_moving), robotMap);
+  document.getElementById('st-plc').innerHTML   = statusBadge(s.plc_state, plcMap);
+  document.getElementById('st-tool').innerHTML  = statusBadge(s.tool_status, toolMap);
+
+  // health row
+  const h = s.health || {};
+  const hRow = document.getElementById('health-row');
+  hRow.innerHTML = Object.entries(h).map(([k, v]) => {
+    const cls = v === 'ok' ? 'h-ok' : v === 'error' ? 'h-err' : 'h-stale';
+    return `<span class="health-item ${cls}">${k}: ${v}</span>`;
+  }).join('');
+
+  // 그리퍼 파형
+  if (s.gripper_history && s.gripper_history.length > 0) {
+    chart.data.labels = s.gripper_history.map((_, i) => i);
+    chart.data.datasets[0].data = s.gripper_history;
+    chart.update('none');
+  }
+
+  // E-stop 버튼 색
+  if (s.plc_state === 'e_stop') {
+    document.querySelector('.btn-red').style.boxShadow = '0 0 12px rgba(248,81,73,.6)';
+  } else {
+    document.querySelector('.btn-red').style.boxShadow = 'none';
+  }
+}
+
+// ── 버튼 액션 ─────────────────────────────────────────────────────────────────
+async function doAction(action) {
+  try {
+    let url = `/action/${action}`;
+    if (action === 'fetch' || action === 'return') {
+      const toolId = document.getElementById('tool-select').value;
+      url += `?tool_id=${encodeURIComponent(toolId)}`;
+    }
+    const r = await fetch(url, { method: 'POST' });
+    const j = await r.json();
+    toast(j.message || j.ok ? '명령 전송됨' : '실패');
+  } catch (e) { toast('오류: ' + e.message, true); }
+}
+
+async function doEstop() {
+  if (!confirm('E-STOP 을 실행하시겠습니까?\n로봇이 즉시 정지합니다.')) return;
+  doAction('estop');
+}
+
+// ── 탭 ───────────────────────────────────────────────────────────────────────
+function switchTab(id, el) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  el.classList.add('active');
+  if (id === 'db') loadDB();
+  if (id === 'logs') loadLogs();
+}
+
+async function loadDB() {
+  try {
+    const r = await fetch('/api/db/tools');
+    const data = await r.json();
+    const tbody = document.getElementById('tools-body');
+    if (data.error) { tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red)">${data.error}</td></tr>`; return; }
+    tbody.innerHTML = data.map(t => `
+      <tr>
+        <td><code>${t.tool_id}</code></td>
+        <td>${t.display_name || '—'}</td>
+        <td>${statusBadge(t.current_status, toolMap)}</td>
+        <td>(${t.home_slot_row}, ${t.home_slot_col})</td>
+        <td style="color:var(--text2);font-size:12px">${(t.last_updated||'').replace('T',' ')}</td>
+      </tr>`).join('');
+  } catch (e) {
+    document.getElementById('tools-body').innerHTML = `<tr><td colspan="5" style="color:var(--red)">로드 실패: ${e}</td></tr>`;
+  }
+}
+
+async function loadLogs() {
+  try {
+    const r = await fetch('/api/db/events');
+    const data = await r.json();
+    const tbody = document.getElementById('logs-body');
+    if (data.error) { tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red)">${data.error}</td></tr>`; return; }
+    tbody.innerHTML = data.map(e => `
+      <tr>
+        <td style="font-size:12px;color:var(--text2)">${(e.timestamp||'').replace('T',' ')}</td>
+        <td><code>${e.tool_id||'—'}</code></td>
+        <td><span class="badge ${e.event_type==='error'||e.event_type==='rejected'?'badge-red':e.event_type==='fetch'||e.event_type==='return'?'badge-green':'badge-gray'}">${e.event_type}</span></td>
+        <td style="color:var(--text2)">${e.track||'—'}</td>
+        <td style="color:var(--text2);font-size:12px">${e.notes||''}</td>
+      </tr>`).join('');
+  } catch (e) {
+    document.getElementById('logs-body').innerHTML = `<tr><td colspan="5" style="color:var(--red)">로드 실패: ${e}</td></tr>`;
+  }
+}
+
+// ── 카메라 에러 핸들링 ────────────────────────────────────────────────────────
+function showCamError(imgId, errId) {
+  document.getElementById(imgId).style.display = 'none';
+  document.getElementById(errId).style.display = 'flex';
+}
+
+// ── 토스트 ───────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, isErr = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.borderColor = isErr ? 'var(--red)' : 'var(--border)';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+</script>
+</body>
+</html>

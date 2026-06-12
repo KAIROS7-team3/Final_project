@@ -10,7 +10,7 @@ S-7 규칙에 따라 로봇 이동 중에는 음성 입력을 막는다.
     -> std_msgs/String `/voice/raw_text`
 
 이 노드는 intent를 직접 판단하지 않는다. 명령 해석과 DB Gate는
-`rule_intent_node`가 담당한다.
+`gemma_intent_node`가 담당하고, `rule_intent_node`는 fallback 용도로만 남긴다.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from voice.audio_input import (
     MicRecorder,
     MicRecorderConfig,
 )
+from voice.transcript_filter import is_likely_hallucinated_transcript
 from voice.transcriber import (
     WhisperConfig,
     WhisperLoadError,
@@ -54,9 +55,13 @@ class WhisperNode(Node):
         # 한국어 단발 명령 정확도를 높이기 위한 Whisper decoding 옵션이다.
         self.declare_parameter("whisper_beam_size", 10)
         self.declare_parameter("whisper_best_of", 5)
+        self.declare_parameter("whisper_no_speech_threshold", 0.6)
+        self.declare_parameter("whisper_logprob_threshold", -1.0)
+        self.declare_parameter("whisper_compression_ratio_threshold", 2.4)
         self.declare_parameter(
             "whisper_initial_prompt",
             (
+                "코봇, 코버, 코보, 코부, 고봇, 고버, 고보, 고부, 꼬부, "
                 "공구함, 두산 로봇, 스테이징, 십자 드라이버, 커터칼, 라쳇 렌치, "
                 "멕가이버, 스패너 16mm, 복스 소켓 19mm, 가져와, 꺼내줘, 반납, "
                 "돌려놔, 취소"
@@ -68,6 +73,9 @@ class WhisperNode(Node):
 
         # RMS 기반 발화 시작 기준. 마이크 입력이 작으면 이 값을 낮춰야 한다.
         self.declare_parameter("silence_threshold", 0.02)
+
+        # Whisper가 반복 토큰 환각을 냈을 때 publish를 막기 위한 경량 필터다.
+        self.declare_parameter("reject_hallucinated_transcripts", True)
 
         # /robot/status 콜백과 마이크 worker thread가 공유하는 상태다.
         self._is_moving = False
@@ -115,6 +123,11 @@ class WhisperNode(Node):
         text = transcript.strip()
         if not text:
             # Whisper가 빈 문자열을 반환한 경우 downstream으로 보내지 않는다.
+            return False
+        if self._should_reject_transcript(text):
+            self.get_logger().warning(
+                f"voice input rejected as hallucinated transcript: {text}"
+            )
             return False
         message = String()
         message.data = text
@@ -166,6 +179,21 @@ class WhisperNode(Node):
                     initial_prompt=self.get_parameter("whisper_initial_prompt")
                     .get_parameter_value()
                     .string_value,
+                    no_speech_threshold=self.get_parameter(
+                        "whisper_no_speech_threshold"
+                    )
+                    .get_parameter_value()
+                    .double_value,
+                    logprob_threshold=self.get_parameter(
+                        "whisper_logprob_threshold"
+                    )
+                    .get_parameter_value()
+                    .double_value,
+                    compression_ratio_threshold=self.get_parameter(
+                        "whisper_compression_ratio_threshold"
+                    )
+                    .get_parameter_value()
+                    .double_value,
                 )
             )
         except (AudioInputError, WhisperLoadError) as exc:
@@ -210,6 +238,14 @@ class WhisperNode(Node):
                 continue
 
             self.publish_transcript(transcript)
+
+    def _should_reject_transcript(self, transcript: str) -> bool:
+        """환각성 반복 토큰이 많으면 downstream으로 넘기지 않는다."""
+
+        reject_hallucinated = self.get_parameter(
+            "reject_hallucinated_transcripts"
+        ).get_parameter_value().bool_value
+        return reject_hallucinated and is_likely_hallucinated_transcript(transcript)
 
     def _robot_is_moving(self) -> bool:
         """Thread-safe하게 현재 motion gate 상태를 읽는다."""

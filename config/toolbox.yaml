@@ -31,7 +31,7 @@ schema:
     required: [upper, lower]
   tools:
     required: [tool_id, dimensions]
-    optional: [display_name, mass_kg, grasp_approach, notes]
+    optional: [display_name, aliases, mass_kg, grasp_approach, notes]
 
 # 공구함 자체 위치/크기 (운영자가 공구함을 옮기면 이 값만 갱신)
 toolbox:
@@ -79,6 +79,7 @@ drawers:
 tools:
   - tool_id: screwdriver
     display_name: "십자 드라이버"
+    aliases: ["십자 드라이버", "드라이버", "screwdriver"]
     dimensions: {length: 0.180, diameter: 0.020}
     mass_kg: 0.080
     grasp_approach: top
@@ -86,6 +87,7 @@ tools:
 
   - tool_id: utility_knife
     display_name: "커터칼"
+    aliases: ["커터", "커터칼", "utility knife", "knife"]
     dimensions: {length: 0.160, width: 0.030, height: 0.015}
     mass_kg: 0.070
     grasp_approach: top
@@ -93,6 +95,7 @@ tools:
 
   - tool_id: ratchet_wrench
     display_name: "라쳇 렌치"
+    aliases: ["라쳇", "라쳇 렌치", "ratchet", "ratchet wrench"]
     dimensions: {length: 0.200, width: 0.040, height: 0.030}
     mass_kg: 0.250
     grasp_approach: top
@@ -100,6 +103,7 @@ tools:
 
   - tool_id: multi_tool
     display_name: "멕가이버"
+    aliases: ["멕가이버", "맥가이버", "multi tool", "multitool"]
     dimensions: {length: 0.110, width: 0.035, height: 0.020}
     mass_kg: 0.180
     grasp_approach: top
@@ -107,6 +111,8 @@ tools:
 
   - tool_id: spanner_16mm
     display_name: "스패너 16mm"
+    aliases:
+      ["스패너", "스패너 16mm", "16mm", "spanner", "spanner 16mm"]
     dimensions: {length: 0.180, width: 0.040, height: 0.012}
     mass_kg: 0.120
     grasp_approach: top
@@ -114,10 +120,34 @@ tools:
 
   - tool_id: socket_19mm
     display_name: "복스 소켓 19mm"
+    aliases:
+      [
+        "복스",
+        "소켓",
+        "복스 소켓",
+        "복스 소켓 19mm",
+        "19mm",
+        "socket",
+        "socket 19mm",
+      ]
     dimensions: {length: 0.040, diameter: 0.026}
     mass_kg: 0.090
     grasp_approach: top
     notes: "임의값 — 실측 후 갱신"
+
+# ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────
+# toolbox_seq_runner.py가 __init__에서 이 섹션을 로드. 값 변경 시 재시작 필요.
+# 실기 검증 후 공구별로 분리 예정.
+vision_motion:
+  tool_approach_z_mm: 234.0                    # 공구 위 대기 높이 (mm, DSR BASE)
+  tool_approach_ori: [53.23, 180.0, -38.07]    # approach 자세 [rx,ry,rz] (deg)
+  tool_descent_ori: [48.74, -180.0, -42.55]    # 하강 자세 [rx,ry,rz] (deg)
+  # 비전 좌표 허용 범위 (DSR BASE 좌표계, mm) — S-5 소프트 workspace 리밋
+  # ⚠️ 실제 비전 좌표 수신 후 실측값으로 갱신 필요
+  workspace_limits:
+    x: [50.0, 800.0]
+    y: [-600.0, 600.0]
+    z: [-5.0, 700.0]
 
 # 수락 기준 (docs/conventions.md):
 # - 공구 분류 정확도 ≥ 95% (실험실 조명)

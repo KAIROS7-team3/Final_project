@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS system_events (
     timestamp  TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
+CREATE TABLE IF NOT EXISTS drawers (
+    layer_id    INTEGER PRIMARY KEY,
+    is_open     INTEGER NOT NULL DEFAULT 0 CHECK(is_open IN (0, 1)),
+    last_updated TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_tool_events_tool_time
     ON tool_events(tool_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_tool_events_type_time

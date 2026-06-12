@@ -25,6 +25,11 @@ DB_VOICE_STRUCTURE.md
 *~
 Thumbs.db
 
+# Editor (개인 워크스페이스 설정)
+.vscode/
+**/.vscode/
+.claude/worktrees/
+
 # Python
 __pycache__/
 *.pyc
@@ -41,6 +46,9 @@ build/
 ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
+# colcon을 레포 루트에서 잘못 실행했을 때 생기는 디렉토리
+install/
+log/
 *.bag
 
 # DB 운영 데이터 (git 제외, 별도 백업)

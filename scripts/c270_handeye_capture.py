@@ -30,7 +30,7 @@ _CONFIG_DIR  = os.path.join(_SCRIPT_DIR, '..', 'config')
 SAVE_DIR     = os.path.join(_SCRIPT_DIR, 'samples_c270_handeye')
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-DEVICE        = 8
+DEVICE        = 2
 WIDTH, HEIGHT = 640, 480
 
 # ── 카메라 intrinsic (ArUco 프리뷰용) ──────────────────────────────────────────
