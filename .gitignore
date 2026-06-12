@@ -25,6 +25,11 @@ DB_VOICE_STRUCTURE.md
 *~
 Thumbs.db
 
+# Editor (개인 워크스페이스 설정)
+.vscode/
+**/.vscode/
+.claude/worktrees/
+
 # Python
 __pycache__/
 *.pyc
