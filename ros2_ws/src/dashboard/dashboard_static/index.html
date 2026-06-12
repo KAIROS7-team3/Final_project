@@ -115,6 +115,14 @@
     <div class="card">
       <div class="card-title">명령</div>
       <div class="btn-row" style="margin-bottom:12px">
+        <select id="tool-select" class="btn btn-gray" style="cursor:pointer">
+          <option value="socket_19mm">복스 소켓 19mm (실제 동작)</option>
+          <option value="screwdriver">십자 드라이버 (더미)</option>
+          <option value="utility_knife">커터칼 (더미)</option>
+          <option value="ratchet_wrench">라쳇 렌치 (더미)</option>
+          <option value="multi_tool">멕가이버 (더미)</option>
+          <option value="spanner_16mm">스패너 16mm (더미)</option>
+        </select>
         <button class="btn btn-blue" onclick="doAction('fetch')">⬇ Fetch</button>
         <button class="btn btn-green" onclick="doAction('return')">⬆ Return</button>
         <button class="btn btn-gray" onclick="doAction('home')">🏠 Home</button>
@@ -270,7 +278,12 @@ function updateState(s) {
 // ── 버튼 액션 ─────────────────────────────────────────────────────────────────
 async function doAction(action) {
   try {
-    const r = await fetch(`/action/${action}`, { method: 'POST' });
+    let url = `/action/${action}`;
+    if (action === 'fetch' || action === 'return') {
+      const toolId = document.getElementById('tool-select').value;
+      url += `?tool_id=${encodeURIComponent(toolId)}`;
+    }
+    const r = await fetch(url, { method: 'POST' });
     const j = await r.json();
     toast(j.message || j.ok ? '명령 전송됨' : '실패');
   } catch (e) { toast('오류: ' + e.message, true); }

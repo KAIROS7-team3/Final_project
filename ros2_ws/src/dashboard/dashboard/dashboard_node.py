@@ -363,13 +363,13 @@ class DashboardNode(Node):
                         pass
 
         @app.post("/action/fetch")
-        async def action_fetch():
-            self._pub_intent("fetch")
+        async def action_fetch(tool_id: str = "socket_19mm"):
+            self._pub_intent("fetch", tool_id=tool_id)
             return {"ok": True}
 
         @app.post("/action/return")
-        async def action_return():
-            self._pub_intent("return")
+        async def action_return(tool_id: str = "socket_19mm"):
+            self._pub_intent("return", tool_id=tool_id)
             return {"ok": True}
 
         # 아래 3개는 _call_trigger가 동기 블로킹(threading.Event.wait)이므로
