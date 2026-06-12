@@ -156,14 +156,8 @@ def save_yaml(
     mean_mm: float,
     max_mm: float,
 ) -> None:
-    # calibrateHandEye가 det≈-1인 행렬을 반환하는 경우 SO(3)으로 투영
-    U, _, Vt = np.linalg.svd(R)
-    R_so3 = U @ Vt
-    if np.linalg.det(R_so3) < 0:
-        U[:, -1] *= -1
-        R_so3 = U @ Vt
-    quat = Rotation.from_matrix(R_so3).as_quat()  # [x, y, z, w]
-    cam_tilt = float(np.degrees(np.arccos(np.clip(abs(float(R_so3[2, 2])), 0.0, 1.0))))
+    quat = Rotation.from_matrix(R).as_quat()  # [x, y, z, w]
+    cam_tilt = float(np.degrees(np.arccos(np.clip(abs(float(R[2, 2])), 0.0, 1.0))))
     data = {
         'schema_version': 1,
         'transformation': {
