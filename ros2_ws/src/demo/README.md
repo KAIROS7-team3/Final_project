@@ -216,6 +216,50 @@ ros2 service call /tool_action_server/estop_reset std_srvs/srv/Trigger {}
 
 ---
 
+## demo_trigger — 마이크 없이 intent 1회 publish
+
+음성 스택(`voice:=true`) 없이 fetch/return을 시연·테스트할 때 사용한다.
+`/voice/intent`에 1회 publish 후 종료하는 1회성 노드.
+
+```bash
+# config/demo.yaml의 tool_id(socket_19mm) 기본 사용
+ros2 run demo demo_trigger fetch
+ros2 run demo demo_trigger return
+
+# tool_id 명시
+ros2 run demo demo_trigger fetch socket_19mm
+ros2 run demo demo_trigger return socket_19mm
+```
+
+DB Gate(S-2)는 orchestrator BT의 `CheckFeasibility`가 그대로 수행하므로,
+이 경로로 intent를 주입해도 안전 게이트는 우회되지 않는다.
+
+---
+
+## demo_ui — 독립 모니터링 대시보드 (선택)
+
+`dashboard` 패키지(8080, `dashboard:=true`)와 별개로, `demo` 패키지 자체에
+포함된 경량 FastAPI 모니터링 UI다. ROS2 스택과 독립적으로 떠 있어도 되고,
+ROS2가 없으면 UI만 단독 실행된다.
+
+```bash
+# 의존성 (1회)
+pip install --user fastapi "uvicorn[standard]" opencv-python-headless
+
+ros2 run demo demo_ui
+# 브라우저: http://localhost:8765
+```
+
+표시 항목:
+- `/voice/raw_text`, `/voice/intent` — 음성 텍스트 및 파싱된 intent
+- `/plc/status` — PLC LED 상태
+- `/gripper/state` — 그리퍼 전류(effort[0]) 파형
+- DB(`config/demo.yaml`의 `db_path`) — 공구 상태·이벤트 로그 (2초 폴링)
+- 카메라 2대 (`/dev/video2` C270, RealSense color via `pyrealsense2`)
+- fetch/return 트리거 버튼 → `/voice/intent` publish (orchestrator BT 경유, DB Gate 우회 없음)
+
+---
+
 ## 노드 시작 순서
 
 launch가 타이머로 자동 제어:
