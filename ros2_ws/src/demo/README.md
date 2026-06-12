@@ -128,24 +128,34 @@ demo:
 
 ## 실행
 
-### 기본 (대시보드 포함)
+### 에뮬레이터 모드 (하드웨어 없이 테스트)
 
 ```bash
-ros2 launch demo demo.launch.py robot_ip:=110.120.1.38
+ros2 launch demo demo.launch.py
 ```
 
-### 음성 포함
+### 실물 로봇 (최소)
 
 ```bash
 ros2 launch demo demo.launch.py \
+  mode:=real \
+  robot_ip:=110.120.1.38
+```
+
+### 실물 로봇 + 음성
+
+```bash
+ros2 launch demo demo.launch.py \
+  mode:=real \
   robot_ip:=110.120.1.38 \
   voice:=true
 ```
 
-### PLC LED 포함
+### 실물 로봇 + PLC LED
 
 ```bash
 ros2 launch demo demo.launch.py \
+  mode:=real \
   robot_ip:=110.120.1.38 \
   plc:=true \
   plc_port:=/dev/ttyUSB0
@@ -155,6 +165,7 @@ ros2 launch demo demo.launch.py \
 
 ```bash
 ros2 launch demo demo.launch.py \
+  mode:=real \
   robot_ip:=110.120.1.38 \
   voice:=true \
   plc:=true \
@@ -167,6 +178,7 @@ ros2 launch demo demo.launch.py \
 
 | 인자 | 기본값 | 설명 |
 |------|--------|------|
+| `mode` | `virtual` | `virtual` \| `real` |
 | `robot_ip` | `110.120.1.38` | Doosan 컨트롤러 IP |
 | `robot_ns` | `dsr01` | Doosan 로봇 네임스페이스 |
 | `voice` | `false` | Whisper STT + rule_intent 활성화 |
