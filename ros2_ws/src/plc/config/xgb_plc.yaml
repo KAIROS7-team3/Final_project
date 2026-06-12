@@ -1,6 +1,6 @@
 plc_node:
   ros__parameters:
-    port: /dev/ttyUSB0
+    port: /dev/plc
     baudrate: 115200
     parity: "N"
     stopbits: 1
