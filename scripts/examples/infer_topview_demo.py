@@ -65,7 +65,7 @@ def main() -> None:
 
     pipeline = rs.pipeline()
     pipeline_cfg = rs.config()
-    pipeline_cfg.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+    pipeline_cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
     logger.info("D455f 스트림 시작...")
     pipeline.start(pipeline_cfg)
     logger.info("스트림 시작 완료 | 's': 스냅샷  'q'/Ctrl+C: 종료")
@@ -92,6 +92,17 @@ def main() -> None:
             results   = model(img, conf=conf, iou=iou, verbose=False)
             annotated = results[0].plot()
             last_annotated = annotated
+
+            cv2.imshow("TopView YOLO", annotated)
+            cv2_key = cv2.waitKey(1) & 0xFF
+            if cv2_key == ord("q"):
+                break
+            elif cv2_key == ord("s"):
+                ts        = time.strftime("%Y%m%d_%H%M%S")
+                snap_path = _SNAPSHOT_DIR / f"snap_{ts}.jpg"
+                cv2.imwrite(str(snap_path), annotated)
+                sys.stdout.write(f"\r[SNAP] 저장: {snap_path.name}\n")
+                sys.stdout.flush()
 
             frame_count += 1
             if frame_count % 30 == 0:
@@ -124,6 +135,7 @@ def main() -> None:
         pass
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_tty)
+        cv2.destroyAllWindows()
         pipeline.stop()
         logger.info("종료 | %d프레임 | 스냅샷 경로: %s", frame_count, _SNAPSHOT_DIR)
 
