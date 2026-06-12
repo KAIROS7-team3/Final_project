@@ -1,6 +1,6 @@
-train: /home/iys/Final_project/datasets/tools/top_view_seg/train/images
-val: /home/iys/Final_project/datasets/tools/top_view_seg/valid/images
-test: /home/iys/Final_project/datasets/tools/top_view_seg/test/images
+train: train/images
+val: valid/images
+test: test/images
 
 nc: 6
 names: ['multi_tool', 'ratchet_wrench', 'screwdriver', 'socket_19mm', 'spanner_16mm', 'utility_knife']

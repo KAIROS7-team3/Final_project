@@ -60,13 +60,14 @@ def get_api_key() -> str:
     return key
 
 
-def annotate_and_show(image: "np.ndarray", result, win_name: str) -> None:
+def annotate_and_show(image: "np.ndarray", result, win_name: str) -> "np.ndarray":
     import supervision as sv
     detections = sv.Detections.from_inference(result)
     annotated = image.copy()
     annotated = sv.MaskAnnotator().annotate(annotated, detections)
     annotated = sv.LabelAnnotator().annotate(annotated, detections)
     cv2.imshow(win_name, annotated)
+    return annotated
 
 
 def run_image(image_path: str, model, conf: float) -> None:
@@ -76,17 +77,18 @@ def run_image(image_path: str, model, conf: float) -> None:
         sys.exit(1)
 
     result = model.infer(image, confidence=conf)[0]
-    annotate_and_show(image, result, f"Seg — {Path(image_path).name}")
+    annotated = annotate_and_show(image, result, f"Seg — {Path(image_path).name}")
 
     _SNAPSHOT_DIR.mkdir(exist_ok=True)
     out_path = _SNAPSHOT_DIR / f"seg_{Path(image_path).stem}.jpg"
-    cv2.imwrite(str(out_path), image)
+    cv2.imwrite(str(out_path), annotated)
     logger.info("결과 저장: %s", out_path)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 
 def run_camera(model, conf: float) -> None:
+    import numpy as np
     try:
         import pyrealsense2 as rs
     except ImportError:
@@ -131,8 +133,6 @@ def main() -> None:
     except ImportError:
         logger.error("inference 패키지 없음 — pip install inference")
         sys.exit(1)
-
-    import numpy as np  # noqa: F401 — camera 경로에서 참조
 
     logger.info("Roboflow 모델 로드: %s", args.model_id)
     model = get_model(args.model_id, api_key=api_key)
