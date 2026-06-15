@@ -1,3 +1,4 @@
+---
 _comment: C270 그리퍼 카메라 intrinsic (c270_intrinsic_calib.py)
 board:
   cols: 9
