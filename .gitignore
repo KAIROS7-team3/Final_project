@@ -78,6 +78,12 @@ scripts/samples_c270/
 scripts/samples_c270_calib/
 scripts/samples_c270_handeye/
 
+# 캘리브레이션 샘플 이미지 (로컬 수집 데이터, git 제외)
+scripts/samples/
+scripts/samples_c270/
+scripts/samples_c270_calib/
+scripts/samples_c270_handeye/
+
 # verify_camera.py 출력 이미지 (로컬 검증용)
 verify_rgb.png
 verify_depth_colormap.png
