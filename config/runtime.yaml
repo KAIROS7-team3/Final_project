@@ -55,7 +55,7 @@ calibration:
   charuco_squares_x: 5          # 가로 칸 수
   charuco_squares_y: 7          # 세로 칸 수
   charuco_square_size_m: 0.038  # 체커보드 칸 한 변 [m] — 실측 38mm
-  charuco_marker_size_m: 0.0315 # ArUco 마커 한 변 [m] — 실측 31.5mm
+  charuco_marker_size_m: 0.0315  # ArUco 마커 한 변 [m] — 실측 31.5mm
   aruco_dict_id: 0              # cv2.aruco.DICT_4X4_50
   aruco_target_id: 0            # 캘리브레이션에 사용할 마커 ID
   min_sample_count: 15          # calibrateHandEye 권장 최소 샘플 수

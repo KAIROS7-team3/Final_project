@@ -21,7 +21,7 @@ yolo:
   # ⚠️ v2부터 알파벳순 (Roboflow 기준) — v1과 인덱스 다름, 혼용 금지
   class_names:
     - multi_tool     # 0  멕가이버
-    - ratchet_wrench # 1  라쳇 렌치
+    - ratchet_wrench  # 1  라쳇 렌치
     - screwdriver    # 2  십자 드라이버
     - socket_19mm    # 3  복스 소켓 19mm
     - spanner_16mm   # 4  스패너 16mm
