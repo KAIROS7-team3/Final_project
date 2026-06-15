@@ -28,6 +28,24 @@
 ## [Unreleased]
 
 ### Added
+- 신규 토픽 4종 — vision_fetch / vision_open / vision_close 시퀀스용 비전 좌표 입력 (Track B Phase 1, `feat/track-b-vision-sequences`):
+  - `/vision/tool_top_pose` (`geometry_msgs/PointStamped`): 탑뷰 D455f가 제공하는 공구 중심 XY 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+    - 단위: m (runner 내부에서 ×1000 → mm 변환). frame_id: `base_link`.
+    - rationale: vision_fetch 시퀀스 step ③ 공구 위 이동(MOVE_L_TOP_XY)에 탑뷰 rough XY 좌표 공급.
+    - migration: 신규 토픽. 비전팀이 발행 미구현 시 해당 step에서 "좌표 미수신" 오류로 시퀀스 실패.
+  - `/vision/tool_gripper_pose` (`geometry_msgs/PointStamped`): 그리퍼 캠 C270이 제공하는 공구 중심 XYZ 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+    - 단위: m. frame_id: `base_link`.
+    - rationale: vision_fetch step ④ ToolServoController XY VS 정렬 및 step ⑤ 하강 Z 좌표 공급.
+    - migration: 신규 토픽.
+  - `/vision/handle_pose` (`geometry_msgs/PointStamped`): 그리퍼 캠 C270이 제공하는 서랍 손잡이 중심 XZ 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+    - 단위: m. frame_id: `base_link`. (Y는 HandleServoController에서 미사용 — XZ만 보정)
+    - rationale: vision_open/close step ④⑤ HandleServoController XZ VS 정렬 좌표 공급.
+    - migration: 신규 토픽.
+  - `/vision/slot_top_pose` (`geometry_msgs/PointStamped`): 탑뷰 D455f가 제공하는 슬롯 XY 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+    - 단위: m. frame_id: `base_link`.
+    - rationale: vision_return 시퀀스 슬롯 복귀 정렬(MOVE_L_SLOT_XY) 좌표 공급.
+    - migration: 신규 토픽.
+  > **비전팀 확인 필요**: 토픽명·메시지 타입·단위·frame_id는 비전팀과 합의 전 잠정 정의. 확정 후 이 항목 갱신 필수.
 - `srv/GripperSetPosition.srv`: RH-P12-RN 그리퍼 위치 제어 서비스 추가 (Track B Phase 1, PR #35).
   - 필드: request `position`(pulse), `current`(mA), `timeout_sec` / response `success`, `message`, `final_position`, `final_current`.
   - `gripper_node`가 `/gripper/set_position`으로 호스팅. Doosan 컨트롤러 TCP(port 9105) 경유 Modbus RTU로 RH-P12-RN 제어.
@@ -44,6 +62,9 @@
   - rationale: 이전엔 형식 설명이 모호해 `wrench_8mm`(2-part)·`screwdriver_phillips_small`(3-part) 혼재.
 - `srv/UpdateToolStatus.srv`의 `event_type` enum 값 명시: `fetch`, `return`, `rejected`, `error`, `fod_alert`, `reconciled`.
   - rationale: 이전엔 "tool_events 테이블 참조"라고만 표기되어 인터페이스 문서에서 허용 값 확인 불가.
+- `PlaceAtStaging.action`/`ReturnToSlot.action` 공통 Feedback `phase` 필드에 `"pick"`/`"place"` 마커 의미 추가 (`docs/interfaces.md §3` 갱신).
+  - rationale: DB 상태(`in_slot<->out<->staged`)를 BT 완료 대기 없이 물리적 집기/놓기 시점에 즉시 전이시키기 위해, `unit_actions.toolbox_motion.Step.marker`가 설정된 step 실행 직후 `phase="pick"`/`"place"`를 추가 발행한다. 기존 `StepKind` 이름(대문자) 기반 진행 단계 phase와 공존한다.
+  - migration: 액션 필드 타입 변경 없음 (additive). 기존 소비자는 무시해도 무방. `orchestrator_node`만 신규 phase 값을 구독해 DB 상태 전이를 트리거.
 
 ### Changed
 - `msg/PLCState.msg` → `msg/PLCStatus.msg` 리네이밍.

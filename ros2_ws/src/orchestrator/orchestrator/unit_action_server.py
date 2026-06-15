@@ -42,37 +42,37 @@ class UnitActionServer(Node):
 
     def _execute_grasp(self, goal_handle):
         # TODO(Phase 5a): unit_actions.grasp() 호출
-        self.get_logger().warn("[UnitActionServer] grasp not yet implemented")
+        self.get_logger().warning("[UnitActionServer] grasp not yet implemented")
         goal_handle.abort()
         return Grasp.Result(success=False, message="not implemented")
 
     def _execute_move_to_pose(self, goal_handle):
         # TODO(Phase 5a): unit_actions.move_to_pose() 호출
-        self.get_logger().warn("[UnitActionServer] move_to_pose not yet implemented")
+        self.get_logger().warning("[UnitActionServer] move_to_pose not yet implemented")
         goal_handle.abort()
         return MoveToPose.Result(success=False, message="not implemented")
 
     def _execute_place_at_staging(self, goal_handle):
         # TODO(Phase 4): unit_actions.place_at_staging() 호출
-        self.get_logger().warn("[UnitActionServer] place_at_staging not yet implemented")
+        self.get_logger().warning("[UnitActionServer] place_at_staging not yet implemented")
         goal_handle.abort()
         return PlaceAtStaging.Result(success=False, message="not implemented")
 
     def _execute_pick_from_staging(self, goal_handle):
         # TODO(Phase 4): unit_actions.pick_from_staging() 호출
-        self.get_logger().warn("[UnitActionServer] pick_from_staging not yet implemented")
+        self.get_logger().warning("[UnitActionServer] pick_from_staging not yet implemented")
         goal_handle.abort()
         return PickFromStaging.Result(success=False, message="not implemented")
 
     def _execute_release(self, goal_handle):
         # TODO(Phase 5a): unit_actions.release() 호출
-        self.get_logger().warn("[UnitActionServer] release not yet implemented")
+        self.get_logger().warning("[UnitActionServer] release not yet implemented")
         goal_handle.abort()
         return Release.Result(success=False, message="not implemented")
 
     def _execute_return_to_slot(self, goal_handle):
         # TODO(Phase 5a): unit_actions.return_to_slot() 호출
-        self.get_logger().warn("[UnitActionServer] return_to_slot not yet implemented")
+        self.get_logger().warning("[UnitActionServer] return_to_slot not yet implemented")
         goal_handle.abort()
         return ReturnToSlot.Result(success=False, message="not implemented")
 

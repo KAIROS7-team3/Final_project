@@ -109,6 +109,26 @@ class DBClient:
                 logger.warning("[DBClient] DB error, falling back to cache - error=%s", e)
                 return self._cache_fallback(tool_id)
 
+    def check_drawer_feasibility(self, intent: str, layer_id: int) -> tuple[bool, str]:
+        """서랍(layer) 단위 DB Gate — ToolRepository에 위임 (issue #44).
+
+        open 시 해당 layer가 이미 열려 있으면 (False, "already_open") 반환 → 호출자가 생략.
+        close는 항상 (True, ""). 반환 (feasible, reason).
+        """
+        result = self._repo.check_drawer_feasibility(intent, layer_id)
+        if result.feasible:
+            return True, ""
+        return False, result.reason
+
+    def update_drawer_state(self, layer_id: int, intent: str) -> None:
+        """서랍 열림/닫힘 상태를 DB에 기록한다 — open/close 완료 후 호출.
+
+        실패 시 DBError를 던진다.
+        """
+        result = self._repo.update_drawer_state(layer_id, intent)
+        if not result.success:
+            raise DBError(result.message)
+
     def check_feasibility(self, intent: str, tool_id: str) -> tuple[bool, str]:
         """DB Gate (S-2) 판정을 공유 ToolRepository 코어에 위임한다 (B2-1).
 
