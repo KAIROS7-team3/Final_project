@@ -1,21 +1,26 @@
-"""YOLOv11s 공구 검출 노드 (Track A/B).
+"""YOLOv11 공구 검출/세그멘테이션 노드 (Track A/B).
 
 탑뷰(D455f)와 그리퍼(C270) 각각 별도 인스턴스로 기동.
 런치 파라미터 camera_type으로 시점을 구분한다.
   - camera_type=top_view : top_view_model_path 로드, /d455f/color/image_raw 구독
   - camera_type=gripper  : gripper_model_path  로드, /c270/image_raw 구독
 
+세그멘테이션 모델(v3-seg 등) 사용 시 마스크 무게중심을 검출 중심점으로 사용.
+detection 모델 사용 시 bbox 중심점을 그대로 사용 (하위 호환).
+
 Subscribe : image_topic 파라미터 (기본 /d455f/color/image_raw)
 Publish   : /vision/detections            (vision_msgs/Detection2DArray)
             /vision/debug/annotated       (sensor_msgs/Image, debug 시에만)
+            /vision/debug/mask            (sensor_msgs/Image, seg 모델 + debug 시에만)
 
 config/vision.yaml의 해당 model_path가 null이면 추론 없이 대기.
-Phase 2 파인튜닝 완료 후 경로 기입 → 재기동으로 활성화.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
+import cv2
+import numpy as np
 import rclpy
 import yaml
 from cv_bridge import CvBridge
@@ -82,8 +87,10 @@ class YoloNode(Node):
 
         if self._publish_debug:
             self._debug_pub = self.create_publisher(Image, "/vision/debug/annotated", 1)
+            self._mask_pub = self.create_publisher(Image, "/vision/debug/mask", 1)
         else:
             self._debug_pub = None
+            self._mask_pub = None
 
         self.create_subscription(
             Image, image_topic, self._on_image, qos_profile_sensor_data
@@ -134,6 +141,18 @@ class YoloNode(Node):
             debug_msg.header = msg.header
             self._debug_pub.publish(debug_msg)
 
+            if self._mask_pub is not None and results[0].masks is not None:
+                mask_vis = self._build_mask_image(rgb, results[0])
+                mask_msg = self._bridge.cv2_to_imgmsg(mask_vis, encoding="bgr8")
+                mask_msg.header = msg.header
+                self._mask_pub.publish(mask_msg)
+
+    def _mask_centroid(self, mask_xy: np.ndarray) -> tuple[float, float] | None:
+        """마스크 픽셀 좌표 배열(N×2) → 무게중심 (cx, cy). 빈 마스크면 None."""
+        if mask_xy is None or len(mask_xy) == 0:
+            return None
+        return float(mask_xy[:, 0].mean()), float(mask_xy[:, 1].mean())
+
     def _build_detection_array(self, img_msg: Image, result) -> Detection2DArray:
         array = Detection2DArray()
         array.header = img_msg.header
@@ -142,6 +161,8 @@ class YoloNode(Node):
             return array
 
         boxes = result.boxes
+        masks = result.masks  # 세그 모델이면 Masks 객체, detection 모델이면 None
+
         for i in range(len(boxes)):
             cls_idx = int(boxes.cls[i].item())
             score = float(boxes.conf[i].item())
@@ -161,8 +182,16 @@ class YoloNode(Node):
             hyp.hypothesis.score = score
             det.results.append(hyp)
 
-            cx = float((xyxy[0] + xyxy[2]) / 2)
-            cy = float((xyxy[1] + xyxy[3]) / 2)
+            # 세그 모델: 마스크 무게중심을 중심점으로 사용 (bbox 중심보다 정확)
+            # detection 모델: bbox 중심 fallback
+            cx = cy = None
+            if masks is not None and i < len(masks.xy):
+                cx, cy = self._mask_centroid(masks.xy[i]) or (None, None)
+
+            if cx is None or cy is None:
+                cx = float((xyxy[0] + xyxy[2]) / 2)
+                cy = float((xyxy[1] + xyxy[3]) / 2)
+
             w = float(xyxy[2] - xyxy[0])
             h = float(xyxy[3] - xyxy[1])
 
@@ -174,8 +203,9 @@ class YoloNode(Node):
             array.detections.append(det)
 
         if array.detections:
+            src = "mask" if masks is not None else "bbox"
             self.get_logger().debug(
-                f"[yolo_node] detected {len(array.detections)} tools - "
+                f"[yolo_node] detected {len(array.detections)} tools ({src} centroid) - "
                 + ", ".join(
                     f"{d.results[0].hypothesis.class_id}({d.results[0].hypothesis.score:.2f})"
                     for d in array.detections
@@ -183,6 +213,35 @@ class YoloNode(Node):
             )
 
         return array
+
+    def _build_mask_image(self, img: np.ndarray, result) -> np.ndarray:
+        """마스크 윤곽선 + 무게중심점을 원본 이미지에 오버레이해서 반환."""
+        vis = img.copy()
+        if result.masks is None:
+            return vis
+
+        colors = [
+            (0, 255, 0), (0, 128, 255), (255, 0, 128),
+            (255, 255, 0), (0, 255, 255), (255, 0, 255),
+        ]
+        for i, xy in enumerate(result.masks.xy):
+            if len(xy) == 0:
+                continue
+            color = colors[i % len(colors)]
+            pts = xy.astype(np.int32).reshape((-1, 1, 2))
+            cv2.polylines(vis, [pts], isClosed=True, color=color, thickness=2)
+            cx, cy = self._mask_centroid(xy)
+            cv2.circle(vis, (int(cx), int(cy)), 6, color, -1)
+            cls_idx = int(result.boxes.cls[i].item())
+            label = (
+                self._class_names[cls_idx]
+                if cls_idx < len(self._class_names)
+                else f"cls{cls_idx}"
+            )
+            cv2.putText(vis, label, (int(cx) + 8, int(cy) - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+        return vis
 
 
 def main() -> None:

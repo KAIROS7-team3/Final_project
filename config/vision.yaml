@@ -7,8 +7,9 @@
 yolo:
   # 탑뷰(D455f)와 그리퍼(C270)는 촬영 시점이 달라 별도 모델 학습 필요
   # 그리퍼 모델 학습 완료 전: null → 노드 기동은 되나 추론 비활성화
-  # v3-2: 1574장, mAP50=0.952, EarlyStopping ep145 — 현재 운용 버전
-  top_view_model_path: ros2_ws/src/vision/model_library/top_view_model/v3-2/weights/best.pt
+  # v3-seg: 세그멘테이션 모델 (YOLOv11n-seg), mAP50=0.977 — 현재 운용 버전
+  # v3-2(detection): ros2_ws/src/vision/model_library/top_view_model/v3-2/weights/best.pt
+  top_view_model_path: ros2_ws/src/vision/model_library/top_view_model/v3-seg/weights/best.pt
   gripper_model_path: null     # C270 그리퍼 시점 학습 모델 (runs/yolo/gripper_v1/weights/best.pt)
   confidence_threshold: 0.70   # 수락 기준: 공구 분류 정확도 ≥ 95% (docs/conventions.md)
   iou_threshold: 0.45
@@ -39,7 +40,7 @@ aruco:
   dictionary: "DICT_4X4_50"
 
   # 실제 인쇄된 마커 한 변 길이 [m] — 오차 ±1mm 이내로 측정
-  # 현재 출력본: 5×5 cm (scripts/multi_item/markers/ ID 0·1·2)
+  # 천장 마커: ID 2, 5×5cm / 전면 마커: ID 0, 4×4cm (toolbox.yaml aruco_front)
   marker_size_m: 0.05
 
   # 마커 중심 기준 공구 place 허용 반경 [mm]

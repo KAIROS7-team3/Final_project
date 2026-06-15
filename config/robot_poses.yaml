@@ -28,12 +28,12 @@ poses:
   scan_layer_0:
     # deg: [0, -20, 70, 0, 80, 0]
     joints: [0.0, -0.349, 1.222, 0.0, 1.396, 0.0]
-    description: "layer 0(상층) 서랍 개방 후 D455f 스캔 포즈."
+    description: "layer 0(아랫층/1층 서랍) 개방 후 D455f 스캔 포즈."
 
   scan_layer_1:
     # deg: [0, -15, 65, 0, 80, 0]
     joints: [0.0, -0.262, 1.134, 0.0, 1.396, 0.0]
-    description: "layer 1(하층) 서랍 개방 후 D455f 스캔 포즈."
+    description: "layer 1(윗층/2층 서랍) 개방 후 D455f 스캔 포즈."
 
   # Staging Area 전체 스캔 포즈 — 무단 회수 감지 (결정 #26)
   scan_staging:
