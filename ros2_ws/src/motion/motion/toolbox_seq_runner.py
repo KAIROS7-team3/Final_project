@@ -27,7 +27,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy, qos_profile_sensor_data
 from std_msgs.msg import Bool
 from geometry_msgs.msg import PointStamped
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
@@ -234,31 +234,27 @@ class ToolboxSeqRunner(Node):
         )
 
         # VS (서랍 손잡이): /vision/handle_pose 구독
-        # ⚠️ 비전팀 확인 필요: 토픽명 확정
         self._handle_sub = self.create_subscription(
-            PointStamped, '/vision/handle_pose', self._on_handle_pose, 10,
-            callback_group=self._cb_group,
+            PointStamped, '/vision/handle_pose', self._on_handle_pose,
+            qos_profile_sensor_data, callback_group=self._cb_group,
         )
 
         # VS (공구 접근): 탑뷰 D455f — rough XY (③번 이동용)
-        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
         self._top_tool_sub = self.create_subscription(
-            PointStamped, '/vision/tool_top_pose', self._on_top_tool_pose, 10,
-            callback_group=self._cb_group,
+            PointStamped, '/vision/tool_top_pose', self._on_top_tool_pose,
+            qos_profile_sensor_data, callback_group=self._cb_group,
         )
 
         # VS (공구 접근): 그리퍼 캠 C270 — XY VS + Z 하강
-        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
         self._gripper_tool_sub = self.create_subscription(
-            PointStamped, '/vision/tool_gripper_pose', self._on_gripper_tool_pose, 10,
-            callback_group=self._cb_group,
+            PointStamped, '/vision/tool_gripper_pose', self._on_gripper_tool_pose,
+            qos_profile_sensor_data, callback_group=self._cb_group,
         )
 
         # VS (slot 반납): 탑뷰 D455f — slot rough XY (⑧번 이동용)
-        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
         self._slot_top_sub = self.create_subscription(
-            PointStamped, '/vision/slot_top_pose', self._on_slot_top_pose, 10,
-            callback_group=self._cb_group,
+            PointStamped, '/vision/slot_top_pose', self._on_slot_top_pose,
+            qos_profile_sensor_data, callback_group=self._cb_group,
         )
 
         # S-2: DB 클라이언트 — fetch/return 실행 전 feasibility 판정

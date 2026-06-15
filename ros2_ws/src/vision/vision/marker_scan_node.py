@@ -9,8 +9,8 @@
   ID 1 → 윗층   (layer_1, 2층 서랍)
 
 Subscribe:
-  /c270/image_raw          sensor_msgs/Image
-  /vision/detections       vision_msgs/Detection2DArray  ← yolo_node 마스크 무게중심
+  /c270/image_raw                  sensor_msgs/Image
+  /vision/detections/gripper       vision_msgs/Detection2DArray  ← yolo_node(gripper) 마스크 무게중심
 
 Publish:
   /vision/tool_gripper_pose      geometry_msgs/PointStamped  (TCP frame, m)
@@ -33,9 +33,10 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from vision_msgs.msg import Detection2DArray
 
-_CONFIG_CAM   = Path("config/c270_camera_info.yaml")
-_CONFIG_HE    = Path("config/c270_hand_eye.yaml")
-_CONFIG_TB    = Path("config/toolbox.yaml")
+_CONFIG_CAM = Path("config/c270_camera_info.yaml")
+_CONFIG_HE  = Path("config/c270_hand_eye.yaml")
+_CONFIG_TB  = Path("config/toolbox.yaml")
+_CONFIG_RT  = Path("config/runtime.yaml")
 
 _ARUCO_DICT   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 _ARUCO_PARAMS = cv2.aruco.DetectorParameters()
@@ -68,6 +69,7 @@ class MarkerScanNode(Node):
         self._hand_eye_R, self._hand_eye_t  = self._load_hand_eye()
         self._tool_heights                  = self._load_tool_heights()
         self._marker_size_m: float          = self._load_marker_size()
+        self._gripper_frame: str            = self._load_gripper_frame()
 
         debug_cfg = self._load_debug_flag()
 
@@ -82,7 +84,7 @@ class MarkerScanNode(Node):
 
         # 이미지 + 검출 결과 동기화 구독
         img_sub = Subscriber(self, Image, "/c270/image_raw", qos_profile=qos_profile_sensor_data)
-        det_sub = Subscriber(self, Detection2DArray, "/vision/detections", qos_profile=_QOS_BE10)
+        det_sub = Subscriber(self, Detection2DArray, "/vision/detections/gripper", qos_profile=_QOS_BE10)
         self._sync = ApproximateTimeSynchronizer([img_sub, det_sub], queue_size=10, slop=0.1)
         self._sync.registerCallback(self._on_sync)
 
@@ -123,6 +125,11 @@ class MarkerScanNode(Node):
         with _CONFIG_TB.open() as f:
             cfg = yaml.safe_load(f)
         return float(cfg["aruco_front"]["marker_size_m"])
+
+    def _load_gripper_frame(self) -> str:
+        with _CONFIG_RT.open() as f:
+            cfg = yaml.safe_load(f)
+        return str(cfg.get("gripper_frame", "link_6"))
 
     def _load_debug_flag(self) -> bool:
         with Path("config/vision.yaml").open() as f:
@@ -182,12 +189,16 @@ class MarkerScanNode(Node):
         tool_cy = best.bbox.center.position.y
         tool_h  = self._tool_heights.get(tool_id, 0.020)
 
-        # 감지된 마커 중 첫 번째 사용 (서랍 한 칸에 마커 하나 가정)
-        rvec, tvec = self._marker_pose(corners_list[0])
+        # 유효한 서랍 마커(ID 0 또는 1) 중 첫 번째 사용
+        rvec, tvec, marker_id = None, None, None
+        for corners, mid in zip(corners_list, ids.flatten()):
+            mid = int(mid)
+            if mid in _MARKER_ID_TO_LAYER:
+                rvec, tvec = self._marker_pose(corners)
+                marker_id = mid
+                break
         if tvec is None:
             return
-
-        marker_id   = int(ids[0][0])
         Z_floor     = float(tvec[2])            # 카메라 ~ 서랍 바닥 거리 (m)
         Z_grasp     = Z_floor - tool_h / 2.0   # 공구 두께 절반만큼 올림
 
@@ -200,7 +211,7 @@ class MarkerScanNode(Node):
         # 발행
         msg = PointStamped()
         msg.header = img_msg.header
-        msg.header.frame_id = "link_6"          # TCP (c270_hand_eye 기준 프레임)
+        msg.header.frame_id = self._gripper_frame
         msg.point.x = float(P_tcp[0])
         msg.point.y = float(P_tcp[1])
         msg.point.z = float(P_tcp[2])

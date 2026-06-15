@@ -36,7 +36,8 @@ OUTPUT_PATH  = os.path.join(_SCRIPT_DIR, 'c270_handeye_data.npz')
 RESUME_PATH  = os.path.join(_SCRIPT_DIR, 'c270_handeye_data_tmp.npz')  # 자동 백업
 
 DEVICE: str = _calib.get('c270_device', '/dev/video2')
-WIDTH, HEIGHT = 640, 480
+WIDTH:  int = int(_calib.get('c270_width',  640))
+HEIGHT: int = int(_calib.get('c270_height', 480))
 MIN_SAMPLES   = 15
 
 # ── 설정 로드 ──────────────────────────────────────────────────────────────────

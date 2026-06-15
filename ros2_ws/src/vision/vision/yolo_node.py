@@ -9,7 +9,7 @@
 detection 모델 사용 시 bbox 중심점을 그대로 사용 (하위 호환).
 
 Subscribe : image_topic 파라미터 (기본 /d455f/color/image_raw)
-Publish   : /vision/detections            (vision_msgs/Detection2DArray)
+Publish   : /vision/detections/<camera_type>  (vision_msgs/Detection2DArray)
             /vision/debug/annotated       (sensor_msgs/Image, debug 시에만)
             /vision/debug/mask            (sensor_msgs/Image, seg 모델 + debug 시에만)
 
@@ -81,8 +81,9 @@ class YoloNode(Node):
         image_topic: str = _CAMERA_TOPICS[camera_type]
 
         # interfaces.md §4: Best Effort / depth 10
+        # camera_type별 토픽 분리 — 동시 기동 시 top_view/gripper 검출 결과 혼용 방지
         self._det_pub = self.create_publisher(
-            Detection2DArray, "/vision/detections", _QOS_BEST_EFFORT_10
+            Detection2DArray, f"/vision/detections/{camera_type}", _QOS_BEST_EFFORT_10
         )
 
         if self._publish_debug:
