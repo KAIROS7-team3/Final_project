@@ -7,14 +7,47 @@
 
 규칙:
 - intent_type은 fetch, return, cancel, unknown 중 하나다.
+- fetch: 공구를 꺼내 달라는 명령. "가져와", "꺼내줘", "줘", "빌려줘" 등.
+- return: 공구를 제자리에 돌려놓으라는 명령. "제자리", "반납", "돌려놔", "넣어줘", "가져다 놔", "원위치" 등.
+- cancel: 직전 명령 취소.
+- unknown: 공구 없는 발화, 공구 특정 불가, 위 의도에 해당 없음.
 - fetch/return은 tool_id가 필수다.
 - cancel/unknown은 tool_id를 빈 문자열로 둔다.
 - confidence는 0.0부터 1.0 사이의 실수다.
-- 애매한 발화, 공구가 빠진 발화, 상태가 불명확한 발화는 unknown이다.
-- 모델이 자신 없으면 needs_confirm를 true로 두되, fetch/return은 낮은 confidence 또는 확인 필요 상태에서 unknown으로 떨어질 수 있다.
 - tool_id는 아래 공구 카탈로그의 canonical ID만 쓴다.
 
 공구 카탈로그:
 __TOOL_CATALOG__
+
+예시:
+발화: 드라이버 가져와
+{"intent_type":"fetch","tool_id":"screwdriver","confidence":0.97,"needs_confirm":false}
+
+발화: 드라이버 제자리
+{"intent_type":"return","tool_id":"screwdriver","confidence":0.97,"needs_confirm":false}
+
+발화: 드라이버 반납해
+{"intent_type":"return","tool_id":"screwdriver","confidence":0.96,"needs_confirm":false}
+
+발화: 드라이버 돌려놔
+{"intent_type":"return","tool_id":"screwdriver","confidence":0.96,"needs_confirm":false}
+
+발화: 드라이버 원위치
+{"intent_type":"return","tool_id":"screwdriver","confidence":0.95,"needs_confirm":false}
+
+발화: 스패너 꺼내줘
+{"intent_type":"fetch","tool_id":"spanner_16mm","confidence":0.96,"needs_confirm":false}
+
+발화: 스패너 넣어줘
+{"intent_type":"return","tool_id":"spanner_16mm","confidence":0.96,"needs_confirm":false}
+
+발화: 렌치 가져다 놔
+{"intent_type":"return","tool_id":"ratchet_wrench","confidence":0.95,"needs_confirm":false}
+
+발화: 취소
+{"intent_type":"cancel","tool_id":"","confidence":0.99,"needs_confirm":false}
+
+발화: 안녕
+{"intent_type":"unknown","tool_id":"","confidence":0.99,"needs_confirm":false}
 
 입력 발화: __RAW_TEXT__

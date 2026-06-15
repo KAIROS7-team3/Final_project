@@ -356,6 +356,18 @@ class GemmaIntentClassifier:
     def _load_backend(self) -> GemmaBackend:
         """기본 HuggingFace backend를 로드한다."""
 
+        # NumPy 2.0에서 제거된 이름들을 시스템 scipy(<1.11)가 임포트 시 참조한다.
+        # transformers 로딩 전에 alias를 복원해 충돌을 방지한다.
+        import numpy as _np
+        if not hasattr(_np, "Inf"):
+            _np.Inf = _np.inf  # type: ignore[attr-defined]
+        if not hasattr(_np, "NaN"):
+            _np.NaN = float("nan")  # type: ignore[attr-defined]
+        if not hasattr(_np, "asfarray"):
+            _np.asfarray = lambda a, dtype=float: _np.asarray(a, dtype=dtype)  # type: ignore[attr-defined]
+        if not hasattr(_np, "row_stack"):
+            _np.row_stack = _np.vstack  # type: ignore[attr-defined]
+
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer
         except ImportError as exc:  # pragma: no cover - optional dependency path
@@ -397,8 +409,11 @@ class _TransformersGemmaBackend:
         self._temperature = temperature
         self._torch = torch_module
         self._tokenizer = tokenizer_cls.from_pretrained(model_id)
-        self._model = model_cls.from_pretrained(model_id)
-        self._model.to(device)
+        self._model = model_cls.from_pretrained(
+            model_id,
+            dtype=torch_module.bfloat16,
+            device_map="auto",
+        )
         self._model.eval()
 
     def generate(self, prompt: str) -> str:

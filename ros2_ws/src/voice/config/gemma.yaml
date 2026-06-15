@@ -9,41 +9,13 @@ gemma_intent_node:
   ros__parameters:
     require_wake_word: true
     wake_words:
-      - 코봇
-      - 코 봇
-      - 코보
-      - 코 보
-      - 코부
-      - 코 부
-      - 코브
-      - 코 브
-      - 코버
-      - 코 버
-      - 고봇
-      - 고 봇
-      - 고보
-      - 고 보
-      - 고부
-      - 고 부
-      - 고브
-      - 고 브
-      - 고버
-      - 고 버
-      - 코벗
-      - 코 벗
-      - 고벗
-      - 고 벗
-      - 꼬보
-      - 꼬 보
-      - 꼬부
-      - 꼬 부
-      - 코보트
-      - 코 보트
-      - 고보트
-      - 고 보트
+      - 성현
+      - 성 현
+      - 성현아
+      - 성 현아
     gemma_model_id: ~/models/gemma/gemma-3-1b-it
     gemma_device: auto
-    gemma_confidence_threshold: 0.75
+    gemma_confidence_threshold: 0.88
     gemma_max_new_tokens: 128
     gemma_temperature: 0.0
     gemma_warmup: true

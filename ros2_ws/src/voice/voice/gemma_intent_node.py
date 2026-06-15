@@ -114,6 +114,10 @@ class GemmaIntentNode(Node):
             self.get_logger().debug("voice input ignored because wake word is missing")
             return
 
+        if not gate.command_text.strip():
+            self.get_logger().debug("wake word detected but no command; ignoring")
+            return
+
         parsed = self._classifier.classify(gate.command_text)
         if parsed.intent_type in {"cancel", "unknown"}:
             self._publish_intent(

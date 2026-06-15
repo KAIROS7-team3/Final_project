@@ -1,3 +1,4 @@
+import os
 from glob import glob
 from pathlib import Path
 
@@ -5,7 +6,10 @@ from setuptools import find_packages, setup
 
 package_name = "voice"
 repo_root = Path(__file__).resolve().parents[3]
-toolbox_path = repo_root / "config" / "toolbox.yaml"
+toolbox_path = os.path.relpath(
+    str(repo_root / "config" / "toolbox.yaml"),
+    start=str(Path(__file__).parent),
+)
 
 setup(
     name=package_name,
@@ -18,7 +22,7 @@ setup(
         (f"share/{package_name}", ["voice/gemma_prompt.txt"]),
         (
             f"share/{package_name}/config",
-            glob("config/*.yaml") + [str(toolbox_path)],
+            glob("config/*.yaml") + [toolbox_path],
         ),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
