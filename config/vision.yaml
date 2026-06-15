@@ -60,6 +60,12 @@ debug:
 grasp_offset:
   # PCA 주축 방향으로 centroid에서 offset할 공구별 설정 (infer_c270_centroid.py)
   # ratio: 공구 전체 길이(픽셀) 대비 비율 / toward_narrow: true=손잡이 쪽, false=넓은 쪽
-  screwdriver:    { ratio: 0.30,  toward_narrow: true  }
-  ratchet_wrench: { ratio: 0.125, toward_narrow: false }
-  utility_knife:  { ratio: 0.20,  toward_narrow: true  }
+  screwdriver:
+    ratio: 0.30
+    toward_narrow: true
+  ratchet_wrench:
+    ratio: 0.125
+    toward_narrow: false
+  utility_knife:
+    ratio: 0.20
+    toward_narrow: true

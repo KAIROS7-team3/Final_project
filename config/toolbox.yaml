@@ -39,7 +39,8 @@ toolbox:
   grid_layers: 2    # 서랍 수 (스캔 횟수와 일치)
   grid_rows: 1
   grid_cols: 3
-  layer_height_z: 0.056   # 층간 높이 [m] — TCP 직접교시 실측 (윗층 92.7mm - 아랫층 37.13mm = 55.57mm → 0.056m) (2026-06-15)
+  # 층간 높이 [m] — TCP 직접교시 실측 (윗층 92.7mm - 아랫층 37.13mm = 55.57mm)
+  layer_height_z: 0.056
   slot_depth_z: 0.040
 
   # 공구함 외형 치수 — 실측값 (2026-06-15)
