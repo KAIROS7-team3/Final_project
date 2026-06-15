@@ -1,0 +1,19 @@
+version: v1
+description: "그리퍼(C270) 시점 공구 6종 인스턴스 세그멘테이션 모델"
+
+active: true
+
+model:
+  file: weights/best.pt
+  task: segment
+  image_size: 640
+
+drive_url: "https://drive.google.com/file/d/1R6OaOKuF2wCM6QxsFsRnNgbGIXPKvB9N/view?usp=sharing"
+
+classes:
+  0: multi_tool
+  1: ratchet_wrench
+  2: screwdriver
+  3: socket_19mm
+  4: spanner_16mm
+  5: utility_knife

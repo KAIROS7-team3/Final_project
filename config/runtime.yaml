@@ -52,7 +52,7 @@ calibration:
   aruco_target_id: 1            # 캘리브레이션에 사용할 마커 ID (TCP 부착 마커)
 
   # c270 카메라 장치 경로 (c270_tcp_center_calib.py 용)
-  c270_device: /dev/video2
+  c270_device: /dev/video8
   c270_width: 640
   c270_height: 480
 

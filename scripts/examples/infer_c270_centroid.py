@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _CONFIG_PATH  = _PROJECT_ROOT / "config" / "vision.yaml"
 _SNAPSHOT_DIR = _PROJECT_ROOT / "scripts" / "infer_snapshots"
-_DEFAULT_MODEL = Path.home() / "Downloads" / "cocoham" / "best.pt"
+_DEFAULT_MODEL = _PROJECT_ROOT / "ros2_ws/src/vision/model_library/gripper_model/v1/weights/best.pt"
 
 # 클래스별 시각화 색상 (BGR)
 _COLORS = [
@@ -51,6 +51,14 @@ _COLORS = [
     (200,  80, 255),   # spanner_16mm   — 보라
     ( 50, 220, 220),   # utility_knife  — 노랑
 ]
+
+def _load_offset_tools(config_path: Path) -> dict[str, dict]:
+    with config_path.open() as f:
+        cfg = yaml.safe_load(f)
+    return {
+        k: {"ratio": float(v["ratio"]), "toward_narrow": bool(v["toward_narrow"])}
+        for k, v in cfg.get("grasp_offset", {}).items()
+    }
 
 
 def _parse_args() -> argparse.Namespace:
@@ -86,77 +94,40 @@ def _open_camera(device: str) -> cv2.VideoCapture:
     return cap
 
 
-def compute_centroid(mask_2d: np.ndarray) -> tuple[float, float] | None:
-    """이진 마스크에서 픽셀 무게중심 계산.
-
-    Args:
-        mask_2d: (H, W) bool/uint8 배열, 공구 픽셀=True(1)
+def compute_pca(mask_2d: np.ndarray) -> tuple[float, float, float, float, np.ndarray] | None:
+    """이진 마스크에서 무게중심 + 장축 정보 추출.
 
     Returns:
-        (cx, cy) 픽셀 좌표 또는 픽셀이 없으면 None
-    """
-    pts = np.argwhere(mask_2d > 0)
-    if len(pts) == 0:
-        return None
-
-    # 1.1: 평균 계산 (argwhere는 [row(y), col(x)] 순서)
-    cy = float(pts[:, 0].mean())
-    cx = float(pts[:, 1].mean())
-    return cx, cy
-
-
-def compute_pca(mask_2d: np.ndarray) -> tuple[float, float, float, float] | None:
-    """이진 마스크에서 무게중심 + 장축 각도(θ) 추출.
-
-    [파이프라인]
-      argwhere → 중심화 → 공분산 행렬(2×2) → 고유값 분해 → arctan2
-
-    Args:
-        mask_2d: (H, W) bool/uint8 배열
-
-    Returns:
-        (cx, cy, theta_deg, reliability)
-        - cx, cy    : 픽셀 무게중심
-        - theta_deg : 장축 각도 [-90°, +90°]
-        - reliability: λ1/λ2 비율 (1에 가까울수록 각도 불안정)
-        또는 픽셀이 부족하면 None
+        (cx, cy, theta_deg, reliability, eigvec1)
+        - eigvec1: 주축 단위벡터 [vx, vy] (이미지 x,y 좌표계)
     """
     pts = np.argwhere(mask_2d > 0)
     if len(pts) < 5:
         return None
 
-    # 1.1: 평균 → 무게중심
     cy = float(pts[:, 0].mean())
     cx = float(pts[:, 1].mean())
 
-    # 1.1: 중심화 (원점으로 이동)
     centered = pts.astype(np.float32) - np.array([cy, cx])
-    # centered 열 순서: [dy, dx]  →  x=col(1), y=row(0)
-    x = centered[:, 1]   # col 방향
-    y = centered[:, 0]   # row 방향
+    x = centered[:, 1]
+    y = centered[:, 0]
 
-    # 1.2: 분산·공분산 계산
     N = len(pts)
     var_x  = float(np.sum(x ** 2) / N)
     var_y  = float(np.sum(y ** 2) / N)
     cov_xy = float(np.sum(x * y) / N)
 
-    # 1.3: 공분산 행렬 구성
     C = np.array([[var_x, cov_xy],
                   [cov_xy, var_y]], dtype=np.float64)
 
-    # 2.1: 고유값 분해
     eigenvalues, eigenvectors = np.linalg.eig(C)
-
-    # 2.2: 고유값 내림차순 정렬 → PC1(장축) 선택
     order = np.argsort(eigenvalues)[::-1]
     eigenvalues  = eigenvalues[order]
     eigenvectors = eigenvectors[:, order]
 
     lam1, lam2 = float(eigenvalues[0]), float(eigenvalues[1])
-    v1 = eigenvectors[:, 0]   # PC1 고유벡터 [vx, vy]
+    v1 = eigenvectors[:, 0]   # [vx, vy]
 
-    # 2.3: arctan2로 각도 추출 → [-90°, +90°] 정규화
     theta_rad = np.arctan2(float(v1[1]), float(v1[0]))
     theta_deg = float(np.degrees(theta_rad))
     if theta_deg > 90.0:
@@ -164,32 +135,76 @@ def compute_pca(mask_2d: np.ndarray) -> tuple[float, float, float, float] | None
     elif theta_deg < -90.0:
         theta_deg += 180.0
 
-    # λ1/λ2 신뢰도 (클수록 각도 안정, 1에 가까우면 불안정)
     reliability = lam1 / lam2 if lam2 > 1e-6 else 0.0
 
-    return cx, cy, theta_deg, reliability
+    return cx, cy, theta_deg, reliability, v1
+
+
+def _grasp_point(
+    cx: float, cy: float,
+    v1: np.ndarray,
+    mask_2d: np.ndarray,
+    ratio: float,
+    toward_narrow: bool,
+) -> tuple[float, float]:
+    """PCA 주축 방향으로 centroid를 offset해 그립 포인트 계산.
+
+    공구 전체 길이(픽셀) * ratio 만큼 주축 방향으로 이동.
+    toward_narrow=True: 마스크가 더 좁은 쪽(손잡이)으로 이동.
+    """
+    pts = np.argwhere(mask_2d > 0).astype(np.float32)
+    # 주축 투영값 계산
+    centered = pts - np.array([cy, cx])
+    proj = centered[:, 1] * v1[0] + centered[:, 0] * v1[1]
+    length = float(proj.max() - proj.min())
+    offset_px = length * ratio
+
+    # 주축 양 끝 중 어느 쪽이 더 좁은지 판별
+    pos_pts = pts[proj > 0]
+    neg_pts = pts[proj < 0]
+
+    def _width(cluster: np.ndarray) -> float:
+        if len(cluster) < 3:
+            return 0.0
+        perp = cluster[:, 0] * v1[0] - cluster[:, 1] * v1[1]
+        return float(perp.max() - perp.min())
+
+    pos_narrow = _width(pos_pts) < _width(neg_pts)
+
+    # toward_narrow=True 이면 좁은 쪽으로, False면 넓은 쪽으로
+    if toward_narrow:
+        sign = 1.0 if pos_narrow else -1.0
+    else:
+        sign = -1.0 if pos_narrow else 1.0
+
+    gx = cx + sign * offset_px * v1[0]
+    gy = cy + sign * offset_px * v1[1]
+    H, W = mask_2d.shape
+    gx = float(np.clip(gx, 0, W - 1))
+    gy = float(np.clip(gy, 0, H - 1))
+    return gx, gy
 
 
 def draw_result(
     image: np.ndarray,
-    cx: float,
-    cy: float,
+    cx: float, cy: float,
     label: str,
     color: tuple[int, int, int],
     theta_deg: float | None = None,
     reliability: float | None = None,
+    grasp_pt: tuple[float, float] | None = None,
     axis_len: int = 60,
 ) -> None:
-    """무게중심 + 장축 방향 시각화."""
+    """무게중심 + 장축 방향 + 그립 포인트 시각화."""
     ix, iy = int(cx), int(cy)
     arm = 12
 
-    # 십자선
+    # centroid 십자선
     cv2.line(image, (ix - arm, iy), (ix + arm, iy), color, 2)
     cv2.line(image, (ix, iy - arm), (ix, iy + arm), color, 2)
     cv2.circle(image, (ix, iy), 4, color, -1)
 
-    # 장축 방향 화살표 (θ가 있을 때만)
+    # 장축 방향 화살표
     if theta_deg is not None:
         theta_rad = np.radians(theta_deg)
         dx = int(axis_len * np.cos(theta_rad))
@@ -199,14 +214,22 @@ def draw_result(
         cv2.arrowedLine(image, (ix, iy), (ix - dx, iy - dy),
                         color, 1, tipLength=0.15)
 
-    # 레이블 텍스트
+    # 그립 포인트 (별도 표시)
+    if grasp_pt is not None:
+        gx, gy = int(grasp_pt[0]), int(grasp_pt[1])
+        cv2.circle(image, (gx, gy), 8, (0, 255, 255), -1)
+        cv2.circle(image, (gx, gy), 10, (0, 0, 0), 2)
+        cv2.line(image, (ix, iy), (gx, gy), (0, 255, 255), 1)
+        cv2.putText(image, f"GRASP({gx},{gy})", (gx + 8, gy - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1)
+
+    # 레이블
     if theta_deg is not None and reliability is not None:
         stable = "stable" if reliability > 2.0 else "unstable"
         text = f"{label} ({ix},{iy}) θ={theta_deg:.1f}° [{stable}]"
     else:
         text = f"{label} ({ix},{iy})"
-
-    cv2.putText(image, text, (ix + 8, iy - 8),
+    cv2.putText(image, text, (ix + 8, iy + 16),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
 
 
@@ -216,21 +239,18 @@ def process_frame(
     conf: float,
     iou: float,
     names: dict[int, str],
+    offset_tools: dict[str, dict],
 ) -> np.ndarray:
-    """한 프레임에서 추론 → 마스크 → 무게중심 → 시각화."""
     results = model(frame, conf=conf, iou=iou, verbose=False)
     result  = results[0]
-
-    # 원본 프레임을 베이스로 사용 (result.plot() 대신)
     annotated = frame.copy()
 
-    # 마스크가 없으면 원본 + 안내 텍스트 반환
     if result.masks is None or len(result.boxes) == 0:
         cv2.putText(annotated, "No detection", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
         return annotated
 
-    masks = result.masks.data.cpu().numpy()   # (N, H, W) float32, 0~1
+    masks = result.masks.data.cpu().numpy()
     boxes = result.boxes
     H, W  = frame.shape[:2]
 
@@ -240,34 +260,36 @@ def process_frame(
         label  = names.get(cls_id, str(cls_id))
         color  = _COLORS[cls_id % len(_COLORS)]
 
-        # 마스크를 원본 해상도로 리사이즈
         if mask.shape != (H, W):
             mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)
-
-        # 마스크 반투명 오버레이
         binary = (mask > 0.5).astype(np.uint8)
+
+        # 마스크 오버레이
         color_layer = np.zeros_like(annotated)
         color_layer[binary == 1] = color
         annotated = cv2.addWeighted(annotated, 0.6, color_layer, 0.4, 0)
-
-        # 외곽선
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL,
-                                        cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(annotated, contours, -1, color, 2)
 
-        # PCA: 무게중심 + 장축 각도
         pca = compute_pca(binary)
         if pca is None:
             continue
+        cx, cy, theta_deg, reliability, v1 = pca
 
-        cx, cy, theta_deg, reliability = pca
+        # offset 공구면 그립 포인트 계산
+        grasp_pt: tuple[float, float] | None = None
+        if label in offset_tools:
+            cfg = offset_tools[label]
+            grasp_pt = _grasp_point(cx, cy, v1, binary,
+                                    cfg["ratio"], cfg["toward_narrow"])
+            logger.info("%-15s  centroid=(%.1f,%.1f)  grasp=(%.1f,%.1f)  θ=%+.1f°",
+                        label, cx, cy, grasp_pt[0], grasp_pt[1], theta_deg)
+        else:
+            logger.info("%-15s  centroid=(%.1f,%.1f)  θ=%+.1f°  rel=%.1f",
+                        label, cx, cy, theta_deg, reliability)
+
         draw_result(annotated, cx, cy, f"{label} {score:.2f}",
-                    color, theta_deg, reliability)
-
-        logger.info("%-15s  centroid=(%.1f, %.1f)  θ=%+.1f°  "
-                    "reliability=%.1f  px=%d",
-                    label, cx, cy, theta_deg, reliability,
-                    int(binary.sum()))
+                    color, theta_deg, reliability, grasp_pt)
 
     return annotated
 
@@ -278,8 +300,8 @@ def run_images(
     conf: float,
     iou: float,
     names: dict[int, str],
+    offset_tools: dict[str, dict],
 ) -> None:
-    """이미지 폴더 모드: n/p로 탐색, s로 저장, q로 종료."""
     _SNAPSHOT_DIR.mkdir(exist_ok=True)
     idx = 0
     win = "Centroid Extraction  [n/space: 다음  p: 이전  s: 저장  q: 종료]"
@@ -294,20 +316,13 @@ def run_images(
             idx = (idx + 1) % len(image_paths)
             continue
 
-        annotated = process_frame(frame, model, conf, iou, names)
-
-        # 파일명 + 인덱스 오버레이
+        annotated = process_frame(frame, model, conf, iou, names, offset_tools)
         info = f"[{idx+1}/{len(image_paths)}] {path.name}"
         cv2.putText(annotated, info, (8, annotated.shape[0] - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
 
-        # 화면 표시 + 첫 장은 파일로도 저장 (디스플레이 문제 디버그용)
-        if idx == 0:
-            cv2.imwrite(str(_SNAPSHOT_DIR / "_debug_first.jpg"), annotated)
-            logger.info("첫 프레임 저장: scripts/infer_snapshots/_debug_first.jpg")
-
         cv2.imshow(win, annotated)
-        cv2.waitKey(1)   # 렌더링 강제 flush
+        cv2.waitKey(1)
         logger.info("[%d/%d] %s", idx + 1, len(image_paths), path.name)
 
         key = cv2.waitKey(0) & 0xFF
@@ -331,8 +346,8 @@ def run_camera(
     conf: float,
     iou: float,
     names: dict[int, str],
+    offset_tools: dict[str, dict],
 ) -> None:
-    """카메라 실시간 모드."""
     _SNAPSHOT_DIR.mkdir(exist_ok=True)
     cap = _open_camera(device)
     logger.info("C270 스트림 시작 | 's': 스냅샷  'q': 종료")
@@ -346,8 +361,8 @@ def run_camera(
             logger.warning("프레임 수신 실패")
             continue
 
-        annotated = process_frame(frame, model, conf, iou, names)
-        cv2.imshow("Centroid Extraction  [s: snap  q: quit]", annotated)
+        annotated = process_frame(frame, model, conf, iou, names, offset_tools)
+        cv2.imshow("Centroid + Grasp  [s: snap  q: quit]", annotated)
 
         frame_count += 1
         if frame_count % 30 == 0:
@@ -381,17 +396,19 @@ def main() -> None:
     conf = yolo_cfg["confidence_threshold"]
     iou  = yolo_cfg["iou_threshold"]
 
+    offset_tools = _load_offset_tools(_CONFIG_PATH)
+    logger.info("grasp_offset 로드: %s", list(offset_tools.keys()))
+
     logger.info("모델 로드: %s", args.model)
     model = YOLO(str(args.model))
     names = model.names
     logger.info("task=%s  classes=%s", model.task, list(names.values()))
-    logger.info("conf=%.2f  iou=%.2f", conf, iou)
 
     if args.images is not None:
         image_paths = _collect_images(args.images)
-        run_images(image_paths, model, conf, iou, names)
+        run_images(image_paths, model, conf, iou, names, offset_tools)
     else:
-        run_camera(args.device, model, conf, iou, names)
+        run_camera(args.device, model, conf, iou, names, offset_tools)
 
 
 if __name__ == "__main__":
