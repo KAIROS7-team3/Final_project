@@ -332,6 +332,11 @@ def compute(t_fixed: np.ndarray | None = None) -> None:
             'cam_tilt_deg': tilt,
             'marker_world_mm': [float(P_opt[0] * 1000), float(P_opt[1] * 1000),
                                  float(P_opt[2] * 1000)],
+            'frames': {
+                'from': 'c270_optical_frame',
+                'to':   'link_6',
+                'note': 'T_cam2gripper: camera origin expressed in link_6 frame',
+            },
         }
     }
     with open(cfg_path, 'w') as f:
