@@ -39,8 +39,24 @@ _VISION_CFG      = _PROJECT_ROOT / "config" / "vision.yaml"
 _CAM_INFO_PATH   = _PROJECT_ROOT / "config" / "c270_camera_info.yaml"
 _HAND_EYE_PATH   = _PROJECT_ROOT / "config" / "c270_hand_eye.yaml"
 _SNAPSHOT_DIR    = _PROJECT_ROOT / "scripts" / "infer_snapshots"
-_DEFAULT_MODEL   = Path.home() / "Downloads" / "cocoham" / "best.pt"
 _DEFAULT_DEPTH_M = 0.15   # 기본 카메라~공구 거리 [m]
+
+
+def _load_default_model() -> Path:
+    """config/vision.yaml gripper_model_path에서 기본 모델 경로 로드.
+    null이거나 미설정이면 model_library 기본 경로 반환.
+    """
+    try:
+        with _VISION_CFG.open() as f:
+            p = yaml.safe_load(f).get("yolo", {}).get("gripper_model_path")
+        if p:
+            return _PROJECT_ROOT / p
+    except Exception:
+        pass
+    return _PROJECT_ROOT / "ros2_ws/src/vision/model_library/gripper_model/v1/weights/best.pt"
+
+
+_DEFAULT_MODEL = _load_default_model()
 _WIN_NAME        = "C270 World Coords"
 
 _COLORS = [

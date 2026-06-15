@@ -166,7 +166,7 @@ def _grasp_point(
     def _width(cluster: np.ndarray) -> float:
         if len(cluster) < 3:
             return 0.0
-        perp = cluster[:, 0] * v1[0] - cluster[:, 1] * v1[1]
+        perp = cluster[:, 1] * (-v1[1]) + cluster[:, 0] * v1[0]
         return float(perp.max() - perp.min())
 
     pos_narrow = _width(pos_pts) < _width(neg_pts)

@@ -35,7 +35,7 @@ schema:
 
 # 공구함 자체 위치/크기 (운영자가 공구함을 옮기면 이 값만 갱신)
 toolbox:
-  origin: {x: 0.300, y: -0.200, z: 0.050}  # layer 0 기준 좌상단 모서리
+  origin: {x: 0.300, y: -0.200, z: 0.037}  # layer 0 기준 좌상단 모서리 (TCP 직접교시 실측: 37.13mm)
   orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
   dimensions:           # 실측값 (m)
     width:  0.460
@@ -45,7 +45,7 @@ toolbox:
   grid_layers: 2    # 서랍 수 (스캔 횟수와 일치)
   grid_rows: 1
   grid_cols: 3
-  layer_height_z: 0.080   # 층간 높이 — Phase 0 ② 실제 측정 후 갱신
+  layer_height_z: 0.056   # 층간 높이 실측: 55.57mm (TCP 직접교시)
   slot_depth_z: 0.040
 
 # ArUco 마커 — DICT_4X4_50, 탑뷰 ROI 계산 및 서랍 기준점 인식용
