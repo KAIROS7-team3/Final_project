@@ -201,7 +201,7 @@ def save_yaml(
             return super().increase_indent(flow, indentless=False)
 
     with open(_CONFIG_PATH, 'w') as f:
-        yaml.dump(data, f, Dumper=_IndentDumper,
+        yaml.dump(data, f, Dumper=_IndentDumper, explicit_start=True,
                   default_flow_style=False, allow_unicode=True, sort_keys=False)
     logger.info('config/c270_hand_eye.yaml 저장 완료')
 
