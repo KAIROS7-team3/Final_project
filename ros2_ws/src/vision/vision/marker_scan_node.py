@@ -13,7 +13,7 @@ Subscribe:
   /vision/detections/gripper       vision_msgs/Detection2DArray  ← yolo_node(gripper) 마스크 무게중심
 
 Publish:
-  /vision/tool_gripper_pose      geometry_msgs/PointStamped  (TCP frame, m)
+  /vision/tool_gripper_pose      geometry_msgs/PointStamped  (base_link frame, m)
   /vision/debug/gripper_marker   sensor_msgs/Image           (debug 시에만)
 """
 from __future__ import annotations
@@ -24,6 +24,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rclpy
+import rclpy.time
 import yaml
 from cv_bridge import CvBridge
 from geometry_msgs.msg import PointStamped
@@ -31,12 +32,23 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Image
+from tf2_ros import (
+    Buffer,
+    ConnectivityException,
+    ExtrapolationException,
+    LookupException,
+    TransformListener,
+)
 from vision_msgs.msg import Detection2DArray
 
-_CONFIG_CAM = Path("config/c270_camera_info.yaml")
-_CONFIG_HE  = Path("config/c270_hand_eye.yaml")
-_CONFIG_TB  = Path("config/toolbox.yaml")
-_CONFIG_RT  = Path("config/runtime.yaml")
+# 설정 경로는 패키지 파일 위치 기준 레포 루트로 해석한다 (CWD 의존 금지).
+# ros2_ws/src/vision/vision/marker_scan_node.py → repo_root (parents[4])
+_REPO_ROOT  = Path(__file__).resolve().parents[4]
+_CONFIG_CAM = _REPO_ROOT / "config/c270_camera_info.yaml"
+_CONFIG_HE  = _REPO_ROOT / "config/c270_hand_eye.yaml"
+_CONFIG_TB  = _REPO_ROOT / "config/toolbox.yaml"
+_CONFIG_RT  = _REPO_ROOT / "config/runtime.yaml"
+_CONFIG_VISION = _REPO_ROOT / "config/vision.yaml"
 
 _ARUCO_DICT   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 _ARUCO_PARAMS = cv2.aruco.DetectorParameters()
@@ -58,6 +70,25 @@ def _quat_to_rot(x: float, y: float, z: float, w: float) -> np.ndarray:
     ])
 
 
+def _select_drawer_marker(
+    corners_list: list[np.ndarray], ids: np.ndarray
+) -> tuple[np.ndarray, int] | None:
+    """검출된 마커 중 유효한 서랍 마커(ID 0/1)를 단일 선택한다.
+
+    PR #49 재검토 Medium-2: 두 층 마커가 동시에 보이면 어느 층의 Z인지
+    판단할 근거가 없으므로(현재 열려 있는 서랍을 알려주는 입력이 없음)
+    모호한 경우는 처리하지 않고 None을 반환해 호출측이 프레임을 스킵하게 한다.
+    """
+    valid = [
+        (corners, int(mid))
+        for corners, mid in zip(corners_list, ids.flatten())
+        if int(mid) in _MARKER_ID_TO_LAYER
+    ]
+    if len(valid) != 1:
+        return None
+    return valid[0]
+
+
 class MarkerScanNode(Node):
     """ArUco 마커 기반 공구 3D 좌표 추출 노드."""
 
@@ -69,7 +100,13 @@ class MarkerScanNode(Node):
         self._hand_eye_R, self._hand_eye_t  = self._load_hand_eye()
         self._tool_heights                  = self._load_tool_heights()
         self._marker_size_m: float          = self._load_marker_size()
-        self._gripper_frame: str            = self._load_gripper_frame()
+        self._base_frame, self._gripper_frame = self._load_frames()
+
+        # PR #49 재검토 High: marker_scan_node가 발행하던 좌표가 link_6(TCP)
+        # 프레임에서 멈춰 있었음. base_link←link_6 EE 포즈를 TF로 조회해
+        # 합성한 뒤에야 인터페이스 계약(base_link)을 만족한다.
+        self._tf_buf = Buffer()
+        self._tf_listener = TransformListener(self._tf_buf, self)
 
         debug_cfg = self._load_debug_flag()
 
@@ -126,13 +163,22 @@ class MarkerScanNode(Node):
             cfg = yaml.safe_load(f)
         return float(cfg["aruco_front"]["marker_size_m"])
 
-    def _load_gripper_frame(self) -> str:
+    def _load_frames(self) -> tuple[str, str]:
+        """runtime.yaml calibration 섹션에서 TF 프레임 이름 로드.
+
+        기존 코드는 top-level cfg.get("gripper_frame", ...)로 읽어
+        실제로는 항상 fallback("link_6")만 반환하고 있었다 (실값은
+        `calibration.gripper_frame`에 있음) — base_frame 추가하며 같이 수정.
+        """
         with _CONFIG_RT.open() as f:
             cfg = yaml.safe_load(f)
-        return str(cfg.get("gripper_frame", "link_6"))
+        calib = cfg.get("calibration", {})
+        base_frame    = str(calib.get("base_frame", "base_link"))
+        gripper_frame = str(calib.get("gripper_frame", "link_6"))
+        return base_frame, gripper_frame
 
     def _load_debug_flag(self) -> bool:
-        with Path("config/vision.yaml").open() as f:
+        with _CONFIG_VISION.open() as f:
             cfg = yaml.safe_load(f)
         return bool(cfg.get("debug", {}).get("publish_annotated_image", True))
 
@@ -166,8 +212,33 @@ class MarkerScanNode(Node):
         return np.array([(u - cx) * Z / fx, (v - cy) * Z / fy, Z])
 
     def _cam_to_tcp(self, p_cam: np.ndarray) -> np.ndarray:
-        """카메라 프레임 → TCP 프레임 변환 (c270_hand_eye.yaml)."""
+        """카메라 프레임 → TCP(link_6) 프레임 변환 (c270_hand_eye.yaml)."""
         return self._hand_eye_R @ p_cam + self._hand_eye_t
+
+    def _lookup_base_from_gripper(self) -> np.ndarray | None:
+        """TF base_frame ← gripper_frame 4×4 변환 조회.
+
+        EE 포즈를 구해야 link_6(TCP) 좌표를 base_link로 합성할 수 있다.
+        조회 실패 시 잘못된 프레임으로 좌표를 발행하느니 None을 반환해
+        호출측이 이번 프레임을 스킵하도록 한다 (E-5 silent fallback 금지
+        — 예외를 삼키되 결과를 무시하지 않고 호출측에 실패를 알린다).
+        """
+        try:
+            tf = self._tf_buf.lookup_transform(
+                self._base_frame, self._gripper_frame, rclpy.time.Time()
+            )
+        except (LookupException, ConnectivityException, ExtrapolationException) as e:
+            self.get_logger().warning(
+                f"[marker_scan] TF {self._base_frame}<-{self._gripper_frame} "
+                f"조회 실패 — 이번 프레임 스킵: {e}"
+            )
+            return None
+        t = tf.transform.translation
+        q = tf.transform.rotation
+        T = np.eye(4)
+        T[:3, :3] = _quat_to_rot(q.x, q.y, q.z, q.w)
+        T[:3, 3]  = [t.x, t.y, t.z]
+        return T
 
     # ─── 콜백 ────────────────────────────────────────────────────────────────
 
@@ -189,44 +260,55 @@ class MarkerScanNode(Node):
         tool_cy = best.bbox.center.position.y
         tool_h  = self._tool_heights.get(tool_id, 0.020)
 
-        # 유효한 서랍 마커(ID 0 또는 1) 중 첫 번째 사용
-        rvec, tvec, marker_id = None, None, None
-        for corners, mid in zip(corners_list, ids.flatten()):
-            mid = int(mid)
-            if mid in _MARKER_ID_TO_LAYER:
-                rvec, tvec = self._marker_pose(corners)
-                marker_id = mid
-                break
+        # 유효한 서랍 마커(ID 0 또는 1) 단일 선택 — 동시에 여러 개 보이면
+        # 어느 층 Z인지 판단 근거가 없으므로 이번 프레임은 스킵한다.
+        selected = _select_drawer_marker(corners_list, ids)
+        if selected is None:
+            return
+        corners, marker_id = selected
+        rvec, tvec = self._marker_pose(corners)
         if tvec is None:
             return
-        Z_floor     = float(tvec[2])            # 카메라 ~ 서랍 바닥 거리 (m)
+        Z_floor     = float(tvec[2])            # 카메라 ~ 마커 평면 거리 (m)
+        # ⚠️ toolbox.yaml aruco_front.layer_z_offset 미사용 (PR #49 재검토 Medium-1).
+        # solvePnP Z는 카메라→마커 평면까지의 실측 거리이며, layer_z_offset은
+        # "마커 중심→서랍 중심" 거리를 부여하는 별도 모델이라 둘을 같이 쓸지
+        # layer_z_offset 자체가 죽은 설정인지 팀 확인 필요 — 임의로 합치지 않음.
         Z_grasp     = Z_floor - tool_h / 2.0   # 공구 두께 절반만큼 올림
 
         # 공구 마스크 무게중심 → 카메라 프레임 3D
         P_cam = self._pixel_to_cam(tool_cx, tool_cy, Z_grasp)
 
-        # 카메라 → TCP 프레임
+        # 카메라 → TCP(link_6) 프레임
         P_tcp = self._cam_to_tcp(P_cam)
 
-        # 발행
+        # TCP(link_6) → base_link 프레임 — 현재 EE 포즈 합성 (PR #49 재검토 High)
+        T_base_gripper = self._lookup_base_from_gripper()
+        if T_base_gripper is None:
+            return
+        P_base = T_base_gripper[:3, :3] @ P_tcp + T_base_gripper[:3, 3]
+
+        # 발행 — img_msg.header를 그대로 대입하면 frame_id 변경이 원본
+        # 메시지(동기화 큐에서 다른 콜백과 공유될 수 있음)까지 변형시키므로
+        # stamp만 복사하고 frame_id는 새로 지정한다.
         msg = PointStamped()
-        msg.header = img_msg.header
-        msg.header.frame_id = self._gripper_frame
-        msg.point.x = float(P_tcp[0])
-        msg.point.y = float(P_tcp[1])
-        msg.point.z = float(P_tcp[2])
+        msg.header.stamp = img_msg.header.stamp
+        msg.header.frame_id = self._base_frame
+        msg.point.x = float(P_base[0])
+        msg.point.y = float(P_base[1])
+        msg.point.z = float(P_base[2])
         self._pose_pub.publish(msg)
 
         self.get_logger().info(
             f"[marker_scan] {tool_id} | marker_id={marker_id} "
             f"({_MARKER_ID_TO_LAYER.get(marker_id, '?')}) | "
             f"Z_floor={Z_floor*1000:.1f}mm | "
-            f"TCP=({P_tcp[0]*1000:.1f}, {P_tcp[1]*1000:.1f}, {P_tcp[2]*1000:.1f})mm"
+            f"BASE=({P_base[0]*1000:.1f}, {P_base[1]*1000:.1f}, {P_base[2]*1000:.1f})mm"
         )
 
         if self._debug_pub is not None:
             vis = self._draw_debug(bgr, corners_list, ids, tool_cx, tool_cy,
-                                   tool_id, P_tcp, Z_floor)
+                                   tool_id, P_base, Z_floor)
             self._debug_pub.publish(
                 self._bridge.cv2_to_imgmsg(vis, encoding="bgr8")
             )
@@ -239,14 +321,18 @@ class MarkerScanNode(Node):
         tool_cx: float,
         tool_cy: float,
         tool_id: str,
-        P_tcp: np.ndarray,
+        P_base: np.ndarray,
         Z_floor: float,
     ) -> np.ndarray:
         vis = img.copy()
         cv2.aruco.drawDetectedMarkers(vis, corners_list, ids)
 
-        # 마커 중심
-        c = corners_list[0][0]
+        # 마커 중심 — 실제 사용된 서랍 마커(ID 0/1) 기준, 다른 마커가 같이
+        # 보여도(layer 모호 시 _on_sync가 이미 스킵하므로 여기 도달 시엔
+        # 단일 후보) 잘못된 마커를 표시하지 않도록 동일 선택 로직 재사용
+        selected = _select_drawer_marker(corners_list, ids)
+        c = selected[0][0] if selected is not None else corners_list[0][0]
+        marker_id = selected[1] if selected is not None else int(ids[0][0])
         mx, my = int(c[:, 0].mean()), int(c[:, 1].mean())
         cv2.circle(vis, (mx, my), 6, (0, 255, 255), -1)
 
@@ -260,12 +346,12 @@ class MarkerScanNode(Node):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2)
         cv2.putText(
             vis,
-            f"TCP ({P_tcp[0]*1000:.0f},{P_tcp[1]*1000:.0f},{P_tcp[2]*1000:.0f})mm",
+            f"BASE ({P_base[0]*1000:.0f},{P_base[1]*1000:.0f},{P_base[2]*1000:.0f})mm",
             (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2,
         )
         cv2.putText(
             vis,
-            f"Z_floor={Z_floor*1000:.0f}mm  marker_id={int(ids[0][0])}",
+            f"Z_floor={Z_floor*1000:.0f}mm  marker_id={marker_id}",
             (10, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1,
         )
         return vis

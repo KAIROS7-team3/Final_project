@@ -5,7 +5,7 @@ toolbox_motion.py 시퀀스를 virtual/real 모드에서 실행하는 테스트 
 실행:
   ros2 run motion toolbox_seq_runner --ros-args -p sequence:=open_0
   ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch \\
-    -p tool_id:=screwdriver_phillips_small -p vision_x_mm:=300.0 ...
+    -p tool_id:=screwdriver -p vision_x_mm:=300.0 ...
 
   sequence 옵션:
     open_0  / close_0  — layer 0 (1층 서랍)
