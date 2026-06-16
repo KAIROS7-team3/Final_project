@@ -136,6 +136,12 @@ def classify_tw_poses(
     return rays, gts
 
 
+class _IndentDumper(yaml.Dumper):
+    """yamllint indent-sequences 규칙 호환 — 블록 시퀀스도 매핑 키만큼 들여씀 (issue #40)."""
+    def increase_indent(self, flow=False, indentless=False):
+        return super().increase_indent(flow, indentless=False)
+
+
 def proj_SO3(R: np.ndarray) -> np.ndarray:
     U, _, Vt = np.linalg.svd(R)
     R2 = U @ Vt
@@ -533,7 +539,7 @@ def compute(
         }
     }
     with open(cfg_path, 'w') as f:
-        yaml.dump(data, f, explicit_start=True,
+        yaml.dump(data, f, Dumper=_IndentDumper, explicit_start=True,
                   default_flow_style=False, allow_unicode=True, sort_keys=False)
     log.info('저장: %s', cfg_path)
 
