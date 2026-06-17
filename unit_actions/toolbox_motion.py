@@ -470,8 +470,8 @@ def socket_fetch_seq() -> list[Step]:
     ]
 
 
-VISION_FETCH_SCAN_J:  list = [-30.1,  15.5,  74.7,  20.9,  101.2,  -27.8]   # fetch 그리퍼 캠 스캔 자세 (deg)
-VISION_RETURN_SCAN_J: list = [-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]  # return 그리퍼 캠 스캔 자세 (deg)
+VISION_FETCH_SCAN_J_DEG_DEG:  list = [-30.1,  15.5,  74.7,  20.9,  101.2,  -27.8]   # fetch 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
+VISION_RETURN_SCAN_J_DEG_DEG: list = [-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]  # return 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
 
 
 def vision_fetch_seq() -> list[Step]:
@@ -479,7 +479,7 @@ def vision_fetch_seq() -> list[Step]:
 
     ① JOINT_HOME
     ② GRIP_RELEASE
-    ③ MoveJ → VISION_FETCH_SCAN_J  (그리퍼 캠 스캔 자세)
+    ③ MoveJ → VISION_FETCH_SCAN_J_DEG  (그리퍼 캠 스캔 자세)
     ④ WAIT_VISION_TOP_XY — 캐시 초기화 후 /vision/tool_gripper_pose 신규 수신 대기
     ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 /vision/tool_gripper_pose XY + APPROACH_Z 로 이동
     ⑥ MOVE_L_TOOL_XYZ — 그리퍼 캠 XY + grasp_z_mm 로 공구 위치 하강
@@ -497,7 +497,7 @@ def vision_fetch_seq() -> list[Step]:
     return [
         JOINT_HOME(),                               # ①
         GRIP_RELEASE(),                             # ②
-        mj_abs(VISION_FETCH_SCAN_J),                # ③ 그리퍼 캠 스캔 자세
+        mj_abs(VISION_FETCH_SCAN_J_DEG),                # ③ 그리퍼 캠 스캔 자세
         Step(kind=StepKind.WAIT_VISION_TOP_XY),     # ④ 신규 그리퍼 캠 좌표 수신 대기
         Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + 고정 Z
         Step(kind=StepKind.MOVE_L_TOOL_XYZ),        # ⑥ 그리퍼 캠 XY + grasp_z_mm 하강
@@ -537,7 +537,7 @@ def vision_return_seq() -> list[Step]:
 
     ① JOINT_HOME
     ② GRIP_RELEASE
-    ③ MoveJ → VISION_RETURN_SCAN_J (그리퍼 캠 스캔 자세)
+    ③ MoveJ → VISION_RETURN_SCAN_J_DEG (그리퍼 캠 스캔 자세)
     ④ WAIT_VISION_RETURN_XY — 캐시 초기화 후 /vision/return/tool_gripper_pose 신규 수신 대기
     ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 XY + rz + 고정 Z (staging 위)
     ⑥ MOVE_L_STAGING_XYZ — 그리퍼 캠 XY + rz + return_z_mm 로 staging 공구 파지 하강
@@ -555,7 +555,7 @@ def vision_return_seq() -> list[Step]:
     return [
         JOINT_HOME(),                               # ①
         GRIP_RELEASE(),                             # ②
-        mj_abs(VISION_RETURN_SCAN_J),               # ③ 그리퍼 캠 스캔 자세
+        mj_abs(VISION_RETURN_SCAN_J_DEG),               # ③ 그리퍼 캠 스캔 자세
         Step(kind=StepKind.WAIT_VISION_RETURN_XY),   # ④ /vision/return/tool_gripper_pose 수신 대기
         Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + rz + 고정 Z (staging 위)
         Step(kind=StepKind.MOVE_L_STAGING_XYZ),     # ⑥ 그리퍼 캠 XY + rz + Z (⚠️ TODO: staging pickup Z 실측 후 갱신)

@@ -754,10 +754,18 @@ class ToolboxSeqRunner(Node):
         req.blend_type = 0
         req.sync_type  = 0
         fut = self._movel_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, fut, timeout_sec=30.0)
+        _POLL = 0.1
+        _TIMEOUT = 5.0
+        elapsed = 0.0
+        while not fut.done() and elapsed < _TIMEOUT:
+            rclpy.spin_until_future_complete(self, fut, timeout_sec=_POLL)
+            elapsed += _POLL
+            if self._estop_triggered:
+                self.get_logger().error('  move_line E-stop 감지 — 이동 중단')
+                return False
         res = fut.result()
         if res is None:
-            self.get_logger().error(f'  move_line timeout (30s) — 서비스 무응답: pos={step.pose}')
+            self.get_logger().error(f'  move_line timeout ({_TIMEOUT:.0f}s) — 서비스 무응답: pos={step.pose}')
             return False
         time.sleep(0.2)
         if not res.success:
@@ -775,10 +783,18 @@ class ToolboxSeqRunner(Node):
         req.blend_type = 0
         req.sync_type  = 0
         fut = self._movej_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, fut, timeout_sec=30.0)
+        _POLL = 0.1
+        _TIMEOUT = 5.0
+        elapsed = 0.0
+        while not fut.done() and elapsed < _TIMEOUT:
+            rclpy.spin_until_future_complete(self, fut, timeout_sec=_POLL)
+            elapsed += _POLL
+            if self._estop_triggered:
+                self.get_logger().error('  move_joint E-stop 감지 — 이동 중단')
+                return False
         res = fut.result()
         if res is None:
-            self.get_logger().error(f'  move_joint timeout (30s) — 서비스 무응답: pos={step.pose}')
+            self.get_logger().error(f'  move_joint timeout ({_TIMEOUT:.0f}s) — 서비스 무응답: pos={step.pose}')
             return False
         time.sleep(0.2)
         if not res.success:
