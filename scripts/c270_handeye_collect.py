@@ -35,8 +35,9 @@ _CONFIG_DIR  = os.path.join(_SCRIPT_DIR, '..', 'config')
 OUTPUT_PATH  = os.path.join(_SCRIPT_DIR, 'c270_handeye_data.npz')
 RESUME_PATH  = os.path.join(_SCRIPT_DIR, 'c270_handeye_data_tmp.npz')  # 자동 백업
 
-DEVICE        = 8
-WIDTH, HEIGHT = 640, 480
+DEVICE: str = _calib.get('c270_device', '/dev/video2')
+WIDTH:  int = int(_calib.get('c270_width',  640))
+HEIGHT: int = int(_calib.get('c270_height', 480))
 MIN_SAMPLES   = 15
 
 # ── 설정 로드 ──────────────────────────────────────────────────────────────────
@@ -68,10 +69,10 @@ MAX_FACE_ANGLE_DEG = 45.0
 MIN_DIST_M         = 0.10
 MAX_DIST_M         = 0.80
 
-_ARUCO_DICT   = cv2.aruco.Dictionary_get(ARUCO_DICT_ID)
-_ARUCO_PARAMS = cv2.aruco.DetectorParameters_create()
-CHARUCO_BOARD = cv2.aruco.CharucoBoard_create(
-    SQUARES_X, SQUARES_Y, SQUARE_SIZE_M, MARKER_SIZE_M, _ARUCO_DICT)
+_ARUCO_DICT   = cv2.aruco.getPredefinedDictionary(ARUCO_DICT_ID)
+_ARUCO_PARAMS = cv2.aruco.DetectorParameters()
+CHARUCO_BOARD = cv2.aruco.CharucoBoard(
+    (SQUARES_X, SQUARES_Y), SQUARE_SIZE_M, MARKER_SIZE_M, _ARUCO_DICT)
 
 
 # ── 자동 저장 / 이어받기 ────────────────────────────────────────────────────────
@@ -110,12 +111,9 @@ def load_resume() -> tuple[list, list, list, list, int] | None:
     # pose_idx: tmp 파일엔 저장돼 있고, 출력 파일엔 없으므로 샘플 수로 추정
     pose_idx = int(d['pose_idx']) if (has_idx and 'pose_idx' in d) else n
     print(f'\n[이어받기] 기존 데이터 발견 — {n}쌍 저장됨 (다음 TW 포즈: {pose_idx + 1}번)')
-    ans = input('이어서 진행할까요? [Y/n]: ').strip().lower()
-    if ans in ('', 'y'):
-        return (list(d['R_gripper2base']), list(d['t_gripper2base']),
-                list(d['R_target2cam']),   list(d['t_target2cam']),
-                pose_idx)
-    return None  # 새로 시작
+    return (list(d['R_gripper2base']), list(d['t_gripper2base']),
+            list(d['R_target2cam']),   list(d['t_target2cam']),
+            pose_idx)
 
 
 # ── TW 파일 파서 ───────────────────────────────────────────────────────────────
@@ -125,12 +123,13 @@ def _extract_poses_from_node(node: object, results: list) -> None:
         if node.get('_type') == 'MoveLNode':
             p    = node['_pojo']
             pose = p.get('pose', {})
-            results.append({
-                'ann': p.get('annotation', ''),
-                'X': float(pose['pose1']), 'Y': float(pose['pose2']),
-                'Z': float(pose['pose3']), 'A': float(pose['pose4']),
-                'B': float(pose['pose5']), 'C': float(pose['pose6']),
-            })
+            if 'pose1' in pose:
+                results.append({
+                    'ann': p.get('annotation', ''),
+                    'X': float(pose['pose1']), 'Y': float(pose['pose2']),
+                    'Z': float(pose['pose3']), 'A': float(pose['pose4']),
+                    'B': float(pose['pose5']), 'C': float(pose['pose6']),
+                })
         for v in node.values():
             _extract_poses_from_node(v, results)
     elif isinstance(node, list):
@@ -207,7 +206,7 @@ def detect(frame: np.ndarray):
 
     qual_ok = (angle <= MAX_FACE_ANGLE_DEG and MIN_DIST_M <= dist_m <= MAX_DIST_M)
     color   = (0, 255, 0) if qual_ok else (0, 165, 255)
-    tag     = 'OK' if qual_ok else f'BAD ang={angle:.0f}° dist={dist_m:.2f}m'
+    tag     = 'OK' if qual_ok else f'WARN ang={angle:.0f}° dist={dist_m:.2f}m'
 
     cv2.drawFrameAxes(disp, CAMERA_MATRIX, DIST_COEFFS,
                       rvec, tvec, SQUARE_SIZE_M)
@@ -215,9 +214,7 @@ def detect(frame: np.ndarray):
                 f'corners={retval}  dist={dist_m:.3f}m  ang={angle:.1f}deg  [{tag}]',
                 (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, color, 2)
 
-    if not qual_ok:
-        return None, None, disp, tag
-    return R, t, disp, 'OK'
+    return R, t, disp, tag
 
 
 # ── 메인 ───────────────────────────────────────────────────────────────────────
@@ -269,7 +266,7 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
     if not cap.isOpened():
-        log.error('/dev/video%d 열기 실패', DEVICE)
+        log.error('%s 열기 실패', DEVICE)
         sys.exit(1)
     log.info('C270 연결 완료 — %dx%d', WIDTH, HEIGHT)
 
@@ -313,7 +310,7 @@ def main() -> None:
 
         if key == 13:  # ENTER
             if last_R_t2c is None:
-                log.warning('보드 미감지 — 초록 OK 뜰 때 ENTER 누르세요')
+                log.warning('보드 미감지 — 마커가 화면에 보이는 상태에서 ENTER 누르세요')
                 continue
 
             cap_R, cap_t = last_R_t2c.copy(), last_t_t2c.copy()

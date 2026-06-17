@@ -1,0 +1,26 @@
+---
+schema_version: 1
+transformation:
+  rotation:
+    x: 0.7209680325299387
+    y: 0.6929080905751966
+    z: -0.009131622305565067
+    w: 0.0002959043980051748
+  translation:
+    x: 0.5820289858136387
+    y: 0.07291486856375654
+    z: 0.9293257014493904
+metadata:
+  calibration_date: '2026-06-05'
+  sample_count: 6
+  total_collected: 17
+  method: point_correspondence_svd_ransac
+  mean_error_mm: 2.9056402856232357
+  max_error_mm: 4.132862722628398
+  position_error_mm: 2.9056402856232357
+  orientation_error_deg: null
+  operator: null
+  tool: point_collect.py + DART pendant
+  frames:
+    from: camera_color_optical_frame
+    to: base_link

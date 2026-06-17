@@ -156,8 +156,14 @@ def save_yaml(
     mean_mm: float,
     max_mm: float,
 ) -> None:
-    quat = Rotation.from_matrix(R).as_quat()  # [x, y, z, w]
-    cam_tilt = float(np.degrees(np.arccos(np.clip(abs(float(R[2, 2])), 0.0, 1.0))))
+    # calibrateHandEye가 det≈-1인 행렬을 반환하는 경우 SO(3)으로 투영
+    U, _, Vt = np.linalg.svd(R)
+    R_so3 = U @ Vt
+    if np.linalg.det(R_so3) < 0:
+        U[:, -1] *= -1
+        R_so3 = U @ Vt
+    quat = Rotation.from_matrix(R_so3).as_quat()  # [x, y, z, w]
+    cam_tilt = float(np.degrees(np.arccos(np.clip(abs(float(R_so3[2, 2])), 0.0, 1.0))))
     data = {
         'schema_version': 1,
         'transformation': {
@@ -195,7 +201,7 @@ def save_yaml(
             return super().increase_indent(flow, indentless=False)
 
     with open(_CONFIG_PATH, 'w') as f:
-        yaml.dump(data, f, Dumper=_IndentDumper,
+        yaml.dump(data, f, Dumper=_IndentDumper, explicit_start=True,
                   default_flow_style=False, allow_unicode=True, sort_keys=False)
     logger.info('config/c270_hand_eye.yaml 저장 완료')
 

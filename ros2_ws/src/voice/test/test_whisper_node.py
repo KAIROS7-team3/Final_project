@@ -59,6 +59,19 @@ class FakeLogger:
         self.warnings.append(message)
 
 
+class FakeParameterValue:
+    def __init__(self, bool_value: bool = False) -> None:
+        self.bool_value = bool_value
+
+
+class FakeParameter:
+    def __init__(self, value: FakeParameterValue) -> None:
+        self._value = value
+
+    def get_parameter_value(self) -> FakeParameterValue:
+        return self._value
+
+
 @pytest.fixture
 def whisper_node():
     node = WhisperNode.__new__(WhisperNode)
@@ -67,6 +80,11 @@ def whisper_node():
     node._publisher = FakePublisher()
     node._logger = FakeLogger()
     node.get_logger = lambda: node._logger
+    node.get_parameter = lambda name: {
+        "reject_hallucinated_transcripts": FakeParameter(
+            FakeParameterValue(bool_value=True)
+        )
+    }[name]
     return node
 
 
@@ -96,3 +114,13 @@ def test_publish_transcript_publishes_trimmed_text_when_idle(whisper_node) -> No
     assert published is True
     assert len(whisper_node._publisher.messages) == 1
     assert whisper_node._publisher.messages[0].data == "스패너 가져와"
+
+
+def test_publish_transcript_rejects_repeated_hallucination(whisper_node) -> None:
+    published = whisper_node.publish_transcript("렌치 렌치 렌치 렌치")
+
+    assert published is False
+    assert whisper_node._publisher.messages == []
+    assert whisper_node._logger.warnings[-1].startswith(
+        "voice input rejected as hallucinated transcript:"
+    )

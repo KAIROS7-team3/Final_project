@@ -1,22 +1,23 @@
+---
 schema_version: 1
 transformation:
   rotation:
-    x: -0.019002848897103047
-    y: -0.23176550035901428
-    z: 0.9724256219736708
-    w: -0.017665058908739335
+    x: -0.01094388021451101
+    y: -0.25546487440277205
+    z: 0.9665831468813888
+    w: 0.01830162826357165
   translation:
-    x: 0.004818405768344302
-    y: 0.020943988336775514
-    z: -0.03236174620532765
+    x: 9.088485935019892e-05
+    y: 0.044299210481224115
+    z: -0.07388288702640008
 metadata:
-  calibration_date: '2026-06-10'
-  sample_count: 23
-  method: calibrateHandEye_DANIILIDIS
-  axb_mean_mm: 87.97204447476396
-  axb_max_mm: 541.2225306032375
-  cam_tilt_deg: 26.893697828229485
-  cam_height_m: -0.03236174620532765
+  calibration_date: '2026-06-16'
+  sample_count: 26
+  method: calibrateHandEye_PARK
+  axb_mean_mm: 2.0751220046498497
+  axb_max_mm: 5.203629090363767
+  cam_tilt_deg: 29.63003756086914
+  cam_height_m: -0.07388288702640008
   operator: null
   tool: c270_handeye_collect.py + compute_handeye_opencv.py
   frames:

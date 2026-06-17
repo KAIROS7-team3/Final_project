@@ -25,6 +25,11 @@ DB_VOICE_STRUCTURE.md
 *~
 Thumbs.db
 
+# Editor (개인 워크스페이스 설정)
+.vscode/
+**/.vscode/
+.claude/worktrees/
+
 # Python
 __pycache__/
 *.pyc
@@ -41,6 +46,9 @@ build/
 ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
+# colcon을 레포 루트에서 잘못 실행했을 때 생기는 디렉토리
+install/
+log/
 *.bag
 
 # DB 운영 데이터 (git 제외, 별도 백업)
@@ -67,6 +75,11 @@ scripts/samples/
 scripts/samples_c270/
 scripts/samples_c270_calib/
 scripts/samples_c270_handeye/
+scripts/c270_handeye_auto_frames*/
+
+# 캘리브레이션 raw 데이터 (npz — 로컬 수집본, 재현 가능, git 제외)
+scripts/*_data.npz
+scripts/*_data_*.npz
 
 # verify_camera.py 출력 이미지 (로컬 검증용)
 verify_rgb.png

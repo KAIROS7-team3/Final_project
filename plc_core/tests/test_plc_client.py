@@ -12,10 +12,15 @@ def plc():
 
 
 class TestSetState:
-    def test_idle_sets_white_solid(self, plc):
+    def test_idle_sets_green_solid(self, plc):
         status = plc.set_state(SystemState.IDLE)
-        assert status.led_color == LEDColor.WHITE
+        assert status.led_color == LEDColor.GREEN
         assert status.led_mode == LEDMode.SOLID
+
+    def test_listening_sets_yellow_pulse(self, plc):
+        status = plc.set_state(SystemState.LISTENING)
+        assert status.led_color == LEDColor.YELLOW
+        assert status.led_mode == LEDMode.PULSE
 
     def test_error_sets_red_flash(self, plc):
         status = plc.set_error()
@@ -28,11 +33,16 @@ class TestSetState:
         assert status.led_mode == LEDMode.SOLID
         assert status.system_state == SystemState.E_STOP
 
-    def test_moving_sets_green_solid(self, plc):
+    def test_moving_sets_red_pulse(self, plc):
         plc.set_state(SystemState.MOVING)
         status = plc.get_status()
-        assert status.led_color == LEDColor.GREEN
-        assert status.led_mode == LEDMode.SOLID
+        assert status.led_color == LEDColor.RED
+        assert status.led_mode == LEDMode.PULSE
+
+    def test_watchdog_sets_white_flash(self, plc):
+        status = plc.set_state(SystemState.WATCHDOG)
+        assert status.led_color == LEDColor.WHITE
+        assert status.led_mode == LEDMode.FLASH
 
 
 class TestStateMap:

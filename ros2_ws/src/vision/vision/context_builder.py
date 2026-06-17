@@ -39,7 +39,7 @@ import yaml
 from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
-from std_msgs.msg import String
+from std_msgs.msg import Header, String
 from vision_msgs.msg import Detection3DArray
 
 from vision.hand_eye_loader import HandEyeNotCalibratedError, load_transform
@@ -188,7 +188,7 @@ class ContextBuilder(Node):
             f"occupied={len(occupied)} empty={len(empty)}"
         )
 
-    def _publish_slot_top_pose(self, header, empty_slots: list[list[int]]) -> None:
+    def _publish_slot_top_pose(self, header: Header, empty_slots: list[list[int]]) -> None:
         """빈 슬롯 중 첫 번째의 중심 좌표를 /vision/slot_top_pose로 발행.
 
         빈 슬롯 없으면 발행 중단 — motion 팀이 이전 좌표로 수렴하는 것을 방지.

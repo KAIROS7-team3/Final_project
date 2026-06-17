@@ -8,5 +8,5 @@
 # ROBOTIS RH-P12-RN 그리퍼 (USB→RS-485, Dynamixel Protocol 2.0) — 담당: B
 SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="gripper"
 
-# PLC XBC-DR14E (RS-485 Modbus RTU) — 담당: A
-SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="plc"
+# PLC XBC-DR14E (RS-485 Modbus RTU, USB-Serial CH340) — 담당: A
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", GROUP="dialout", MODE="0660", SYMLINK+="plc"

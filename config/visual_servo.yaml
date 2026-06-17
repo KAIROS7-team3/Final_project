@@ -1,0 +1,29 @@
+---
+# Visual Servoing 제어 파라미터 (Track B, Phase 1)
+# 참조: unit_actions/visual_servoing.py, .claude/rules/engineering.md E-4
+
+# ── 서랍 손잡이 XZ VS (vision_open / vision_close) ────────────────────────────
+handle:
+  gains:
+    kp: 1.0
+  thresholds:
+    # XZ 정렬 완료 판정 거리 (mm) — 이 이내면 DONE
+    xz_align_thr_mm: 3.0
+  detect:
+    stable_frames: 3
+  # S-5: robot_poses.yaml motion_limits.vel_l_mm_s(50.0) 이하 유지
+  vel_limit_mm_s: 20.0
+  timeout_sec: 15.0
+
+# ── 공구 접근 XY VS (vision_fetch) ────────────────────────────────────────────
+# ⚠️ kp, xy_align_thr_mm 실기 테스트 후 튜닝 필요 (현재 handle 값 그대로 복사)
+tool:
+  gains:
+    kp: 1.0
+  thresholds:
+    # XY 정렬 완료 판정 거리 (mm) — 이 이내면 DONE
+    xy_align_thr_mm: 3.0
+  detect:
+    stable_frames: 3
+  vel_limit_mm_s: 20.0
+  timeout_sec: 15.0

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>dashboard</name>
+  <version>0.1.0</version>
+  <description>데모 대시보드 — FastAPI + WebSocket + MJPEG 카메라 + Chart.js 그리퍼 파형</description>
+  <maintainer email="team@example.com">KAIROS7-team3</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>interfaces</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <!-- pip 의존성 (rosdep 미지원): fastapi uvicorn opencv-python-headless pyrealsense2(선택) -->
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
