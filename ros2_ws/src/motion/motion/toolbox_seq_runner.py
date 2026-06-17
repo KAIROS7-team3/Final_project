@@ -29,7 +29,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import Bool
-from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import PointStamped, PoseStamped
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
 from dsr_msgs2.srv import SetCurrentTcp, ConfigCreateTcp
 from dsr_msgs2.srv import GetCurrentPosx
@@ -188,12 +188,13 @@ class ToolboxSeqRunner(Node):
         self._latest_handle: HandlePose = HandlePose()
         self._handle_lock: threading.Lock = threading.Lock()
 
-        # VS (공구 접근): 탑뷰 XY + 그리퍼 캠 XYZ
-        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입·단위 (현재 PointStamped, m→mm 변환 적용)
-        self._latest_top_tool: ToolPose = ToolPose()
-        self._top_tool_lock: threading.Lock = threading.Lock()
-        self._latest_gripper_tool: ToolPose = ToolPose()
-        self._gripper_tool_lock: threading.Lock = threading.Lock()
+        # fetch 스캔 자세에서 찍은 공구 좌표 (XY + rz) — PoseStamped
+        self._latest_fetch_tool: ToolPose = ToolPose()
+        self._fetch_tool_lock: threading.Lock = threading.Lock()
+
+        # return 스캔 자세에서 찍은 공구 좌표 (XY + rz) — PoseStamped
+        self._latest_return_tool: ToolPose = ToolPose()
+        self._return_tool_lock: threading.Lock = threading.Lock()
 
         # VS (slot 반납): 탑뷰 slot 위치 XY
         # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
@@ -244,21 +245,19 @@ class ToolboxSeqRunner(Node):
             callback_group=self._cb_group,
         )
 
-        # VS (공구 접근): 탑뷰 D455f — rough XY (③번 이동용)
-        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
-        self._top_tool_sub = self.create_subscription(
-            PointStamped, '/vision/tool_top_pose', self._on_top_tool_pose, 10,
+        # fetch 스캔 자세에서 찍은 공구 좌표 (XY + rz) — vision_fetch_seq ④
+        self._fetch_tool_sub = self.create_subscription(
+            PoseStamped, '/vision/fetch/tool_gripper_pose', self._on_fetch_tool_pose, 10,
             callback_group=self._cb_group,
         )
 
-        # VS (공구 접근): 그리퍼 캠 C270 — XY VS + Z 하강
-        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
-        self._gripper_tool_sub = self.create_subscription(
-            PointStamped, '/vision/tool_gripper_pose', self._on_gripper_tool_pose, 10,
+        # return 스캔 자세에서 찍은 공구 좌표 (XY + rz) — vision_return_seq ④
+        self._return_tool_sub = self.create_subscription(
+            PoseStamped, '/vision/return/tool_gripper_pose', self._on_return_tool_pose, 10,
             callback_group=self._cb_group,
         )
 
-        # VS (slot 반납): 탑뷰 D455f — slot rough XY (⑧번 이동용)
+        # VS (slot 반납): slot rough XY (⑨번 이동용)
         # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
         self._slot_top_sub = self.create_subscription(
             PointStamped, '/vision/slot_top_pose', self._on_slot_top_pose, 10,
@@ -308,17 +307,23 @@ class ToolboxSeqRunner(Node):
             self._vis_x_min, self._vis_x_max = float(x[0]), float(x[1])
             self._vis_y_min, self._vis_y_max = float(y[0]), float(y[1])
             self._vis_z_min, self._vis_z_max = float(z[0]), float(z[1])
-            # 공구별 grasp_z_mm 딕셔너리 로드
+            # 공구별 grasp_z_mm / return_z_mm 딕셔너리 로드
             self._grasp_z_map: dict[str, float] = {
                 t['tool_id']: float(t['grasp_z_mm'])
                 for t in cfg.get('tools', [])
                 if 'grasp_z_mm' in t
             }
+            self._return_z_map: dict[str, float] = {
+                t['tool_id']: float(t['return_z_mm'])
+                for t in cfg.get('tools', [])
+                if 'return_z_mm' in t
+            }
             self.get_logger().info(
                 f'[runner] toolbox.yaml 로드 완료 — '
                 f'approach_z={self._tool_approach_z_mm}mm '
                 f'ws_x=[{self._vis_x_min},{self._vis_x_max}] '
-                f'grasp_z_map={self._grasp_z_map}'
+                f'grasp_z_map={self._grasp_z_map} '
+                f'return_z_map={self._return_z_map}'
             )
         except Exception as e:
             self.get_logger().error(f'[runner] toolbox.yaml 로드 실패: {e} — 기본값 사용')
@@ -329,6 +334,7 @@ class ToolboxSeqRunner(Node):
             self._vis_y_min, self._vis_y_max = -600.0, 600.0
             self._vis_z_min, self._vis_z_max = -5.0, 700.0
             self._grasp_z_map = {}
+            self._return_z_map = {}
 
     # ── 콜백 ──────────────────────────────────────────────────────────────
 
@@ -368,23 +374,36 @@ class ToolboxSeqRunner(Node):
                 valid=True,
             )
 
-    def _on_top_tool_pose(self, msg: PointStamped) -> None:
-        """탑뷰 D455f 공구 좌표 수신 — ③ MOVE_L_TOP_XY 에서 rough XY 로 사용."""
-        with self._top_tool_lock:
-            self._latest_top_tool = ToolPose(
-                x=msg.point.x * 1000.0,
-                y=msg.point.y * 1000.0,
-                z=msg.point.z * 1000.0,
+    def _on_fetch_tool_pose(self, msg: PoseStamped) -> None:
+        """fetch 스캔 자세 그리퍼 캠 좌표 수신 (/vision/fetch/tool_gripper_pose)."""
+        import math
+        q = msg.pose.orientation
+        # quaternion → yaw (rz, deg)
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        rz = math.degrees(math.atan2(siny_cosp, cosy_cosp))
+        with self._fetch_tool_lock:
+            self._latest_fetch_tool = ToolPose(
+                x=msg.pose.position.x * 1000.0,
+                y=msg.pose.position.y * 1000.0,
+                z=msg.pose.position.z * 1000.0,
+                rz=rz,
                 valid=True,
             )
 
-    def _on_gripper_tool_pose(self, msg: PointStamped) -> None:
-        """그리퍼 캠 C270 공구 좌표 수신 — ④⑨ VS XY 정렬 + ⑤⑩ Z 하강에 사용."""
-        with self._gripper_tool_lock:
-            self._latest_gripper_tool = ToolPose(
-                x=msg.point.x * 1000.0,
-                y=msg.point.y * 1000.0,
-                z=msg.point.z * 1000.0,
+    def _on_return_tool_pose(self, msg: PoseStamped) -> None:
+        """return 스캔 자세 그리퍼 캠 좌표 수신 (/vision/return/tool_gripper_pose)."""
+        import math
+        q = msg.pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        rz = math.degrees(math.atan2(siny_cosp, cosy_cosp))
+        with self._return_tool_lock:
+            self._latest_return_tool = ToolPose(
+                x=msg.pose.position.x * 1000.0,
+                y=msg.pose.position.y * 1000.0,
+                z=msg.pose.position.z * 1000.0,
+                rz=rz,
                 valid=True,
             )
 
@@ -658,7 +677,13 @@ class ToolboxSeqRunner(Node):
         elif step.kind == StepKind.MOVE_L_SLOT_XY:
             return self._exec_move_l_slot_xy()
         elif step.kind == StepKind.WAIT_VISION_TOP_XY:
-            return self._exec_wait_vision_top_xy()
+            return self._exec_wait_vision_fetch_xy()
+        elif step.kind == StepKind.WAIT_VISION_RETURN_XY:
+            return self._exec_wait_vision_return_xy()
+        elif step.kind == StepKind.MOVE_L_SLOT_XYZ:
+            return self._exec_move_l_slot_xyz_return()
+        elif step.kind == StepKind.MOVE_L_STAGING_XYZ:
+            return self._exec_move_l_staging_xyz_return()
         self.get_logger().warn(f'  알 수 없는 StepKind: {step.kind}')
         return False
 
@@ -826,43 +851,73 @@ class ToolboxSeqRunner(Node):
 
     # ── 공구 접근 VS (vision_fetch) ───────────────────────────────────────────
 
-    def _exec_wait_vision_top_xy(self, timeout_sec: float = 5.0) -> bool:
-        """④: 탑뷰 캐시 초기화 후 /vision/tool_top_pose 신규 수신 대기."""
-        with self._top_tool_lock:
-            self._latest_top_tool = ToolPose(x=0.0, y=0.0, z=0.0, valid=False)
-        self.get_logger().info('  [WAIT_VIS] 탑뷰 공구 좌표 대기 중...')
+    def _exec_wait_vision_fetch_xy(self, timeout_sec: float = 5.0) -> bool:
+        """fetch ④: 캐시 초기화 후 /vision/fetch/tool_gripper_pose 신규 수신 대기."""
+        with self._fetch_tool_lock:
+            self._latest_fetch_tool = ToolPose(valid=False)
+        self.get_logger().info('  [WAIT_FETCH] fetch 그리퍼 캠 좌표 대기 중...')
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
-            with self._top_tool_lock:
-                if self._latest_top_tool.valid:
-                    p = self._latest_top_tool
+            with self._fetch_tool_lock:
+                if self._latest_fetch_tool.valid:
+                    p = self._latest_fetch_tool
                     self.get_logger().info(
-                        f'  [WAIT_VIS] 수신 완료 → ({p.x:.1f}, {p.y:.1f}) mm'
+                        f'  [WAIT_FETCH] 수신 완료 → ({p.x:.1f}, {p.y:.1f}) mm rz={p.rz:.1f}°'
                     )
                     return True
             time.sleep(0.05)
         self.get_logger().error(
-            f'  [WAIT_VIS] 탑뷰 좌표 수신 타임아웃 ({timeout_sec:.0f}s) — /vision/tool_top_pose 확인 필요'
+            f'  [WAIT_FETCH] 타임아웃 ({timeout_sec:.0f}s) — /vision/fetch/tool_gripper_pose 확인 필요'
+        )
+        return False
+
+    def _exec_wait_vision_return_xy(self, timeout_sec: float = 5.0) -> bool:
+        """return ④: 캐시 초기화 후 /vision/return/tool_gripper_pose 신규 수신 대기."""
+        with self._return_tool_lock:
+            self._latest_return_tool = ToolPose(valid=False)
+        self.get_logger().info('  [WAIT_RETURN] return 그리퍼 캠 좌표 대기 중...')
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            with self._return_tool_lock:
+                if self._latest_return_tool.valid:
+                    p = self._latest_return_tool
+                    self.get_logger().info(
+                        f'  [WAIT_RETURN] 수신 완료 → ({p.x:.1f}, {p.y:.1f}) mm rz={p.rz:.1f}°'
+                    )
+                    return True
+            time.sleep(0.05)
+        self.get_logger().error(
+            f'  [WAIT_RETURN] 타임아웃 ({timeout_sec:.0f}s) — /vision/return/tool_gripper_pose 확인 필요'
         )
         return False
 
     def _exec_move_l_top_xy(self) -> bool:
-        """⑤⑧: 탑뷰 D455f XY + self._tool_approach_z_mm 로 이동."""
-        with self._top_tool_lock:
-            pose = ToolPose(
-                x=self._latest_top_tool.x,
-                y=self._latest_top_tool.y,
-                z=self._latest_top_tool.z,
-                valid=self._latest_top_tool.valid,
-            )
+        """fetch ⑤⑧ / return ⑤⑧: 그리퍼 캠 XY + rz + approach_z 로 이동.
+
+        fetch → _latest_fetch_tool, return → _latest_return_tool 사용.
+        현재 실행 중인 시퀀스 종류를 _active_seq 로 판별.
+        """
+        if getattr(self, '_seq_name', '').startswith('vision_return'):
+            with self._return_tool_lock:
+                pose = ToolPose(**vars(self._latest_return_tool))
+            topic = '/vision/return/tool_gripper_pose'
+        else:
+            with self._fetch_tool_lock:
+                pose = ToolPose(**vars(self._latest_fetch_tool))
+            topic = '/vision/fetch/tool_gripper_pose'
+
         if not pose.valid:
-            self.get_logger().error('  [TOP_XY] 탑뷰 공구 좌표 미수신 (/vision/tool_top_pose)')
+            self.get_logger().error(f'  [TOP_XY] 그리퍼 캠 좌표 미수신 ({topic})')
             return False
         if not self._check_vision_coords('TOP_XY', pose.x, pose.y, self._tool_approach_z_mm):
             return False
-        pos = [pose.x, pose.y, self._tool_approach_z_mm] + list(self._tool_approach_ori)
+        ori = list(self._tool_approach_ori)
+        ori[2] = pose.rz  # rz 비전값으로 대체
+        pos = [pose.x, pose.y, self._tool_approach_z_mm] + ori
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
-        self.get_logger().info(f'  [TOP_XY] → ({pose.x:.1f}, {pose.y:.1f}, {self._tool_approach_z_mm:.1f}) mm')
+        self.get_logger().info(
+            f'  [TOP_XY] → ({pose.x:.1f}, {pose.y:.1f}, {self._tool_approach_z_mm:.1f}) rz={pose.rz:.1f}°'
+        )
         return self._movel(step, DR_MV_MOD_ABS)
 
     def _exec_visual_servo_xy(self) -> bool:
@@ -917,19 +972,13 @@ class ToolboxSeqRunner(Node):
         return False
 
     def _exec_move_l_tool_xyz(self) -> bool:
-        """⑥: 그리퍼 캠 XY + toolbox.yaml grasp_z_mm(tool_id별) 로 공구 위치까지 하강."""
-        with self._gripper_tool_lock:
-            pose = ToolPose(
-                x=self._latest_gripper_tool.x,
-                y=self._latest_gripper_tool.y,
-                z=self._latest_gripper_tool.z,
-                valid=self._latest_gripper_tool.valid,
-            )
+        """fetch ⑥: 그리퍼 캠 XY + rz + grasp_z_mm 로 공구 위치까지 하강."""
+        with self._fetch_tool_lock:
+            pose = ToolPose(**vars(self._latest_fetch_tool))
         if not pose.valid:
-            self.get_logger().error('  [TOOL_XYZ] 그리퍼 캠 공구 좌표 미수신 (/vision/tool_gripper_pose)')
+            self.get_logger().error('  [TOOL_XYZ] 그리퍼 캠 좌표 미수신 (/vision/fetch/tool_gripper_pose)')
             return False
 
-        # Z: toolbox.yaml grasp_z_mm 우선 사용, 없으면 그리퍼 캠 Z 폴백
         grasp_z = self._grasp_z_map.get(self._tool_id)
         if grasp_z is not None:
             z = grasp_z
@@ -942,9 +991,65 @@ class ToolboxSeqRunner(Node):
 
         if not self._check_vision_coords('TOOL_XYZ', pose.x, pose.y, z):
             return False
-        pos = [pose.x, pose.y, z] + list(self._tool_descent_ori)
+        ori = list(self._tool_descent_ori)
+        ori[2] = pose.rz
+        pos = [pose.x, pose.y, z] + ori
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
-        self.get_logger().info(f'  [TOOL_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {z:.1f}) mm')
+        self.get_logger().info(f'  [TOOL_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {z:.1f}) rz={pose.rz:.1f}°')
+        return self._movel(step, DR_MV_MOD_ABS)
+
+    def _exec_move_l_staging_xyz_return(self) -> bool:
+        """return ⑥: 그리퍼 캠 XY + rz + return_z_mm 로 staging 파지 하강."""
+        with self._return_tool_lock:
+            pose = ToolPose(**vars(self._latest_return_tool))
+        if not pose.valid:
+            self.get_logger().error('  [STAGING_XYZ] 그리퍼 캠 좌표 미수신 (/vision/return/tool_gripper_pose)')
+            return False
+
+        return_z = self._return_z_map.get(self._tool_id)
+        if return_z is not None:
+            z = return_z
+            self.get_logger().info(f'  [STAGING_XYZ] Z = {z:.2f}mm (toolbox.yaml, tool_id={self._tool_id})')
+        else:
+            z = pose.z
+            self.get_logger().warn(
+                f'  [STAGING_XYZ] tool_id={self._tool_id!r} return_z_mm 미등록 — 그리퍼 캠 Z 사용: {z:.2f}mm'
+            )
+
+        if not self._check_vision_coords('STAGING_XYZ', pose.x, pose.y, z):
+            return False
+        ori = list(self._tool_descent_ori)
+        ori[2] = pose.rz
+        pos = [pose.x, pose.y, z] + ori
+        step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
+        self.get_logger().info(f'  [STAGING_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {z:.1f}) rz={pose.rz:.1f}°')
+        return self._movel(step, DR_MV_MOD_ABS)
+
+    def _exec_move_l_slot_xyz_return(self) -> bool:
+        """return ⑩: 그리퍼 캠 XY + rz + return_z_mm 로 slot 반납 하강."""
+        with self._return_tool_lock:
+            pose = ToolPose(**vars(self._latest_return_tool))
+        if not pose.valid:
+            self.get_logger().error('  [SLOT_XYZ] 그리퍼 캠 좌표 미수신 (/vision/return/tool_gripper_pose)')
+            return False
+
+        return_z = self._return_z_map.get(self._tool_id)
+        if return_z is not None:
+            z = return_z
+            self.get_logger().info(f'  [SLOT_XYZ] Z = {z:.2f}mm (toolbox.yaml, tool_id={self._tool_id})')
+        else:
+            z = pose.z
+            self.get_logger().warn(
+                f'  [SLOT_XYZ] tool_id={self._tool_id!r} return_z_mm 미등록 — 그리퍼 캠 Z 사용: {z:.2f}mm'
+            )
+
+        if not self._check_vision_coords('SLOT_XYZ', pose.x, pose.y, z):
+            return False
+        ori = list(self._tool_descent_ori)
+        ori[2] = pose.rz
+        pos = [pose.x, pose.y, z] + ori
+        step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
+        self.get_logger().info(f'  [SLOT_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {z:.1f}) rz={pose.rz:.1f}°')
         return self._movel(step, DR_MV_MOD_ABS)
 
     def _get_latest_gripper_tool(self) -> ToolPose:

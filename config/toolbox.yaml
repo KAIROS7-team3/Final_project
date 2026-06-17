@@ -52,6 +52,11 @@ aruco:
     y: 0.0                # 실측 후 갱신
     z: -0.120             # 천장 → layer 0 바닥까지 높이 — 실측 후 갱신
 
+# ⚠️ TODO: return_z_mm 실측 갱신 필요 (현재 전부 0.0 임시값)
+# - grasp_z_mm : vision_fetch_seq ⑥번 MOVE_L_TOOL_XYZ Z값 (tw기준 + 2mm 적용 완료)
+# - return_z_mm: vision_return_seq ⑩번 MOVE_L_TOOL_XYZ Z값 — 실측 후 갱신할 것
+# 참고 원본: Downloads/사물함내부_객체별base좌표.tw (BASE 좌표계, mm)
+#
 # 6종 공구 카탈로그 — 물리 치수·그립 정보만 관리.
 # 슬롯 위치(slot_layer/row/col)는 스캔 시 DB에 기록되며 여기서 관리하지 않음.
 # ⚠️ 치수·질량은 임의값. Phase 0 ② 실측 후 확정.
@@ -62,7 +67,8 @@ tools:
     dimensions: {length: 0.180, diameter: 0.020}
     mass_kg: 0.080
     grasp_approach: top
-    grasp_z_mm: 44.65   # 사물함내부_객체별base좌표.tw 기준 + 2mm
+    grasp_z_mm: 44.65   # fetch Z (tw기준 + 2mm)
+    return_z_mm: 0.0    # TODO: 실측값으로 갱신 필요
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: utility_knife
@@ -71,7 +77,8 @@ tools:
     dimensions: {length: 0.160, width: 0.030, height: 0.015}
     mass_kg: 0.070
     grasp_approach: top
-    grasp_z_mm: 101.87  # 사물함내부_객체별base좌표.tw 기준 + 2mm
+    grasp_z_mm: 101.87  # fetch Z (tw기준 + 2mm)
+    return_z_mm: 0.0    # TODO: 실측값으로 갱신 필요
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: ratchet_wrench
@@ -80,7 +87,8 @@ tools:
     dimensions: {length: 0.200, width: 0.040, height: 0.030}
     mass_kg: 0.250
     grasp_approach: top
-    grasp_z_mm: 99.32   # 사물함내부_객체별base좌표.tw 기준 + 2mm
+    grasp_z_mm: 99.32   # fetch Z (tw기준 + 2mm)
+    return_z_mm: 0.0    # TODO: 실측값으로 갱신 필요
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: multi_tool
@@ -89,7 +97,8 @@ tools:
     dimensions: {length: 0.110, width: 0.035, height: 0.020}
     mass_kg: 0.180
     grasp_approach: top
-    grasp_z_mm: 51.59   # 사물함내부_객체별base좌표.tw 기준 + 2mm
+    grasp_z_mm: 51.59   # fetch Z (tw기준 + 2mm)
+    return_z_mm: 0.0    # TODO: 실측값으로 갱신 필요
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: spanner_16mm
@@ -99,7 +108,8 @@ tools:
     dimensions: {length: 0.180, width: 0.040, height: 0.012}
     mass_kg: 0.120
     grasp_approach: top
-    grasp_z_mm: 55.4    # 사물함내부_객체별base좌표.tw 기준 + 2mm
+    grasp_z_mm: 55.4    # fetch Z (tw기준 + 2mm)
+    return_z_mm: 0.0    # TODO: 실측값으로 갱신 필요
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: socket_19mm
@@ -117,7 +127,8 @@ tools:
     dimensions: {length: 0.040, diameter: 0.026}
     mass_kg: 0.090
     grasp_approach: top
-    grasp_z_mm: 118.69  # 사물함내부_객체별base좌표.tw 기준 + 2mm
+    grasp_z_mm: 118.69  # fetch Z (tw기준 + 2mm)
+    return_z_mm: 0.0    # TODO: 실측값으로 갱신 필요
     notes: "임의값 — 실측 후 갱신"
 
 # ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────

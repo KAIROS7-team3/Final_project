@@ -251,5 +251,10 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
   - `_init_drl_server` 완료 후 `_fc03(slave_id, REG_PRESENT_POSITION, 2)` 호출해 실제 pulse 값 반영
   - RViz에서 시작부터 실제 그리퍼 상태 표시 가능
 - [ ] **VS 실기 튜닝**: `config/visual_servo.yaml` handle/tool 각 섹션 kp·임계값 실측 보정
-- [ ] **비전팀 인터페이스 확정**: 위 표 항목 확인 후 토픽명·타입·단위 반영
+- [ ] **비전팀 인터페이스 확정** (아래 항목 비전팀 구현 필요)
+  - `/vision/fetch/tool_gripper_pose` (`geometry_msgs/PoseStamped`) — fetch 스캔 자세에서 찍은 공구 XY + rz
+  - `/vision/return/tool_gripper_pose` (`geometry_msgs/PoseStamped`) — return 스캔 자세에서 찍은 공구 XY + rz
+  - 단위: position (m, robot base frame), orientation (quaternion → yaw=rz 추출)
+  - fetch/return 스캔 자세가 다르므로 **토픽을 반드시 분리** 구현할 것
+  - `return_z_mm` (config/toolbox.yaml 각 공구별): 실측 후 0.0 → 실제값으로 갱신 필요
 - [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place 각각 VS 적용)

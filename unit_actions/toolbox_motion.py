@@ -37,7 +37,10 @@ class StepKind(Enum):
     VISUAL_SERVO_XY     = auto()   # 공구 XY 정렬 VS — runner에서 ToolServoController 실행
     MOVE_L_TOOL_XYZ     = auto()   # 그리퍼 캠 XYZ 하강 — runner가 /vision/tool_gripper_pose 좌표 사용
     MOVE_L_SLOT_XY      = auto()   # 탑뷰 slot XY + 고정 Z 이동 — runner가 /vision/slot_top_pose 좌표 사용
-    WAIT_VISION_TOP_XY  = auto()   # 탑뷰 캐시 초기화 후 /vision/tool_top_pose 신규 수신 대기
+    WAIT_VISION_TOP_XY    = auto()   # fetch: /vision/fetch/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
+    WAIT_VISION_RETURN_XY = auto()   # return: /vision/return/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
+    MOVE_L_SLOT_XYZ       = auto()   # 그리퍼 캠 XY + return_z_mm(tool_id별) 로 slot 위치 하강
+    MOVE_L_STAGING_XYZ    = auto()   # 그리퍼 캠 XY + return_z_mm(tool_id별) 로 staging 파지 하강 (return용)
 
 
 PickPlaceMarker = Literal["pick", "place"]
@@ -467,24 +470,25 @@ def socket_fetch_seq() -> list[Step]:
     ]
 
 
-VISION_FETCH_SCAN_J: list = [26.2, 18.04, 35.57, 25.49, 111.91, 42.14]  # 탑뷰 스캔 자세 (deg)
+VISION_FETCH_SCAN_J:  list = [-30.1,  15.5,  74.7,  20.9,  101.2,  -27.8]   # fetch 그리퍼 캠 스캔 자세 (deg)
+VISION_RETURN_SCAN_J: list = [-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]  # return 그리퍼 캠 스캔 자세 (deg)
 
 
 def vision_fetch_seq() -> list[Step]:
-    """탑뷰 XY + 그리퍼 캠 XYZ 기반 공구 fetch 시퀀스 (11단계).
+    """그리퍼 캠 XY + grasp_z_mm 기반 공구 fetch 시퀀스 (13단계).
 
     ① JOINT_HOME
     ② GRIP_RELEASE
-    ③ MoveJ → VISION_FETCH_SCAN_J  (탑뷰 스캔 자세)
-    ④ WAIT_VISION_TOP_XY — 캐시 초기화 후 /vision/tool_top_pose 신규 수신 대기
-    ⑤ MOVE_L_TOP_XY   — runner가 /vision/tool_top_pose XY + TOOL_APPROACH_Z_MM 로 이동
-    ⑥ MOVE_L_TOOL_XYZ — 그리퍼 캠 XYZ 로 공구 위치로 하강
+    ③ MoveJ → VISION_FETCH_SCAN_J  (그리퍼 캠 스캔 자세)
+    ④ WAIT_VISION_TOP_XY — 캐시 초기화 후 /vision/tool_gripper_pose 신규 수신 대기
+    ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 /vision/tool_gripper_pose XY + APPROACH_Z 로 이동
+    ⑥ MOVE_L_TOOL_XYZ — 그리퍼 캠 XY + grasp_z_mm 로 공구 위치 하강
     ⑦ GRIP_SOCKET
-    ⑧ MOVE_L_TOP_XY   — 다시 TOOL_APPROACH_Z_MM 높이로 상승 (⑤과 동일)
+    ⑧ MOVE_L_TOP_XY   — 그리퍼 캠 XY + APPROACH_Z 로 상승 (⑤과 동일)
     ⑨ MoveL → SOCKET_BOTTOM_XY  (staging 위)
     ⑩ MoveL → SOCKET_BOTTOM     (staging 하강)
     ⑪ GRIP_RELEASE
-    ⑫ MoveL → SOCKET_BOTTOM_XY  (staging 위)
+    ⑫ MoveL → SOCKET_BOTTOM_XY  (staging 위 복귀)
     ⑬ JOINT_HOME
 
     호출 전 팔이 홈 자세에 있어야 함.
@@ -493,16 +497,16 @@ def vision_fetch_seq() -> list[Step]:
     return [
         JOINT_HOME(),                               # ①
         GRIP_RELEASE(),                             # ②
-        mj_abs(VISION_FETCH_SCAN_J),                # ③ 탑뷰 스캔 자세
-        Step(kind=StepKind.WAIT_VISION_TOP_XY),     # ④ 신규 탑뷰 좌표 수신 대기
-        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 탑뷰 XY + 고정 Z
-        Step(kind=StepKind.MOVE_L_TOOL_XYZ),        # ⑥ 그리퍼 캠 XYZ 하강
+        mj_abs(VISION_FETCH_SCAN_J),                # ③ 그리퍼 캠 스캔 자세
+        Step(kind=StepKind.WAIT_VISION_TOP_XY),     # ④ 신규 그리퍼 캠 좌표 수신 대기
+        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + 고정 Z
+        Step(kind=StepKind.MOVE_L_TOOL_XYZ),        # ⑥ 그리퍼 캠 XY + grasp_z_mm 하강
         GRIP_SOCKET(),                              # ⑦
-        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑧ 상승 (⑤과 동일)
+        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑧ 그리퍼 캠 XY + 고정 Z 상승
         ml_abs(SOCKET_BOTTOM_XY),                   # ⑨ staging 위
         ml_abs(SOCKET_BOTTOM),                      # ⑩ staging 하강
         GRIP_RELEASE(),                             # ⑪
-        ml_abs(SOCKET_BOTTOM_XY),                   # ⑫ staging 위
+        ml_abs(SOCKET_BOTTOM_XY),                   # ⑫ staging 위 복귀
         JOINT_HOME(),                               # ⑬
     ]
 
@@ -529,39 +533,39 @@ def socket_return_seq() -> list[Step]:
 
 
 def vision_return_seq() -> list[Step]:
-    """탑뷰 XY + 그리퍼 캠 VS 기반 공구 return 시퀀스 (13단계).
+    """그리퍼 캠 XY + grasp_z_mm/return_z_mm 기반 공구 return 시퀀스 (13단계).
 
     ① JOINT_HOME
     ② GRIP_RELEASE
-    ③ MOVE_L_TOP_XY   — 탑뷰 /vision/tool_top_pose XY + 고정 Z (staging 위)
-    ④ VISUAL_SERVO_XY — 그리퍼 캠 XY VS → staging 공구 정밀 정렬
-    ⑤ MOVE_L_TOOL_XYZ — 그리퍼 캠 XYZ 로 staging 공구 위치로 하강
-    ⑥ GRIP_SOCKET
-    ⑦ MOVE_L_TOP_XY   — staging 위로 상승 (③과 동일)
-    ⑧ MOVE_L_SLOT_XY  — 탑뷰 /vision/slot_top_pose XY + 고정 Z (slot 위)
-    ⑨ VISUAL_SERVO_XY — 그리퍼 캠 XY VS → slot 위치 정밀 정렬
-    ⑩ MOVE_L_TOOL_XYZ — 그리퍼 캠 XYZ 로 slot 위치로 하강
+    ③ MoveJ → VISION_RETURN_SCAN_J (그리퍼 캠 스캔 자세)
+    ④ WAIT_VISION_RETURN_XY — 캐시 초기화 후 /vision/return/tool_gripper_pose 신규 수신 대기
+    ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 XY + rz + 고정 Z (staging 위)
+    ⑥ MOVE_L_STAGING_XYZ — 그리퍼 캠 XY + rz + return_z_mm 로 staging 공구 파지 하강
+    ⑦ GRIP_SOCKET
+    ⑧ MOVE_L_TOP_XY   — 그리퍼 캠 XY + 고정 Z 상승 (⑤과 동일)
+    ⑨ MOVE_L_SLOT_XY  — 그리퍼 캠 /vision/slot_gripper_pose XY + 고정 Z (slot 위)
+    ⑩ MOVE_L_SLOT_XYZ — 그리퍼 캠 XY + return_z_mm(tool_id별) 로 slot 반납 하강
     ⑪ GRIP_RELEASE
-    ⑫ MOVE_L_SLOT_XY  — slot 위로 상승 (⑧과 동일)
+    ⑫ MOVE_L_SLOT_XY  — 그리퍼 캠 XY + 고정 Z 상승 (⑨과 동일)
     ⑬ JOINT_HOME
 
     호출 전 팔이 홈 자세에 있어야 함.
     좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리 (파라미터 불필요).
     """
     return [
-        JOINT_HOME(),                           # ①
-        GRIP_RELEASE(),                         # ②
-        Step(kind=StepKind.MOVE_L_TOP_XY),      # ③ staging 탑뷰 XY + 고정 Z
-        Step(kind=StepKind.VISUAL_SERVO_XY),    # ④ staging 그리퍼 캠 XY VS
-        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑤ staging 그리퍼 캠 XYZ 하강
-        GRIP_SOCKET(),                          # ⑥
-        Step(kind=StepKind.MOVE_L_TOP_XY),      # ⑦ staging 위로 상승
-        Step(kind=StepKind.MOVE_L_SLOT_XY),     # ⑧ slot 탑뷰 XY + 고정 Z
-        Step(kind=StepKind.VISUAL_SERVO_XY),    # ⑨ slot 그리퍼 캠 XY VS
-        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑩ slot 그리퍼 캠 XYZ 하강
-        GRIP_RELEASE(),                         # ⑪
-        Step(kind=StepKind.MOVE_L_SLOT_XY),     # ⑫ slot 위로 상승
-        JOINT_HOME(),                           # ⑬
+        JOINT_HOME(),                               # ①
+        GRIP_RELEASE(),                             # ②
+        mj_abs(VISION_RETURN_SCAN_J),               # ③ 그리퍼 캠 스캔 자세
+        Step(kind=StepKind.WAIT_VISION_RETURN_XY),   # ④ /vision/return/tool_gripper_pose 수신 대기
+        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + rz + 고정 Z (staging 위)
+        Step(kind=StepKind.MOVE_L_STAGING_XYZ),     # ⑥ 그리퍼 캠 XY + rz + return_z_mm 하강
+        GRIP_SOCKET(),                              # ⑦
+        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑧ 그리퍼 캠 XY + 고정 Z 상승
+        Step(kind=StepKind.MOVE_L_SLOT_XY),         # ⑨ 그리퍼 캠 XY + 고정 Z (slot 위)
+        Step(kind=StepKind.MOVE_L_SLOT_XYZ),        # ⑩ 그리퍼 캠 XY + return_z_mm 하강
+        GRIP_RELEASE(),                             # ⑪
+        Step(kind=StepKind.MOVE_L_SLOT_XY),         # ⑫ 그리퍼 캠 XY + 고정 Z 상승
+        JOINT_HOME(),                               # ⑬
     ]
 
 
