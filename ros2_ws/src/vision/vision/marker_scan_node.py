@@ -211,6 +211,41 @@ class MarkerScanNode(Node):
         cy = self._cam_matrix[1, 2]
         return np.array([(u - cx) * Z / fx, (v - cy) * Z / fy, Z])
 
+    def _ray_plane_cam(self, u: float, v: float,
+                       rvec: np.ndarray, tvec: np.ndarray,
+                       tool_h: float) -> np.ndarray | None:
+        """픽셀 ray와 기울어진 마커 평면의 교점 → 카메라 프레임 3D 좌표.
+
+        rvec/tvec은 solvePnP 결과. 마커 Z축(법선)을 BASE 변환 없이
+        카메라 프레임 안에서 직접 계산하므로 TF 불필요.
+        """
+        fx = self._cam_matrix[0, 0]
+        fy = self._cam_matrix[1, 1]
+        cx = self._cam_matrix[0, 2]
+        cy = self._cam_matrix[1, 2]
+
+        # 마커 법선 → 카메라 프레임 (rvec Z축)
+        import cv2 as _cv2
+        R_m2cam, _ = _cv2.Rodrigues(rvec.flatten())
+        n_cam = R_m2cam @ np.array([0.0, 0.0, 1.0])
+        if n_cam[2] > 0:  # 법선이 카메라 방향 반대면 반전
+            n_cam = -n_cam
+
+        # 파지점 평면: 마커 중심에서 법선 반대 방향으로 tool_h/2 (공구 두께)
+        P_m = tvec.flatten()
+        P_plane = P_m - (tool_h / 2.0) * n_cam
+
+        # ray: 원점(카메라) → 픽셀 방향
+        d = np.array([(u - cx) / fx, (v - cy) / fy, 1.0])
+
+        denom = np.dot(n_cam, d)
+        if abs(denom) < 1e-6:
+            return None
+        t = np.dot(n_cam, P_plane) / denom
+        if t < 0:
+            return None
+        return d * t
+
     def _cam_to_tcp(self, p_cam: np.ndarray) -> np.ndarray:
         """카메라 프레임 → TCP(link_6) 프레임 변환 (c270_hand_eye.yaml)."""
         return self._hand_eye_R @ p_cam + self._hand_eye_t
@@ -269,15 +304,13 @@ class MarkerScanNode(Node):
         rvec, tvec = self._marker_pose(corners)
         if tvec is None:
             return
-        Z_floor     = float(tvec[2])            # 카메라 ~ 마커 평면 거리 (m)
-        # ⚠️ toolbox.yaml aruco_front.layer_z_offset 미사용 (PR #49 재검토 Medium-1).
-        # solvePnP Z는 카메라→마커 평면까지의 실측 거리이며, layer_z_offset은
-        # "마커 중심→서랍 중심" 거리를 부여하는 별도 모델이라 둘을 같이 쓸지
-        # layer_z_offset 자체가 죽은 설정인지 팀 확인 필요 — 임의로 합치지 않음.
-        Z_grasp     = Z_floor - tool_h / 2.0   # 공구 두께 절반만큼 올림
+        Z_floor = float(tvec[2])   # 로그용
 
-        # 공구 마스크 무게중심 → 카메라 프레임 3D
-        P_cam = self._pixel_to_cam(tool_cx, tool_cy, Z_grasp)
+        # 공구 마스크 무게중심 → 카메라 프레임 3D (서랍 기울기 반영)
+        # rvec으로 마커 실제 평면 법선을 구해 ray-plane 교점 계산
+        P_cam = self._ray_plane_cam(tool_cx, tool_cy, rvec, tvec, tool_h)
+        if P_cam is None:
+            return
 
         # 카메라 → TCP(link_6) 프레임
         P_tcp = self._cam_to_tcp(P_cam)

@@ -189,41 +189,52 @@ def _marker_base_xyz(tvec_marker: np.ndarray, T: np.ndarray) -> tuple[float, flo
     return float(P_m_base[0]*1000), float(P_m_base[1]*1000), float(P_m_base[2]*1000)
 
 
-def _ray_plane(gcx: float, gcy: float, tvec_marker: np.ndarray,
+def _ray_plane(gcx: float, gcy: float,
+               rvec_marker: np.ndarray, tvec_marker: np.ndarray,
                tool_h: float, T: np.ndarray) -> tuple[float, float] | None:
-    """ray-plane intersection 역투영 (카메라 기울기 보정).
+    """ray-plane intersection 역투영 — 서랍 기울기 보정 포함.
 
     1. 픽셀 (gcx, gcy) → 카메라 프레임 ray 방향
     2. ray 방향 → BASE 프레임 변환
     3. 카메라 광학 중심 → BASE 프레임
-    4. 공구 수평면 (z_base = 마커바닥 + tool_h/2) 과 교점 계산
+    4. 마커 rvec으로 서랍 실제 평면 법선 계산 (기울기 반영)
+    5. 기울어진 평면과 ray 교점 + 법선 방향 tool_h/2 오프셋
     """
     fx, fy = CAM_K[0, 0], CAM_K[1, 1]
     cx0, cy0 = CAM_K[0, 2], CAM_K[1, 2]
 
-    # 마커 중심 → BASE 프레임 (서랍 바닥 높이 확보)
+    # 마커 중심 → BASE 프레임
     P_m_cam  = tvec_marker.flatten()
     P_m_tcp  = HE_R @ P_m_cam + HE_T
     P_m_base = (T @ np.array([*P_m_tcp, 1.0]))[:3]
 
-    # 공구 파지점 수평면 높이 (BASE 프레임, Z축 위 방향)
-    plane_z = P_m_base[2] + tool_h / 2.0
+    # 마커 평면 법선 → BASE 프레임 (rvec Z축 = 마커 법선, 서랍 기울기 반영)
+    R_m2cam, _ = cv2.Rodrigues(rvec_marker.flatten())
+    n_cam  = R_m2cam @ np.array([0.0, 0.0, 1.0])
+    n_base = T[:3, :3] @ HE_R @ n_cam
+    n_base = n_base / np.linalg.norm(n_base)
+    if n_base[2] < 0:  # 법선이 아래를 향하면 반전
+        n_base = -n_base
 
-    # 픽셀 → 카메라 프레임 ray 방향 (정규화 불필요, 스케일 약분됨)
+    # 공구 파지점 평면: 마커 평면에서 법선 방향으로 tool_h/2 올림
+    P_plane = P_m_base + (tool_h / 2.0) * n_base
+
+    # 픽셀 → 카메라 프레임 ray 방향
     d_cam  = np.array([(gcx - cx0) / fx, (gcy - cy0) / fy, 1.0])
 
-    # ray 방향 → BASE 프레임
+    # ray → BASE 프레임
     d_base = T[:3, :3] @ HE_R @ d_cam
 
     # 카메라 광학 중심 → BASE 프레임
     O_base = (T @ np.array([*HE_T, 1.0]))[:3]
 
-    # ray-plane 교점: P = O + t*d,  P[2] = plane_z
-    if abs(d_base[2]) < 1e-6:
-        return None  # ray가 수평면과 평행
-    t = (plane_z - O_base[2]) / d_base[2]
+    # 기울어진 평면과 ray 교점
+    denom = np.dot(n_base, d_base)
+    if abs(denom) < 1e-6:
+        return None
+    t = np.dot(n_base, P_plane - O_base) / denom
     if t < 0:
-        return None  # 교점이 카메라 뒤쪽
+        return None
     P = O_base + t * d_base
     return float(P[0] * 1000), float(P[1] * 1000)
 
@@ -573,7 +584,8 @@ def main():
 
         T = ros.get_T() if ros else None
 
-        # ArUco 마커 → tvec 확보 (ray-plane intersection용)
+        # ArUco 마커 → rvec/tvec 확보 (ray-plane intersection용)
+        rvec_marker: np.ndarray | None = None
         tvec_marker: np.ndarray | None = None
         marker_base: tuple[float, float, float] | None = None
         if ids is not None:
@@ -582,9 +594,10 @@ def main():
                 if mid not in (0, 1):
                     continue
                 img_pts = corners_list[ci][0].astype(np.float64)
-                ok, _, tvec = cv2.solvePnP(OBJ_PTS, img_pts, CAM_K, DIST)
+                ok, rvec, tvec = cv2.solvePnP(OBJ_PTS, img_pts, CAM_K, DIST)
                 if not ok:
                     continue
+                rvec_marker = rvec.flatten()
                 tvec_marker = tvec.flatten()
                 mc = corners_list[ci][0]
                 mx, my = int(mc[:, 0].mean()), int(mc[:, 1].mean())
@@ -640,9 +653,9 @@ def main():
 
                 # BASE 좌표 계산 — ray-plane intersection (카메라 기울기 보정)
                 base_x_mm = base_y_mm = None
-                if tvec_marker is not None and T is not None:
+                if rvec_marker is not None and tvec_marker is not None and T is not None:
                     tool_h = TOOL_H.get(name, 0.020)
-                    result = _ray_plane(gcx, gcy, tvec_marker, tool_h, T)
+                    result = _ray_plane(gcx, gcy, rvec_marker, tvec_marker, tool_h, T)
                     if result is not None:
                         base_x_mm, base_y_mm = result
                     if sel and base_x_mm is not None:
