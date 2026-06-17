@@ -6,13 +6,20 @@
 
 | 파일 | 마커 ID | 배치 위치 | 용도 |
 |------|---------|----------|------|
-| `marker_0_ID0_ceiling.png` | 0 | 천장 고정 | 탑뷰 D455f 캘리브 / C270 eye-in-hand 캘리브 |
+| `marker_0_ID0_ceiling.png` | 0 | 공구함 전면 부착 | C270 그리퍼캠 전면 기준점 |
 | `marker_0_ID0_ceiling_clean.png` | 0 | 동일 | 여백 최소화 버전 (인쇄 권장) |
-| `marker_1_ID1_drawer_layer0.png` | 1 | 공구함 서랍 레이어 0 | 탑뷰 공구함 위치 인식 |
-| `marker_1_ID1_drawer_layer0_clean.png` | 1 | 동일 | 여백 최소화 버전 (인쇄 권장) |
-| `marker_2_ID2_drawer_layer1.png` | 2 | 공구함 서랍 레이어 1 | 탑뷰 공구함 위치 인식 |
-| `marker_2_ID2_drawer_layer1_clean.png` | 2 | 동일 | 여백 최소화 버전 (인쇄 권장) |
-| `aruco_markers.pdf` | 0·1·2 | — | 전체 인쇄용 묶음 |
+| `aruco_markers.pdf` | 0 | — | 인쇄용 |
+
+> **ID 2 마커** — 천장 고정 (실물 부착 완료). 별도 파일 없음.
+> `config/toolbox.yaml` `aruco.marker_id: 2` 로 관리.
+
+## 마커 배치 현황
+
+| ID | 위치 | 크기 | config |
+|----|------|------|--------|
+| **0** | 공구함 전면 / 서랍 아랫층 (layer 0) | 전면 4cm / 서랍 5cm | `toolbox.yaml` `aruco_front` |
+| **1** | 서랍 윗층 (layer 1) | 5cm | — |
+| **2** | 천장 고정 | 5cm | `toolbox.yaml` `aruco` |
 
 ## 인쇄 주의사항
 
@@ -25,8 +32,8 @@
 | 파일 | 참조 방식 |
 |------|----------|
 | `config/vision.yaml` | `marker_size_m`, `dictionary` 설정값 |
-| `config/runtime.yaml` | `aruco_marker_size_m`, `aruco_dict_id` 설정값 |
-| `scripts/c270_handeye_collect.py` | `ARUCO_TARGET_ID = 0`, `ARUCO_DICT_ID` |
+| `config/runtime.yaml` | `aruco_marker_size_m`, `aruco_dict_id` |
+| `scripts/c270_handeye_collect.py` | `ARUCO_TARGET_ID = 0` (전면 마커) |
 | `scripts/c270_handeye_capture.py` | `DICT_4X4_50` 하드코딩 |
 | `scripts/examples/example_aruco_detection.py` | `DICT_4X4_50` |
 | `ros2_ws/src/vision/vision/marker_scan_node.py` | `config/vision.yaml` 경유 |

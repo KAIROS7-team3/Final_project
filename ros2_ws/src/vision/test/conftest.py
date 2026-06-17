@@ -20,6 +20,44 @@ sys.modules.setdefault("rclpy", rclpy_mod)
 sys.modules.setdefault("rclpy.node", node_mod)
 sys.modules.setdefault("rclpy.qos", qos_mod)
 
+# ---------- rclpy.time stub ----------
+time_mod = types.ModuleType("rclpy.time")
+time_mod.Time = MagicMock()
+rclpy_mod.time = time_mod
+sys.modules.setdefault("rclpy.time", time_mod)
+
+# ---------- geometry_msgs stub ----------
+gm = types.ModuleType("geometry_msgs")
+gm_msg = types.ModuleType("geometry_msgs.msg")
+gm_msg.PointStamped = MagicMock()
+gm_msg.TransformStamped = MagicMock()
+gm.msg = gm_msg
+sys.modules.setdefault("geometry_msgs", gm)
+sys.modules.setdefault("geometry_msgs.msg", gm_msg)
+
+# ---------- tf2_ros stub ----------
+tf2 = types.ModuleType("tf2_ros")
+tf2.Buffer = MagicMock()
+tf2.TransformListener = MagicMock()
+
+
+class _LookupException(Exception):
+    pass
+
+
+class _ConnectivityException(Exception):
+    pass
+
+
+class _ExtrapolationException(Exception):
+    pass
+
+
+tf2.LookupException = _LookupException
+tf2.ConnectivityException = _ConnectivityException
+tf2.ExtrapolationException = _ExtrapolationException
+sys.modules.setdefault("tf2_ros", tf2)
+
 # ---------- sensor_msgs stub ----------
 sm = types.ModuleType("sensor_msgs")
 sm_msg = types.ModuleType("sensor_msgs.msg")

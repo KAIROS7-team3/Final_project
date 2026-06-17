@@ -28,6 +28,7 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from geometry_msgs.msg import PointStamped
+from std_msgs.msg import Header
 from sensor_msgs.msg import Image
 from vision_msgs.msg import (
     Detection2DArray,
@@ -180,7 +181,7 @@ class PoseNode(Node):
                 f"[pose_node] published {len(pose_array.detections)} poses"
             )
 
-    def _publish_tool_top_pose(self, header, pose_array: Detection3DArray) -> None:
+    def _publish_tool_top_pose(self, header: Header, pose_array: Detection3DArray) -> None:
         """신뢰도 최고 검출을 /vision/tool_top_pose (PointStamped)로 발행.
 
         검출 없으면 발행하지 않는다 — VS가 이전 좌표로 수렴하는 것을 방지.
@@ -204,7 +205,7 @@ class PoseNode(Node):
 
     def _build_detection3d(
         self,
-        header,
+        header: Header,
         tool_id: str,
         score: float,
         pos: np.ndarray,

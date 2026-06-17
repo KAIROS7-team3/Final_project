@@ -9,12 +9,14 @@
 
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>message_filters</depend>
   <depend>realsense2_camera</depend>
   <depend>realsense2_camera_msgs</depend>
   <depend>vision_msgs</depend>
   <depend>interfaces</depend>
+  <depend>tf2_ros</depend>
 
   <test_depend>ament_pytest</test_depend>
 

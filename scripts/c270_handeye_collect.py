@@ -35,8 +35,9 @@ _CONFIG_DIR  = os.path.join(_SCRIPT_DIR, '..', 'config')
 OUTPUT_PATH  = os.path.join(_SCRIPT_DIR, 'c270_handeye_data.npz')
 RESUME_PATH  = os.path.join(_SCRIPT_DIR, 'c270_handeye_data_tmp.npz')  # 자동 백업
 
-DEVICE        = 8
-WIDTH, HEIGHT = 640, 480
+DEVICE: str = _calib.get('c270_device', '/dev/video2')
+WIDTH:  int = int(_calib.get('c270_width',  640))
+HEIGHT: int = int(_calib.get('c270_height', 480))
 MIN_SAMPLES   = 15
 
 # ── 설정 로드 ──────────────────────────────────────────────────────────────────
@@ -110,11 +111,9 @@ def load_resume() -> tuple[list, list, list, list, int] | None:
     # pose_idx: tmp 파일엔 저장돼 있고, 출력 파일엔 없으므로 샘플 수로 추정
     pose_idx = int(d['pose_idx']) if (has_idx and 'pose_idx' in d) else n
     print(f'\n[이어받기] 기존 데이터 발견 — {n}쌍 저장됨 (다음 TW 포즈: {pose_idx + 1}번)')
-    if True:
-        return (list(d['R_gripper2base']), list(d['t_gripper2base']),
-                list(d['R_target2cam']),   list(d['t_target2cam']),
-                pose_idx)
-    return None  # 새로 시작
+    return (list(d['R_gripper2base']), list(d['t_gripper2base']),
+            list(d['R_target2cam']),   list(d['t_target2cam']),
+            pose_idx)
 
 
 # ── TW 파일 파서 ───────────────────────────────────────────────────────────────
@@ -267,7 +266,7 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
     if not cap.isOpened():
-        log.error('/dev/video%d 열기 실패', DEVICE)
+        log.error('%s 열기 실패', DEVICE)
         sys.exit(1)
     log.info('C270 연결 완료 — %dx%d', WIDTH, HEIGHT)
 

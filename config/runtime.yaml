@@ -33,7 +33,7 @@ calibration:
   #   degree 입력을 요구하는 하드웨어 경계 인터페이스다.
   #   이 섹션의 vel/acc 단위는 deg/s, deg/s² — ROS2 내부 rad 표준과 다름.
   #   변경 시 safety-reviewer 검토 권장 (S-5 joint/속도 한계).
-  motion_vel_deg_per_s: 20.0    # 캘리브레이션 이동 속도
+  motion_vel_deg_per_s: 20.0    # 캘리브레이션 이동 속도 (협동 모드 충분히 여유 있는 값)
   motion_acc_deg_per_s2: 10.0   # 캘리브레이션 가속도
   service_timeout_sec: 5.0      # move_joint 서비스 연결 대기 최대 시간
 
@@ -46,12 +46,7 @@ calibration:
   error_warn_mm: 5.0            # 이 값 초과 시 재확인 권장
   error_ok_mm: 3.0              # 이 값 초과 시 추가 수집 권장
 
-  # collect_handeye_data.py — ArUco 감지 파라미터 (D455f 탑뷰 캘리브 용)
-  aruco_marker_size_m: 0.05     # 마커 한 변 길이 [m] — DICT_4X4_50 5cm×5cm 실측값
-  aruco_dict_id: 0              # cv2.aruco.DICT_4X4_50 (multi_item/markers/aruco_markers.pdf ID=0/1/2)
-  aruco_target_id: 1            # 캘리브레이션에 사용할 마커 ID (TCP 부착 마커)
-
-  # c270 카메라 장치 경로 (c270_tcp_center_calib.py 용)
+  # c270 카메라 장치 경로
   c270_device: /dev/video8
   c270_width: 640
   c270_height: 480
@@ -60,7 +55,9 @@ calibration:
   charuco_squares_x: 5          # 가로 칸 수
   charuco_squares_y: 7          # 세로 칸 수
   charuco_square_size_m: 0.038  # 체커보드 칸 한 변 [m] — 실측 38mm
-  charuco_marker_size_m: 0.0315 # ArUco 마커 한 변 [m] — 실측 31.5mm
+  charuco_marker_size_m: 0.0315  # ArUco 마커 한 변 [m] — 실측 31.5mm
+  aruco_dict_id: 0              # cv2.aruco.DICT_4X4_50
+  aruco_target_id: 0            # 캘리브레이션에 사용할 마커 ID
   min_sample_count: 15          # calibrateHandEye 권장 최소 샘플 수
   min_charuco_corners: 6        # 포즈 추정에 필요한 최소 ChArUco 코너 수
 
