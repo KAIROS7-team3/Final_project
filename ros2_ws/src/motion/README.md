@@ -242,19 +242,79 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
 
 ---
 
+## vision_return 시퀀스 (feat/motion-drawer-v2)
+
+공구를 staging area에서 집어 공구함 slot으로 반납.
+
+### 구조 (13스텝)
+
+| 스텝 | 동작 | 좌표 출처 |
+|------|------|-----------|
+| ① | JOINT_HOME | 고정 |
+| ② | GRIP_RELEASE | — |
+| ③ | MoveJ — 그리퍼 캠 스캔 자세 | `VISION_RETURN_SCAN_J_DEG` = `[-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]` deg |
+| ④ | WAIT_VISION_RETURN_XY | `/vision/return/tool_gripper_pose` 수신 대기 (5초 타임아웃) |
+| ⑤ | MoveL — staging 위 | 그리퍼 캠 XY + rz + 고정 Z 234mm |
+| ⑥ | MoveL — staging 파지 하강 | 그리퍼 캠 XY + rz + `staging_pickup_z_mm` ⚠️ 실측 후 갱신 |
+| ⑦ | GRIP_SOCKET (pulse=650) | — |
+| ⑧ | MoveL — staging 위 상승 | 그리퍼 캠 XY + rz + 고정 Z 234mm |
+| ⑨ | MoveL — slot 위 | `grasp_pose_base` XY (yaml, m→mm) + 고정 Z 234mm |
+| ⑩ | MoveL — slot 반납 하강 | `grasp_pose_base` XY + `return_z_mm` (tw z + 3mm) |
+| ⑪ | GRIP_RELEASE | — |
+| ⑫ | MoveL — slot 위 상승 | `grasp_pose_base` XY + 고정 Z 234mm |
+| ⑬ | JOINT_HOME | 고정 |
+
+### 좌표 출처 정리
+
+| 단계 | XY 출처 | Z 출처 |
+|------|---------|--------|
+| ⑤⑥⑧ | `/vision/return/tool_gripper_pose` (PoseStamped, m→mm) | ⑤⑧: 234mm 고정 / ⑥: `staging_pickup_z_mm` |
+| ⑨⑩⑫ | `config/toolbox.yaml` `grasp_pose_base.x/y` × 1000 | ⑨⑫: 234mm 고정 / ⑩: `return_z_mm` |
+
+### 실행
+
+```bash
+ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_return -p tool_id:=socket_19mm
+```
+
+### 공구별 Z값 (config/toolbox.yaml)
+
+| 공구 | staging_pickup_z_mm | return_z_mm | slot XY (mm) |
+|------|---------------------|-------------|--------------|
+| screwdriver | 45.65 ⚠️ | 45.65 | (392.4, 264.2) |
+| utility_knife | 102.87 ⚠️ | 102.87 | (445.5, 347.9) |
+| ratchet_wrench | 100.32 ⚠️ | 100.32 | (397.6, 258.5) |
+| multi_tool | 52.59 ⚠️ | 52.59 | (261.3, 332.8) |
+| spanner_16mm | 56.4 ⚠️임의값 | 56.4 ⚠️임의값 | (437.2, 348.3) |
+| socket_19mm | 119.69 ⚠️ | 119.69 | (253.0, 343.1) |
+
+> ⚠️ `staging_pickup_z_mm`은 모두 임시값(return_z_mm과 동일). 실기 테스트 전 직접교시로 실측 필요.
+
+### 비전팀 연결 시 확인 필요 (vision_return)
+
+| 항목 | 현재 가정 | 확인 필요 |
+|------|-----------|-----------|
+| 토픽명 | `/vision/return/tool_gripper_pose` | 비전팀 합의 필요 (기존 `/vision/tool_gripper_pose`에서 변경) |
+| 메시지 타입 | `geometry_msgs/PoseStamped` | 기존 `PointStamped`에서 변경 — 비전팀 구현 필요 |
+| 좌표 단위 | position: m (runner에서 ×1000), orientation: quaternion | 확인 필요 |
+| rz 추출 | quaternion → yaw (atan2) | 범위 -185~185° 벗어나면 runner가 거부 |
+
+---
+
 ## TODO
 
 - [x] **virtual 모드 대응**: `mode` 파라미터로 virtual 감지 → DRL/flange 초기화 생략 (에뮬레이터 블로킹 버그 수정)
   - launch 파일이 `mode:=virtual` 시 gripper_node에 `mode` 파라미터 전달
   - `_init_drl_server()` 진입 시 virtual이면 즉시 반환
+- [x] **E-stop 블로킹 개선**: `_movel/_movej` 30초 블로킹 → 0.1s 폴링 × 5초 + E-stop 즉시 감지
+- [x] **vision_return 시퀀스 구현**: 토픽 분리, rz 수신, staging/slot Z 분리, slot XY yaml 로드
 - [ ] **초기 상태 읽기**: 노드 시작 시 DRL로 현재 그리퍼 위치(present_position)를 읽어 `_current_hz_pos` 초기화
-  - `_init_drl_server` 완료 후 `_fc03(slave_id, REG_PRESENT_POSITION, 2)` 호출해 실제 pulse 값 반영
-  - RViz에서 시작부터 실제 그리퍼 상태 표시 가능
 - [ ] **VS 실기 튜닝**: `config/visual_servo.yaml` handle/tool 각 섹션 kp·임계값 실측 보정
-- [ ] **비전팀 인터페이스 확정** (아래 항목 비전팀 구현 필요)
-  - `/vision/fetch/tool_gripper_pose` (`geometry_msgs/PoseStamped`) — fetch 스캔 자세에서 찍은 공구 XY + rz
-  - `/vision/return/tool_gripper_pose` (`geometry_msgs/PoseStamped`) — return 스캔 자세에서 찍은 공구 XY + rz
-  - 단위: position (m, robot base frame), orientation (quaternion → yaw=rz 추출)
-  - fetch/return 스캔 자세가 다르므로 **토픽을 반드시 분리** 구현할 것
-  - `return_z_mm` (config/toolbox.yaml 각 공구별): 실측 후 0.0 → 실제값으로 갱신 필요
-- [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place 각각 VS 적용)
+- [ ] **비전팀 인터페이스 확정**
+  - `/vision/fetch/tool_gripper_pose` (`PoseStamped`) — fetch 스캔 자세 공구 XY + rz
+  - `/vision/return/tool_gripper_pose` (`PoseStamped`) — return 스캔 자세 공구 XY + rz
+  - fetch/return 스캔 자세가 다르므로 **토픽 반드시 분리** 구현
+- [ ] **staging_pickup_z_mm 실측**: 6종 공구 모두 직접교시로 실측 후 toolbox.yaml 갱신
+- [ ] **spanner_16mm 전체 Z 실측**: grasp_z_mm / staging_pickup_z_mm / return_z_mm 모두 임의값
+- [ ] **config/toolbox.yaml workspace_limits z_min**: -22.0mm 임시값, 실측 후 갱신
+- [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place)
