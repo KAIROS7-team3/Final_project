@@ -66,7 +66,7 @@ grasp_offset:
     ratio: 0.30
     toward_narrow: true
   ratchet_wrench:
-    ratio: 0.125
+    ratio: 0.10
     toward_narrow: false
   utility_knife:
     ratio: 0.20

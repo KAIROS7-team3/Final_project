@@ -637,8 +637,13 @@ def main():
                 cv2.fillPoly(mask2d, [pts], 255)
                 pca = _pca(mask2d)
 
+                axis_len_px = 0.0
                 if pca:
                     gcx, gcy, v1, rel = pca
+                    pts_f = np.argwhere(mask2d > 0).astype(np.float32)
+                    c_f = pts_f - np.array([gcy, gcx])
+                    proj = c_f[:, 1] * v1[0] + c_f[:, 0] * v1[1]
+                    axis_len_px = float(proj.max() - proj.min())
                     cfg = GRASP_OFFSET.get(name, {"ratio": 0.0, "toward_narrow": True})
                     if cfg["ratio"] > 0:
                         gcx, gcy = _grasp_pt(
@@ -664,9 +669,9 @@ def main():
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 2)
 
                 if sel:
-                    best_tool = (name, base_x_mm, base_y_mm, score)
+                    best_tool = (name, base_x_mm, base_y_mm, score, axis_len_px)
                 elif best_tool is None or score > best_tool[3]:
-                    best_tool = (name, base_x_mm, base_y_mm, score)
+                    best_tool = (name, base_x_mm, base_y_mm, score, axis_len_px)
         else:
             _state["polys"] = []
 
@@ -682,6 +687,11 @@ def main():
         ]
         if best_tool and best_tool[1] is not None:
             hud.append(f"추정 BASE  X={best_tool[1]:+.1f}  Y={best_tool[2]:+.1f} mm  → 'g' 이동")
+            if len(best_tool) > 4 and best_tool[4] > 0:
+                cfg = GRASP_OFFSET.get(best_tool[0], {"ratio": 0.0})
+                ax_px = best_tool[4]
+                off_px = ax_px * cfg.get("ratio", 0.0)
+                hud.append(f"PCA axis={ax_px:.0f}px  offset={off_px:.1f}px  ratio={cfg.get('ratio',0)}")
         elif tvec_marker is None:
             hud.append("마커 미검출 — BASE 좌표 계산 불가")
         for li, txt in enumerate(hud):
@@ -707,7 +717,7 @@ def main():
             elif best_tool is None or best_tool[1] is None:
                 log.warning("[경고] 객체 미선택 또는 BASE 좌표 없음 (마커 검출 확인)")
             else:
-                name, bx, by, _ = best_tool
+                name, bx, by, *_ = best_tool
                 ros.request_verify(name, bx, by)
         elif key == ord('m'):
             if _state["status"] == "MOVING":
