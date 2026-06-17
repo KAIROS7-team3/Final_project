@@ -36,11 +36,11 @@ class StepKind(Enum):
     MOVE_L_TOP_XY       = auto()   # 탑뷰 XY + 고정 Z 이동 — runner가 /vision/tool_top_pose 좌표 사용
     VISUAL_SERVO_XY     = auto()   # 공구 XY 정렬 VS — runner에서 ToolServoController 실행
     MOVE_L_TOOL_XYZ     = auto()   # 그리퍼 캠 XYZ 하강 — runner가 /vision/tool_gripper_pose 좌표 사용
-    MOVE_L_SLOT_XY      = auto()   # 탑뷰 slot XY + 고정 Z 이동 — runner가 /vision/slot_top_pose 좌표 사용
+    MOVE_L_SLOT_XY      = auto()   # return ⑨⑫: toolbox.yaml grasp_pose_base XY + 고정 approach_z 이동
     WAIT_VISION_TOP_XY    = auto()   # fetch: /vision/fetch/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
     WAIT_VISION_RETURN_XY = auto()   # return: /vision/return/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
-    MOVE_L_SLOT_XYZ       = auto()   # 그리퍼 캠 XY + return_z_mm(tool_id별) 로 slot 위치 하강
-    MOVE_L_STAGING_XYZ    = auto()   # 그리퍼 캠 XY + return_z_mm(tool_id별) 로 staging 파지 하강 (return용)
+    MOVE_L_SLOT_XYZ       = auto()   # return ⑩: toolbox.yaml slot XY + return_z_mm 하강
+    MOVE_L_STAGING_XYZ    = auto()   # return ⑥: 그리퍼 캠 XY + staging_pickup_z_mm 하강
 
 
 PickPlaceMarker = Literal["pick", "place"]

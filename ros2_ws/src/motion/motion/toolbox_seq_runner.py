@@ -316,6 +316,11 @@ class ToolboxSeqRunner(Node):
                 for t in cfg.get('tools', [])
                 if 'return_z_mm' in t
             }
+            self._staging_pickup_z_map: dict[str, float] = {
+                t['tool_id']: float(t['staging_pickup_z_mm'])
+                for t in cfg.get('tools', [])
+                if 'staging_pickup_z_mm' in t
+            }
             # 공구별 slot XY (grasp_pose_base, m → mm 변환)
             self._slot_xy_map: dict[str, tuple[float, float]] = {
                 t['tool_id']: (
@@ -343,6 +348,7 @@ class ToolboxSeqRunner(Node):
             self._vis_z_min, self._vis_z_max = -5.0, 700.0
             self._grasp_z_map = {}
             self._return_z_map = {}
+            self._staging_pickup_z_map = {}
             self._slot_xy_map = {}
 
     # ── 콜백 ──────────────────────────────────────────────────────────────
@@ -1044,14 +1050,14 @@ class ToolboxSeqRunner(Node):
             self.get_logger().error(f'  [STAGING_XYZ] rz 비정상값 거부: {pose.rz!r}°')
             return False
 
-        return_z = self._return_z_map.get(self._tool_id)
-        if return_z is None:
+        staging_z = self._staging_pickup_z_map.get(self._tool_id)
+        if staging_z is None:
             self.get_logger().error(
-                f'  [STAGING_XYZ] tool_id={self._tool_id!r} return_z_mm 미등록 — 실행 중단'
+                f'  [STAGING_XYZ] tool_id={self._tool_id!r} staging_pickup_z_mm 미등록 — 실행 중단'
             )
             return False
-        z = return_z
-        self.get_logger().info(f'  [STAGING_XYZ] Z = {z:.2f}mm (toolbox.yaml, tool_id={self._tool_id})')
+        z = staging_z
+        self.get_logger().info(f'  [STAGING_XYZ] Z = {z:.2f}mm (staging_pickup_z_mm, tool_id={self._tool_id})')
 
         if not self._check_vision_coords('STAGING_XYZ', pose.x, pose.y, z):
             return False

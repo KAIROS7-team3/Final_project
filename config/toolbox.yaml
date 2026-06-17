@@ -22,7 +22,7 @@
 # ─────────────────────────────────────────────────────────────────────────
 
 schema:
-  version: 3   # v2 → v3: ArUco 마커 기반 동적 ROI 추가
+  version: 4   # v3 → v4: per-tool return_z_mm / staging_pickup_z_mm 추가
   toolbox:
     required: [origin, slot_size, grid_layers, grid_rows, grid_cols, orientation]
   aruco:
@@ -91,9 +91,9 @@ layer_markers_base:
     y: 0.38717
     z: 0.03713
 
-# ⚠️ TODO: return_z_mm 실측 갱신 필요 (현재 전부 0.0 임시값)
-# - grasp_z_mm : vision_fetch_seq ⑥번 Z값 (tw기준 + 2mm 적용 완료)
-# - return_z_mm: vision_return_seq ⑥⑩번 Z값 — 실측 후 갱신할 것
+# - grasp_z_mm        : vision_fetch_seq ⑥번 Z값 (tw기준 + 2mm 적용 완료)
+# - staging_pickup_z_mm: vision_return_seq ⑥번 Z값 (staging에서 공구 파지) — ⚠️ 실측 후 갱신
+# - return_z_mm       : vision_return_seq ⑩번 Z값 (slot 반납 하강) — tw z + 3mm
 # 참고 원본: Downloads/사물함내부_객체별base좌표.tw (BASE 좌표계, mm)
 #
 # 6종 공구 카탈로그 — 물리 치수·그립 정보만 관리.
@@ -110,8 +110,9 @@ tools:
       x: 0.39242
       y: 0.26422
       z: 0.04265
-    grasp_z_mm: 44.65   # fetch Z (tw기준 + 2mm)
-    return_z_mm: 45.65  # slot 반납 Z (tw z=42.65 + 3mm)
+    grasp_z_mm: 44.65            # fetch Z (tw기준 + 2mm)
+    staging_pickup_z_mm: 45.65  # staging 파지 Z — ⚠️ 실측 후 갱신
+    return_z_mm: 45.65          # slot 반납 Z (tw z=42.65 + 3mm)
     notes: "실측 2026-06-15 (H_jig=3mm H_obj=5mm → grasp_h=11mm)"
 
   - tool_id: utility_knife
@@ -124,8 +125,9 @@ tools:
       x: 0.44547
       y: 0.34787
       z: 0.09987
-    grasp_z_mm: 101.87  # fetch Z (tw기준 + 2mm)
-    return_z_mm: 102.87 # slot 반납 Z (tw z=99.87 + 3mm)
+    grasp_z_mm: 101.87            # fetch Z (tw기준 + 2mm)
+    staging_pickup_z_mm: 102.87  # staging 파지 Z — ⚠️ 실측 후 갱신
+    return_z_mm: 102.87          # slot 반납 Z (tw z=99.87 + 3mm)
     notes: "실측 2026-06-15 (H_jig=4mm H_obj=15mm → grasp_h=23mm)"
 
   - tool_id: ratchet_wrench
@@ -138,8 +140,9 @@ tools:
       x: 0.39761
       y: 0.25850
       z: 0.09732
-    grasp_z_mm: 99.32   # fetch Z (tw기준 + 2mm)
-    return_z_mm: 100.32 # slot 반납 Z (tw z=97.32 + 3mm)
+    grasp_z_mm: 99.32            # fetch Z (tw기준 + 2mm)
+    staging_pickup_z_mm: 100.32  # staging 파지 Z — ⚠️ 실측 후 갱신
+    return_z_mm: 100.32          # slot 반납 Z (tw z=97.32 + 3mm)
     notes: "실측 2026-06-15 (H_jig=13mm H_obj=15mm → grasp_h=41mm)"
 
   - tool_id: multi_tool
@@ -152,8 +155,9 @@ tools:
       x: 0.26128
       y: 0.33282
       z: 0.04959
-    grasp_z_mm: 51.59   # fetch Z (tw기준 + 2mm)
-    return_z_mm: 52.59  # slot 반납 Z (tw z=49.59 + 3mm)
+    grasp_z_mm: 51.59            # fetch Z (tw기준 + 2mm)
+    staging_pickup_z_mm: 52.59  # staging 파지 Z — ⚠️ 실측 후 갱신
+    return_z_mm: 52.59          # slot 반납 Z (tw z=49.59 + 3mm)
     notes: "실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)"
 
   - tool_id: spanner_16mm
@@ -167,8 +171,9 @@ tools:
       x: 0.43720
       y: 0.34831
       z: 0.05340
-    grasp_z_mm: 55.4    # fetch Z (tw기준 + 2mm)
-    return_z_mm: 56.4   # slot 반납 Z (tw z=53.4 + 3mm)
+    grasp_z_mm: 55.4            # fetch Z (tw기준 + 2mm)
+    staging_pickup_z_mm: 56.4  # staging 파지 Z — ⚠️ 실측 후 갱신 (임의값)
+    return_z_mm: 56.4          # slot 반납 Z (tw z=53.4 + 3mm, 임의값)
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: socket_19mm
@@ -190,8 +195,9 @@ tools:
       x: 0.25303
       y: 0.34305
       z: 0.11669
-    grasp_z_mm: 118.69  # fetch Z (tw기준 + 2mm)
-    return_z_mm: 119.69 # slot 반납 Z (tw z=116.69 + 3mm)
+    grasp_z_mm: 118.69            # fetch Z (tw기준 + 2mm)
+    staging_pickup_z_mm: 119.69  # staging 파지 Z — ⚠️ 실측 후 갱신
+    return_z_mm: 119.69          # slot 반납 Z (tw z=116.69 + 3mm)
     notes: "실측 2026-06-15 (H_jig=20mm 추정, H_obj=15mm 노출 → grasp_h=55mm)"
 
 # ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────
@@ -206,7 +212,7 @@ vision_motion:
   workspace_limits:
     x: [50.0, 800.0]
     y: [-600.0, 600.0]
-    z: [-5.0, 700.0]
+    z: [-22.0, 700.0]
 
 # 수락 기준 (docs/conventions.md):
 # - 공구 분류 정확도 ≥ 95% (실험실 조명)
