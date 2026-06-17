@@ -316,12 +316,22 @@ class ToolboxSeqRunner(Node):
                 for t in cfg.get('tools', [])
                 if 'return_z_mm' in t
             }
+            # 공구별 slot XY (grasp_pose_base, m → mm 변환)
+            self._slot_xy_map: dict[str, tuple[float, float]] = {
+                t['tool_id']: (
+                    float(t['grasp_pose_base']['x']) * 1000.0,
+                    float(t['grasp_pose_base']['y']) * 1000.0,
+                )
+                for t in cfg.get('tools', [])
+                if 'grasp_pose_base' in t
+            }
             self.get_logger().info(
                 f'[runner] toolbox.yaml 로드 완료 — '
                 f'approach_z={self._tool_approach_z_mm}mm '
                 f'ws_x=[{self._vis_x_min},{self._vis_x_max}] '
                 f'grasp_z_map={self._grasp_z_map} '
-                f'return_z_map={self._return_z_map}'
+                f'return_z_map={self._return_z_map} '
+                f'slot_xy_map={self._slot_xy_map}'
             )
         except Exception as e:
             self.get_logger().error(f'[runner] toolbox.yaml 로드 실패: {e} — 기본값 사용')
@@ -333,6 +343,7 @@ class ToolboxSeqRunner(Node):
             self._vis_z_min, self._vis_z_max = -5.0, 700.0
             self._grasp_z_map = {}
             self._return_z_map = {}
+            self._slot_xy_map = {}
 
     # ── 콜백 ──────────────────────────────────────────────────────────────
 
@@ -1024,30 +1035,26 @@ class ToolboxSeqRunner(Node):
         return self._movel(step, DR_MV_MOD_ABS)
 
     def _exec_move_l_slot_xyz_return(self) -> bool:
-        """return ⑩: 그리퍼 캠 XY + rz + return_z_mm 로 slot 반납 하강."""
-        with self._return_tool_lock:
-            pose = ToolPose(**vars(self._latest_return_tool))
-        if not pose.valid:
-            self.get_logger().error('  [SLOT_XYZ] 그리퍼 캠 좌표 미수신 (/vision/return/tool_gripper_pose)')
+        """return ⑩: toolbox.yaml slot XY + return_z_mm 로 slot 반납 하강."""
+        slot = self._slot_xy_map.get(self._tool_id)
+        if slot is None:
+            self.get_logger().error(f'  [SLOT_XYZ] tool_id={self._tool_id!r} slot XY 미등록 (toolbox.yaml grasp_pose_base 확인)')
             return False
+        x, y = slot
 
         return_z = self._return_z_map.get(self._tool_id)
         if return_z is not None:
             z = return_z
             self.get_logger().info(f'  [SLOT_XYZ] Z = {z:.2f}mm (toolbox.yaml, tool_id={self._tool_id})')
         else:
-            z = pose.z
-            self.get_logger().warn(
-                f'  [SLOT_XYZ] tool_id={self._tool_id!r} return_z_mm 미등록 — 그리퍼 캠 Z 사용: {z:.2f}mm'
-            )
-
-        if not self._check_vision_coords('SLOT_XYZ', pose.x, pose.y, z):
+            self.get_logger().error(f'  [SLOT_XYZ] tool_id={self._tool_id!r} return_z_mm 미등록')
             return False
-        ori = list(self._tool_descent_ori)
-        ori[2] = pose.rz
-        pos = [pose.x, pose.y, z] + ori
+
+        if not self._check_vision_coords('SLOT_XYZ', x, y, z):
+            return False
+        pos = [x, y, z] + list(self._tool_descent_ori)
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
-        self.get_logger().info(f'  [SLOT_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {z:.1f}) rz={pose.rz:.1f}°')
+        self.get_logger().info(f'  [SLOT_XYZ] → ({x:.1f}, {y:.1f}, {z:.1f}) mm  tool_id={self._tool_id}')
         return self._movel(step, DR_MV_MOD_ABS)
 
     def _get_latest_gripper_tool(self) -> ToolPose:
@@ -1060,23 +1067,17 @@ class ToolboxSeqRunner(Node):
             )
 
     def _exec_move_l_slot_xy(self) -> bool:
-        """⑧⑫: 탑뷰 D455f slot XY + self._tool_approach_z_mm 로 이동."""
-        with self._slot_top_lock:
-            pose = ToolPose(
-                x=self._latest_slot_top.x,
-                y=self._latest_slot_top.y,
-                z=self._latest_slot_top.z,
-                valid=self._latest_slot_top.valid,
-            )
-        if not pose.valid:
-            self.get_logger().error('  [SLOT_XY] slot 좌표 미수신 (/vision/slot_top_pose)')
+        """return ⑨⑫: toolbox.yaml grasp_pose_base XY + approach_z 로 slot 위 이동."""
+        slot = self._slot_xy_map.get(self._tool_id)
+        if slot is None:
+            self.get_logger().error(f'  [SLOT_XY] tool_id={self._tool_id!r} slot XY 미등록 (toolbox.yaml grasp_pose_base 확인)')
             return False
-        # Z 이동 목표는 토픽값이 아닌 고정 approach 높이(tool_approach_z_mm) — pose.z 미사용
-        if not self._check_vision_coords('SLOT_XY', pose.x, pose.y, self._tool_approach_z_mm):
+        x, y = slot
+        if not self._check_vision_coords('SLOT_XY', x, y, self._tool_approach_z_mm):
             return False
-        pos = [pose.x, pose.y, self._tool_approach_z_mm] + list(self._tool_approach_ori)
+        pos = [x, y, self._tool_approach_z_mm] + list(self._tool_approach_ori)
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
-        self.get_logger().info(f'  [SLOT_XY] → ({pose.x:.1f}, {pose.y:.1f}, {self._tool_approach_z_mm:.1f}) mm')
+        self.get_logger().info(f'  [SLOT_XY] → ({x:.1f}, {y:.1f}, {self._tool_approach_z_mm:.1f}) mm  tool_id={self._tool_id}')
         return self._movel(step, DR_MV_MOD_ABS)
 
     def _movel_delta_xy(self, vx: float, vy: float, dt: float) -> bool:

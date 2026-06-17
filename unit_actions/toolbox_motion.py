@@ -558,7 +558,7 @@ def vision_return_seq() -> list[Step]:
         mj_abs(VISION_RETURN_SCAN_J),               # ③ 그리퍼 캠 스캔 자세
         Step(kind=StepKind.WAIT_VISION_RETURN_XY),   # ④ /vision/return/tool_gripper_pose 수신 대기
         Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + rz + 고정 Z (staging 위)
-        Step(kind=StepKind.MOVE_L_STAGING_XYZ),     # ⑥ 그리퍼 캠 XY + rz + return_z_mm 하강
+        Step(kind=StepKind.MOVE_L_STAGING_XYZ),     # ⑥ 그리퍼 캠 XY + rz + Z (⚠️ TODO: staging pickup Z 실측 후 갱신)
         GRIP_SOCKET(),                              # ⑦
         Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑧ 그리퍼 캠 XY + 고정 Z 상승
         Step(kind=StepKind.MOVE_L_SLOT_XY),         # ⑨ 그리퍼 캠 XY + 고정 Z (slot 위)
