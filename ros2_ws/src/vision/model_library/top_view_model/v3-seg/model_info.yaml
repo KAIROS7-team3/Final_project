@@ -10,7 +10,7 @@
 #   - 기존 bbox 데이터셋을 SAM (Segment Anything Model)으로 마스크 변환
 #   - 변환된 COCO Segmentation 포맷 데이터셋을 Roboflow에 업로드
 #   - Roboflow Train (YOLOv11 Instance Segmentation Nano) 학습
-#   - mAP@50: 0.977 (v3-2 detection 0.952 대비 향상)
+#   - mAP@50(box): 0.9728 / mAP@50(mask): 0.9563 — Kaggle T4 100epoch 최종값
 # =============================================================================
 
 version: v3-seg
@@ -40,7 +40,9 @@ dataset:
     test: 93
   roboflow:
     workspace: "yeonseop9999-gmail-com"
-    project: "final-project-seg"  # 인스턴스 세그멘테이션 전용 프로젝트
+    # 데이터셋 소스(data.yaml): final-project_segmentation
+    # 배포 모델(model_id): final-project-seg — 학습 후 별도 프로젝트에 배포
+    project: "final-project-seg"
     version: 1
   conversion:
     method: "SAM (Segment Anything Model) — bbox prompt → mask"

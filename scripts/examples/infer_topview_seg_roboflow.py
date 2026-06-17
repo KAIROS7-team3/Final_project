@@ -109,14 +109,14 @@ def run_camera(model, conf: float) -> None:
             color  = np.asanyarray(frames.get_color_frame().get_data())  # type: ignore[name-defined]
 
             result = model.infer(color, confidence=conf)[0]
-            annotate_and_show(color, result, "TopView Seg — s:스냅샷  q:종료")
+            annotated = annotate_and_show(color, result, "TopView Seg — s:스냅샷  q:종료")
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
             if key == ord("s"):
                 out = _SNAPSHOT_DIR / f"seg_snap_{snap_idx:03d}.jpg"
-                cv2.imwrite(str(out), color)
+                cv2.imwrite(str(out), annotated)
                 logger.info("스냅샷 저장: %s", out)
                 snap_idx += 1
     finally:
