@@ -1,4 +1,4 @@
-"""unit tests — vision.marker_scan_node (ROS2-free, PR #49 재검토 반영분).
+"""unit tests — vision.gripper_marker_scan_node (ROS2-free, PR #49 재검토 반영분).
 
 대상:
   - _quat_to_rot          : 쿼터니언 → 회전행렬
@@ -14,7 +14,7 @@ import pytest
 
 import conftest  # noqa: F401 — activates ROS2 stubs
 
-from vision.marker_scan_node import (
+from vision.gripper_marker_scan_node import (
     MarkerScanNode,
     _quat_to_rot,
     _select_drawer_marker,
