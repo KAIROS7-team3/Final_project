@@ -75,6 +75,8 @@ from unit_actions.toolbox_motion import (
     home_seq,
     drawer_open_seq,
     drawer_close_seq,
+    drawer_open_seq_v2,
+    drawer_close_seq_v2,
     socket_fetch_seq,
     socket_return_seq,
     vision_fetch_seq,
@@ -122,6 +124,7 @@ class ToolboxSeqRunner(Node):
 
         self.declare_parameter('robot_ns', 'dsr01')
         self.declare_parameter('sequence', 'open_0')
+        self.declare_parameter('mode', 'virtual')
         self.declare_parameter('tcp_name', 'GripperDA_v1')
         self.declare_parameter('tool_id', '')        # S-2: fetch/return 시퀀스에 필수
         self.declare_parameter('db_path', 'robot_arm.db')
@@ -147,6 +150,7 @@ class ToolboxSeqRunner(Node):
 
         ns          = self.get_parameter('robot_ns').get_parameter_value().string_value
         seq_name    = self.get_parameter('sequence').get_parameter_value().string_value
+        self._mode     = self.get_parameter('mode').get_parameter_value().string_value
         self._tcp_name = self.get_parameter('tcp_name').get_parameter_value().string_value
         self._tool_id  = self.get_parameter('tool_id').get_parameter_value().string_value
         db_path        = self.get_parameter('db_path').get_parameter_value().string_value
@@ -405,6 +409,7 @@ class ToolboxSeqRunner(Node):
             self.get_logger().error(f'[runner] 알 수 없는 sequence: {self._seq_name}')
             self.get_logger().error(
                 '[runner] 사용 가능: home open_0 close_0 open_1 close_1 '
+                'open_0v2 close_0v2 open_1v2 close_1v2 '
                 'socket_fetch socket_return vision_fetch vision_return '
                 'vision_open_0 vision_open_1 vision_close_0 vision_close_1'
             )
@@ -597,6 +602,10 @@ class ToolboxSeqRunner(Node):
             'close_0':       lambda: drawer_close_seq(0),
             'open_1':        lambda: drawer_open_seq(1),
             'close_1':       lambda: drawer_close_seq(1),
+            'open_0v2':      lambda: drawer_open_seq_v2(0),
+            'close_0v2':     lambda: drawer_close_seq_v2(0),
+            'open_1v2':      lambda: drawer_open_seq_v2(1),
+            'close_1v2':     lambda: drawer_close_seq_v2(1),
             'socket_fetch':  lambda: socket_fetch_seq(),
             'socket_return': lambda: socket_return_seq(),
         }
@@ -668,12 +677,19 @@ class ToolboxSeqRunner(Node):
             rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
             res = fut.result()
             if res is None or not getattr(res, 'success', True):
-                self.get_logger().error(
-                    f'[runner] set_current_tcp 응답 실패: name={name} '
-                    f'msg={getattr(res, "message", "timeout")}'
-                )
-                return False
-            self.get_logger().info(f'[runner] TCP 활성화 완료: {name}')
+                msg = getattr(res, 'message', 'timeout')
+                if self._mode == 'virtual':
+                    # virtual 모드: home_on_start가 이미 TCP를 설정했으므로 non-fatal
+                    self.get_logger().warn(
+                        f'[runner] set_current_tcp 응답 실패 (virtual — 무시): name={name} msg={msg}'
+                    )
+                else:
+                    self.get_logger().error(
+                        f'[runner] set_current_tcp 응답 실패: name={name} msg={msg}'
+                    )
+                    return False
+            else:
+                self.get_logger().info(f'[runner] TCP 활성화 완료: {name}')
             return True
 
         except Exception as e:

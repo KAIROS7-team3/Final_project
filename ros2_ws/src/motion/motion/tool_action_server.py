@@ -150,7 +150,7 @@ class ToolActionServer(Node):
         self._plc_pub = self.create_publisher(String, "/plc/system_state", 1)
 
         # ── 상태 ──────────────────────────────────────────────────────────
-        self._estop_latch: bool = False  # E-stop 래치 (set 후 reset 전까지 모든 동작 거부)
+        self._estop_latch = threading.Event()  # E-stop 래치 (set 후 reset 전까지 모든 동작 거부)
         self._action_lock = threading.Lock()  # 동시 액션 방지
 
         # ── 액션 서버 ─────────────────────────────────────────────────────

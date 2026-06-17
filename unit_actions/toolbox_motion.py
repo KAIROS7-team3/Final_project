@@ -127,6 +127,18 @@ LAYER0_OPENDOWN:       list = [378.88, 243.86, 55.45, 90.0, 90.0, 90.0]
 LAYER0_CLOSE_END:      list = LAYER0_INNER
 
 
+# ── layer 0 v2 (1층 서랍, toolboxapproach_box1_{open,close}_v2.tw) ───────
+# x 좌표 수정 (378.88 → 369.0), open/silence/opendown y 조정 (243.86 → 213.86)
+# setup_j / close_setup_j 는 v1과 동일
+
+LAYER0_V2_APPROACH:    list = [369.0, 433.02, 65.45, 90.0, 90.0, 90.0]
+LAYER0_V2_OPEN:        list = [369.0, 213.86, 65.46, 90.0, 90.0, 90.0]
+LAYER0_V2_SILENCE:     list = [369.0, 213.86, 56.43, 90.0, 90.0, 90.0]
+LAYER0_V2_INNER:       list = [369.0, 169.1,  50.45, 90.0, 90.0, 90.0]
+LAYER0_V2_OPENDOWN:    list = [369.0, 213.86, 55.45, 90.0, 90.0, 90.0]
+LAYER0_V2_CLOSE_END:   list = LAYER0_V2_INNER
+
+
 # ── layer 1 (2층 서랍) ────────────────────────────────────────────────────
 # 출처: toolboxapproach_box2_open.tw / toolboxapproach_box2_close.tw
 
@@ -151,6 +163,18 @@ LAYER1_CLOSE_END:      list = [380.61, 291.56, 115.7,  89.99, 89.99, 90.0]
 
 # layer_height_z 실측: 115.68 - 65.45 ≈ 50 mm (toolbox.yaml layer_height_z 갱신 필요)
 LAYER_HEIGHT_Z_MM: float = 115.68 - 65.45   # ≈ 50.23 mm
+
+
+# ── layer 1 v2 (2층 서랍, toolboxapproach_box2_{open,close}_v2.tw) ───────
+# x 좌표 수정 (380.5x → 369.0), open/silence/opendown y 조정 (237.79 → 213.86)
+# setup_j / close_setup_j 는 v1과 동일
+
+LAYER1_V2_APPROACH:    list = [369.0, 427.51, 115.68, 90.0, 90.0, 90.0]
+LAYER1_V2_OPEN:        list = [369.0, 213.86, 115.69, 90.0, 90.0, 90.0]
+LAYER1_V2_SILENCE:     list = [369.0, 213.86, 106.7,  90.0, 90.0, 90.0]
+LAYER1_V2_INNER:       list = [369.0, 165.94, 103.69, 90.0, 90.0, 90.0]
+LAYER1_V2_OPENDOWN:    list = [369.0, 213.86, 103.69, 90.0, 90.0, 90.0]
+LAYER1_V2_CLOSE_END:   list = [369.0, 291.56, 115.7,  89.99, 89.99, 90.0]
 
 
 # ── 공구 접근 파라미터 ──────────────────────────────────────────────────────────
@@ -191,6 +215,29 @@ _LAYER_WP = {
     },
 }
 
+_LAYER_WP_V2 = {
+    0: {
+        "setup_j":       LAYER0_SETUP_J,
+        "close_setup_j": LAYER0_CLOSE_SETUP_J,
+        "approach":      LAYER0_V2_APPROACH,
+        "open":          LAYER0_V2_OPEN,
+        "silence":       LAYER0_V2_SILENCE,
+        "inner":         LAYER0_V2_INNER,
+        "opendown":      LAYER0_V2_OPENDOWN,
+        "close_end":     LAYER0_V2_CLOSE_END,
+    },
+    1: {
+        "setup_j":       LAYER1_SETUP_J,
+        "close_setup_j": LAYER1_CLOSE_SETUP_J,
+        "approach":      LAYER1_V2_APPROACH,
+        "open":          LAYER1_V2_OPEN,
+        "silence":       LAYER1_V2_SILENCE,
+        "inner":         LAYER1_V2_INNER,
+        "opendown":      LAYER1_V2_OPENDOWN,
+        "close_end":     LAYER1_V2_CLOSE_END,
+    },
+}
+
 
 # ── Step 헬퍼 팩토리 (chamjo 동일) ────────────────────────────────────────
 
@@ -226,6 +273,12 @@ def _wp(layer: int, key: str) -> list:
     if layer not in _LAYER_WP:
         raise ValueError(f"layer는 0 또는 1만 지원: {layer}")
     return _LAYER_WP[layer][key]
+
+
+def _wp_v2(layer: int, key: str) -> list:
+    if layer not in _LAYER_WP_V2:
+        raise ValueError(f"layer는 0 또는 1만 지원: {layer}")
+    return _LAYER_WP_V2[layer][key]
 
 
 def drawer_open_seq(
@@ -297,6 +350,44 @@ def drawer_close_seq(
         ml_abs(_wp(layer, "approach")),
         GRIP_RELEASE(),
         ml_abs(close_end),
+        JOINT_HOME(),
+    ]
+
+
+def drawer_open_seq_v2(layer: int) -> list[Step]:
+    """서랍 열기 시퀀스 v2 (toolboxapproach_box{n}_{open,close}_v2.tw 기준).
+
+    v1 대비 변경: x=369.0mm, open/silence/opendown y 좌표 조정.
+    layer: 0 = 1층, 1 = 2층
+    """
+    return [
+        GRIP_RELEASE(),
+        mj_abs(_wp_v2(layer, "setup_j")),
+        ml_abs(_wp_v2(layer, "approach")),
+        GRIP_BOX(),
+        ml_abs(_wp_v2(layer, "open")),
+        ml_abs(_wp_v2(layer, "silence")),
+        GRIP_RELEASE(),
+        ml_abs(_wp_v2(layer, "inner")),
+        JOINT_HOME(),
+    ]
+
+
+def drawer_close_seq_v2(layer: int) -> list[Step]:
+    """서랍 닫기 시퀀스 v2 (toolboxapproach_box{n}_{open,close}_v2.tw 기준).
+
+    v1 대비 변경: x=369.0mm, open/silence/opendown y 좌표 조정.
+    layer: 0 = 1층, 1 = 2층
+    """
+    return [
+        GRIP_RELEASE(),
+        mj_abs(_wp_v2(layer, "close_setup_j")),
+        ml_abs(_wp_v2(layer, "opendown")),
+        GRIP_BOX(),
+        ml_abs(_wp_v2(layer, "open")),
+        ml_abs(_wp_v2(layer, "approach")),
+        GRIP_RELEASE(),
+        ml_abs(_wp_v2(layer, "close_end")),
         JOINT_HOME(),
     ]
 
