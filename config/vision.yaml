@@ -7,9 +7,10 @@
 yolo:
   # 탑뷰(D455f)와 그리퍼(C270)는 촬영 시점이 달라 별도 모델 학습 필요
   # 그리퍼 모델 학습 완료 전: null → 노드 기동은 되나 추론 비활성화
-  # v3-2: 1574장, mAP50=0.952, EarlyStopping ep145 — 현재 운용 버전
-  top_view_model_path: ros2_ws/src/vision/model_library/top_view_model/v3-2/weights/best.pt
-  gripper_model_path: null     # C270 그리퍼 시점 학습 모델 (runs/yolo/gripper_v1/weights/best.pt)
+  # v3-seg: 세그멘테이션 모델 (YOLOv11n-seg), mAP50=0.977 — 현재 운용 버전
+  # v3-2(detection): ros2_ws/src/vision/model_library/top_view_model/v3-2/weights/best.pt
+  top_view_model_path: ros2_ws/src/vision/model_library/top_view_model/v3-seg/weights/best.pt
+  gripper_model_path: ros2_ws/src/vision/model_library/gripper_model/v1/weights/best.pt
   confidence_threshold: 0.70   # 수락 기준: 공구 분류 정확도 ≥ 95% (docs/conventions.md)
   iou_threshold: 0.45
   device: "cuda"               # "cuda" | "cpu" (GPU 없을 시 cpu로 변경)
@@ -20,12 +21,13 @@ yolo:
   # robot_arm.db tools 테이블 tool_id와 일치 필수
   # ⚠️ v2부터 알파벳순 (Roboflow 기준) — v1과 인덱스 다름, 혼용 금지
   class_names:
-    - multi_tool     # 0  멕가이버
-    - ratchet_wrench # 1  라쳇 렌치
-    - screwdriver    # 2  십자 드라이버
-    - socket_19mm    # 3  복스 소켓 19mm
-    - spanner_16mm   # 4  스패너 16mm
-    - utility_knife  # 5  커터칼
+    - multi_tool       # 0  멕가이버
+    - ratchet_wrench   # 1  라쳇 렌치
+    - screwdriver      # 2  십자 드라이버
+    - socket_19mm      # 3  복스 소켓 19mm (측면)
+    - socket_19mm_top  # 4  복스 소켓 19mm (상면) — gripper_model v2 신규 (2026-06-17)
+    - spanner_16mm     # 5  스패너 16mm
+    - utility_knife    # 6  커터칼
 
 tracker:
   min_hits: 3          # 트랙 확정까지 필요한 연속 검출 프레임 수
@@ -35,11 +37,12 @@ tracker:
 
 aruco:
   # ArUco 마커 스캔 설정 — MarkerScanNode 전용
-  # scripts/aruco_markers/ 에서 생성한 마커와 동일 딕셔너리 사용 필수
+  # scripts/multi_item/markers/ 에서 생성한 마커와 동일 딕셔너리 사용 필수
   dictionary: "DICT_4X4_50"
 
   # 실제 인쇄된 마커 한 변 길이 [m] — 오차 ±1mm 이내로 측정
-  # 현재 출력본: 5×5 cm (scripts/aruco_markers/ ID 0·1·2)
+  # 천장 마커: ID 2, 5×5cm / 전면 마커: ID 0, 5×5cm (toolbox.yaml aruco_front)
+  # ↑ 전면 마커도 5cm. (구버전 주석 "4cm" 오기 — 2026-06-17 정정)
   marker_size_m: 0.05
 
   # 마커 중심 기준 공구 place 허용 반경 [mm]
@@ -55,3 +58,16 @@ aruco:
 debug:
   # /vision/debug/annotated 발행 여부 (운영 시 false 권장)
   publish_annotated_image: true
+
+grasp_offset:
+  # PCA 주축 방향으로 centroid에서 offset할 공구별 설정 (infer_c270_centroid.py)
+  # ratio: 공구 전체 길이(픽셀) 대비 비율 / toward_narrow: true=손잡이 쪽, false=넓은 쪽
+  screwdriver:
+    ratio: 0.30
+    toward_narrow: true
+  ratchet_wrench:
+    ratio: 0.10
+    toward_narrow: false
+  utility_knife:
+    ratio: 0.20
+    toward_narrow: true

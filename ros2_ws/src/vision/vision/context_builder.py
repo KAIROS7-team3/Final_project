@@ -2,6 +2,8 @@
 
 Subscribe : /vision/tracked_poses  (vision_msgs/Detection3DArray)
 Publish   : /vision/scene_context  (std_msgs/String, JSON)
+            /vision/slot_top_pose  (geometry_msgs/PointStamped)
+              — 빈 슬롯 중 첫 번째의 base_link XYZ [m]. 빈 슬롯 없으면 발행 중단.
 
 Gemma 4 의도 분류 노드(voice/)와 orchestrator(BT)가 이 JSON을 소비한다.
 tool 위치를 toolbox.yaml 슬롯 좌표와 대조해 슬롯 점유 정보를 생성한다.
@@ -34,9 +36,10 @@ from typing import Any
 import numpy as np
 import rclpy
 import yaml
+from geometry_msgs.msg import PointStamped
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
-from std_msgs.msg import String
+from std_msgs.msg import Header, String
 from vision_msgs.msg import Detection3DArray
 
 from vision.hand_eye_loader import HandEyeNotCalibratedError, load_transform
@@ -114,6 +117,9 @@ class ContextBuilder(Node):
         )
         # interfaces.md §4: Reliable / depth 1 (orchestrator 소비)
         self._pub = self.create_publisher(String, "/vision/scene_context", _QOS_RELIABLE_1)
+        self._slot_top_pub = self.create_publisher(
+            PointStamped, "/vision/slot_top_pose", _QOS_BEST_EFFORT_5
+        )
 
         self.get_logger().info(
             f"[context_builder] ready - slots={len(self._slots)} "
@@ -161,6 +167,7 @@ class ContextBuilder(Node):
             })
 
         empty = [s for s in self._all_slots if s not in occupied]
+        self._publish_slot_top_pose(msg.header, empty)
         summary = self._build_summary(tools_visible, empty)
 
         scene: dict[str, Any] = {
@@ -180,6 +187,27 @@ class ContextBuilder(Node):
             f"[context_builder] scene published - visible={len(tools_visible)} "
             f"occupied={len(occupied)} empty={len(empty)}"
         )
+
+    def _publish_slot_top_pose(self, header: Header, empty_slots: list[list[int]]) -> None:
+        """빈 슬롯 중 첫 번째의 중심 좌표를 /vision/slot_top_pose로 발행.
+
+        빈 슬롯 없으면 발행 중단 — motion 팀이 이전 좌표로 수렴하는 것을 방지.
+        """
+        if not empty_slots:
+            return
+
+        row, col = empty_slots[0]
+        slot_info = next((s for s in self._slots if s.row == row and s.col == col), None)
+        if slot_info is None:
+            return
+
+        pt = PointStamped()
+        pt.header = header
+        pt.header.frame_id = "base_link"
+        pt.point.x = float(slot_info.center[0])
+        pt.point.y = float(slot_info.center[1])
+        pt.point.z = float(slot_info.center[2])
+        self._slot_top_pub.publish(pt)
 
     @staticmethod
     def _build_summary(tools: list[dict], empty_slots: list[list[int]]) -> str:

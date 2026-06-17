@@ -69,12 +69,19 @@ log/
 *.log
 
 # 캘리브레이션 결과 (장비별 로컬 값, git 제외)
+config/hand_eye.yaml
+config/c270_hand_eye.yaml
 
 # 캘리브레이션 샘플 이미지 (로컬 수집 데이터, git 제외)
 scripts/samples/
 scripts/samples_c270/
 scripts/samples_c270_calib/
 scripts/samples_c270_handeye/
+scripts/c270_handeye_auto_frames*/
+
+# 캘리브레이션 raw 데이터 (npz — 로컬 수집본, 재현 가능, git 제외)
+scripts/*_data.npz
+scripts/*_data_*.npz
 
 # verify_camera.py 출력 이미지 (로컬 검증용)
 verify_rgb.png
@@ -87,6 +94,22 @@ datasets/tools/**/train/
 datasets/tools/**/valid/
 datasets/tools/**/test/
 datasets/tools/top_view/auto_labels/
+
+# SAM 변환 결과물 (246MB, Roboflow 업로드 완료 — 로컬 전용)
+Final_project_coco_segmentation/
+
+# 세그멘테이션 학습 데이터셋 이미지 (Roboflow 관리 — 로컬 전용, data.yaml만 추적)
+datasets/tools/top_view_seg/train/
+datasets/tools/top_view_seg/valid/
+datasets/tools/top_view_seg/test/
+datasets/tools/top_view_seg/README*.txt
+
+# 핸드아이 캘리브레이션 수집 데이터 (로컬 전용)
+scripts/*.npz
+
+# tcp_calib 백업 데이터 (720p raw 이미지·npz, 재수집 가능 — 로컬 전용)
+scripts/tcp_calib/images_backup_720p/
+scripts/tcp_calib/*.npz
 
 # YOLO 학습 결과물
 runs/

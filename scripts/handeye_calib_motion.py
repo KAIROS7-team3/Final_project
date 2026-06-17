@@ -84,6 +84,7 @@ def main() -> None:
     print('조작: Enter=샘플 저장 후 다음 | s=스킵 | q=종료 | Ctrl+C=즉시 종료')
     print('그룹 A(위치) / B(J4) / C(J5) / D(J6) / E(복합)\n')
 
+    GROUPS = [('A', 10), ('B', 8), ('C', 8), ('D', 6), ('E', 5)]
     _boundaries: list[int] = []
     _acc = 0
     for _, count in GROUPS:

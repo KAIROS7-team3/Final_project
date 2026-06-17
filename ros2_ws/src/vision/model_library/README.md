@@ -41,13 +41,23 @@ gdown "<drive_url>" -O ros2_ws/src/vision/model_library/top_view_model/v2/weight
 
 ## 현재 운용 버전
 
-| 카메라 | 버전 | mAP@0.5 | 상태 |
-|--------|------|---------|------|
-| top_view (D455f) | v2 | 0.973 | ✅ 운용 중 |
-| gripper_view (C270) | — | — | ⏳ 미학습 |
+| 카메라 | 버전 | 태스크 | mAP@0.5 | 상태 |
+|--------|------|--------|---------|------|
+| top_view (D455f) | v3-2 | Detection | 0.952 | ✅ 운용 중 |
+| top_view (D455f) | v3-seg | Segmentation | 0.977 | 🆕 검증 대기 |
+| gripper_view (C270) | — | — | — | ⏳ 미학습 |
 
 운용 버전은 각 `model_info.yaml`의 `active: true` 항목 기준.  
 `config/vision.yaml`의 `top_view_model_path`가 실제 사용 경로.
+
+### v3-seg 전환 절차
+
+v3-seg 검증 완료 후 아래 절차로 운용 버전 교체:
+
+1. `top_view_model/v3-seg/model_info.yaml` → `active: true`
+2. `top_view_model/v3-2/model_info.yaml` → `active: false`
+3. `config/vision.yaml` → `top_view_model_path` 경로 변경
+4. `infer_topview_demo.py`로 실물 공구 검출 확인
 
 ---
 

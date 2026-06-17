@@ -1,27 +1,26 @@
-calibration_date: '2026-06-09'
-frames:
-  from: c270_optical_frame
-  to: link_6
-method: PARK
-rotation_matrix:
-  - - -0.9976438203535885
-    - -0.0636249886999128
-    - -0.02566453824316136
-  - - 0.06830122061119187
-    - -0.8858644933263732
-    - -0.4588889219916218
-  - - 0.006461499308999185
-    - -0.4595606165420912
-    - 0.8881229018272944
-sample_count: 23
+---
 schema_version: 1
 transformation:
   rotation:
-    w: 0.033965379974816676
-    x: -0.004943964641111809
-    y: -0.23646163811489704
-    z: 0.971034398915308
+    x: -0.01094388021451101
+    y: -0.25546487440277205
+    z: 0.9665831468813888
+    w: 0.01830162826357165
   translation:
-    x: -0.0009367702928667627
-    y: 0.048490594211241446
-    z: -0.07490621607406711
+    x: 9.088485935019892e-05
+    y: 0.044299210481224115
+    z: -0.07388288702640008
+metadata:
+  calibration_date: '2026-06-16'
+  sample_count: 26
+  method: calibrateHandEye_PARK
+  axb_mean_mm: 2.0751220046498497
+  axb_max_mm: 5.203629090363767
+  cam_tilt_deg: 29.63003756086914
+  cam_height_m: -0.07388288702640008
+  operator: null
+  tool: c270_handeye_collect.py + compute_handeye_opencv.py
+  frames:
+    from: c270_optical_frame
+    to: link_6
+    note: 'T_cam2gripper: camera origin expressed in link_6 frame'

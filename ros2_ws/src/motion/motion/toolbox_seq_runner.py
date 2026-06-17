@@ -5,7 +5,7 @@ toolbox_motion.py 시퀀스를 virtual/real 모드에서 실행하는 테스트 
 실행:
   ros2 run motion toolbox_seq_runner --ros-args -p sequence:=open_0
   ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch \\
-    -p tool_id:=screwdriver_phillips_small -p vision_x_mm:=300.0 ...
+    -p tool_id:=screwdriver -p vision_x_mm:=300.0 ...
 
   sequence 옵션:
     open_0  / close_0  — layer 0 (1층 서랍)
@@ -27,7 +27,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
+from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy, qos_profile_sensor_data
 from std_msgs.msg import Bool
 from geometry_msgs.msg import PointStamped, PoseStamped
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
@@ -239,29 +239,27 @@ class ToolboxSeqRunner(Node):
         )
 
         # VS (서랍 손잡이): /vision/handle_pose 구독
-        # ⚠️ 비전팀 확인 필요: 토픽명 확정
         self._handle_sub = self.create_subscription(
-            PointStamped, '/vision/handle_pose', self._on_handle_pose, 10,
-            callback_group=self._cb_group,
+            PointStamped, '/vision/handle_pose', self._on_handle_pose,
+            qos_profile_sensor_data, callback_group=self._cb_group,
         )
 
         # fetch 스캔 자세에서 찍은 공구 좌표 (XY + rz) — vision_fetch_seq ④
         self._fetch_tool_sub = self.create_subscription(
-            PoseStamped, '/vision/fetch/tool_gripper_pose', self._on_fetch_tool_pose, 10,
-            callback_group=self._cb_group,
+            PoseStamped, '/vision/fetch/tool_gripper_pose', self._on_fetch_tool_pose,
+            qos_profile_sensor_data, callback_group=self._cb_group,
         )
 
         # return 스캔 자세에서 찍은 공구 좌표 (XY + rz) — vision_return_seq ④
         self._return_tool_sub = self.create_subscription(
-            PoseStamped, '/vision/return/tool_gripper_pose', self._on_return_tool_pose, 10,
-            callback_group=self._cb_group,
+            PoseStamped, '/vision/return/tool_gripper_pose', self._on_return_tool_pose,
+            qos_profile_sensor_data, callback_group=self._cb_group,
         )
 
         # VS (slot 반납): slot rough XY (⑨번 이동용)
-        # ⚠️ 비전팀 확인 필요: 토픽명·메시지 타입 확정
         self._slot_top_sub = self.create_subscription(
-            PointStamped, '/vision/slot_top_pose', self._on_slot_top_pose, 10,
-            callback_group=self._cb_group,
+            PointStamped, '/vision/slot_top_pose', self._on_slot_top_pose,
+            qos_profile_sensor_data, callback_group=self._cb_group,
         )
 
         # S-2: DB 클라이언트 — fetch/return 실행 전 feasibility 판정
