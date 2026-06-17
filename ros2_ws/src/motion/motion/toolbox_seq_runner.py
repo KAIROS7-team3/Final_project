@@ -308,10 +308,17 @@ class ToolboxSeqRunner(Node):
             self._vis_x_min, self._vis_x_max = float(x[0]), float(x[1])
             self._vis_y_min, self._vis_y_max = float(y[0]), float(y[1])
             self._vis_z_min, self._vis_z_max = float(z[0]), float(z[1])
+            # 공구별 grasp_z_mm 딕셔너리 로드
+            self._grasp_z_map: dict[str, float] = {
+                t['tool_id']: float(t['grasp_z_mm'])
+                for t in cfg.get('tools', [])
+                if 'grasp_z_mm' in t
+            }
             self.get_logger().info(
                 f'[runner] toolbox.yaml 로드 완료 — '
                 f'approach_z={self._tool_approach_z_mm}mm '
-                f'ws_x=[{self._vis_x_min},{self._vis_x_max}]'
+                f'ws_x=[{self._vis_x_min},{self._vis_x_max}] '
+                f'grasp_z_map={self._grasp_z_map}'
             )
         except Exception as e:
             self.get_logger().error(f'[runner] toolbox.yaml 로드 실패: {e} — 기본값 사용')
@@ -321,6 +328,7 @@ class ToolboxSeqRunner(Node):
             self._vis_x_min, self._vis_x_max = 50.0, 800.0
             self._vis_y_min, self._vis_y_max = -600.0, 600.0
             self._vis_z_min, self._vis_z_max = -5.0, 700.0
+            self._grasp_z_map = {}
 
     # ── 콜백 ──────────────────────────────────────────────────────────────
 
@@ -649,6 +657,8 @@ class ToolboxSeqRunner(Node):
             return self._exec_move_l_tool_xyz()
         elif step.kind == StepKind.MOVE_L_SLOT_XY:
             return self._exec_move_l_slot_xy()
+        elif step.kind == StepKind.WAIT_VISION_TOP_XY:
+            return self._exec_wait_vision_top_xy()
         self.get_logger().warn(f'  알 수 없는 StepKind: {step.kind}')
         return False
 
@@ -816,8 +826,28 @@ class ToolboxSeqRunner(Node):
 
     # ── 공구 접근 VS (vision_fetch) ───────────────────────────────────────────
 
+    def _exec_wait_vision_top_xy(self, timeout_sec: float = 5.0) -> bool:
+        """④: 탑뷰 캐시 초기화 후 /vision/tool_top_pose 신규 수신 대기."""
+        with self._top_tool_lock:
+            self._latest_top_tool = ToolPose(x=0.0, y=0.0, z=0.0, valid=False)
+        self.get_logger().info('  [WAIT_VIS] 탑뷰 공구 좌표 대기 중...')
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            with self._top_tool_lock:
+                if self._latest_top_tool.valid:
+                    p = self._latest_top_tool
+                    self.get_logger().info(
+                        f'  [WAIT_VIS] 수신 완료 → ({p.x:.1f}, {p.y:.1f}) mm'
+                    )
+                    return True
+            time.sleep(0.05)
+        self.get_logger().error(
+            f'  [WAIT_VIS] 탑뷰 좌표 수신 타임아웃 ({timeout_sec:.0f}s) — /vision/tool_top_pose 확인 필요'
+        )
+        return False
+
     def _exec_move_l_top_xy(self) -> bool:
-        """③⑦: 탑뷰 D455f XY + self._tool_approach_z_mm 로 이동."""
+        """⑤⑧: 탑뷰 D455f XY + self._tool_approach_z_mm 로 이동."""
         with self._top_tool_lock:
             pose = ToolPose(
                 x=self._latest_top_tool.x,
@@ -887,7 +917,7 @@ class ToolboxSeqRunner(Node):
         return False
 
     def _exec_move_l_tool_xyz(self) -> bool:
-        """⑤: 그리퍼 캠 C270 XYZ 로 공구 위치까지 하강."""
+        """⑥: 그리퍼 캠 XY + toolbox.yaml grasp_z_mm(tool_id별) 로 공구 위치까지 하강."""
         with self._gripper_tool_lock:
             pose = ToolPose(
                 x=self._latest_gripper_tool.x,
@@ -898,11 +928,23 @@ class ToolboxSeqRunner(Node):
         if not pose.valid:
             self.get_logger().error('  [TOOL_XYZ] 그리퍼 캠 공구 좌표 미수신 (/vision/tool_gripper_pose)')
             return False
-        if not self._check_vision_coords('TOOL_XYZ', pose.x, pose.y, pose.z):
+
+        # Z: toolbox.yaml grasp_z_mm 우선 사용, 없으면 그리퍼 캠 Z 폴백
+        grasp_z = self._grasp_z_map.get(self._tool_id)
+        if grasp_z is not None:
+            z = grasp_z
+            self.get_logger().info(f'  [TOOL_XYZ] Z = {z:.2f}mm (toolbox.yaml, tool_id={self._tool_id})')
+        else:
+            z = pose.z
+            self.get_logger().warn(
+                f'  [TOOL_XYZ] tool_id={self._tool_id!r} grasp_z_mm 미등록 — 그리퍼 캠 Z 사용: {z:.2f}mm'
+            )
+
+        if not self._check_vision_coords('TOOL_XYZ', pose.x, pose.y, z):
             return False
-        pos = [pose.x, pose.y, pose.z] + list(self._tool_descent_ori)
+        pos = [pose.x, pose.y, z] + list(self._tool_descent_ori)
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
-        self.get_logger().info(f'  [TOOL_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {pose.z:.1f}) mm')
+        self.get_logger().info(f'  [TOOL_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {z:.1f}) mm')
         return self._movel(step, DR_MV_MOD_ABS)
 
     def _get_latest_gripper_tool(self) -> ToolPose:

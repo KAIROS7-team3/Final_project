@@ -62,6 +62,7 @@ tools:
     dimensions: {length: 0.180, diameter: 0.020}
     mass_kg: 0.080
     grasp_approach: top
+    grasp_z_mm: 44.65   # 사물함내부_객체별base좌표.tw 기준 + 2mm
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: utility_knife
@@ -70,6 +71,7 @@ tools:
     dimensions: {length: 0.160, width: 0.030, height: 0.015}
     mass_kg: 0.070
     grasp_approach: top
+    grasp_z_mm: 101.87  # 사물함내부_객체별base좌표.tw 기준 + 2mm
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: ratchet_wrench
@@ -78,6 +80,7 @@ tools:
     dimensions: {length: 0.200, width: 0.040, height: 0.030}
     mass_kg: 0.250
     grasp_approach: top
+    grasp_z_mm: 99.32   # 사물함내부_객체별base좌표.tw 기준 + 2mm
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: multi_tool
@@ -86,6 +89,7 @@ tools:
     dimensions: {length: 0.110, width: 0.035, height: 0.020}
     mass_kg: 0.180
     grasp_approach: top
+    grasp_z_mm: 51.59   # 사물함내부_객체별base좌표.tw 기준 + 2mm
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: spanner_16mm
@@ -95,6 +99,7 @@ tools:
     dimensions: {length: 0.180, width: 0.040, height: 0.012}
     mass_kg: 0.120
     grasp_approach: top
+    grasp_z_mm: 55.4    # 사물함내부_객체별base좌표.tw 기준 + 2mm
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: socket_19mm
@@ -112,6 +117,7 @@ tools:
     dimensions: {length: 0.040, diameter: 0.026}
     mass_kg: 0.090
     grasp_approach: top
+    grasp_z_mm: 118.69  # 사물함내부_객체별base좌표.tw 기준 + 2mm
     notes: "임의값 — 실측 후 갱신"
 
 # ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────

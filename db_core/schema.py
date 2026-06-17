@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS tools (
         CHECK(current_status IN ('in_slot','out','staged','missing','fod_alert')),
     home_slot_row  INTEGER NOT NULL,
     home_slot_col  INTEGER NOT NULL,
+    grasp_z_mm     REAL,
     last_event_id  INTEGER REFERENCES tool_events(event_id),
     last_updated   TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

@@ -20,6 +20,7 @@ class ToolStatus:
     home_slot_row: int
     home_slot_col: int
     last_updated: str
+    grasp_z_mm: float | None = None
 
 
 class DBError(Exception):
@@ -93,7 +94,7 @@ class DBClient:
         with self._lock:
             try:
                 row = self._query_one(
-                    "SELECT tool_id, current_status, home_slot_row, home_slot_col, last_updated "
+                    "SELECT tool_id, current_status, home_slot_row, home_slot_col, last_updated, grasp_z_mm "
                     "FROM tools WHERE tool_id = ?",
                     (tool_id,),
                 )
