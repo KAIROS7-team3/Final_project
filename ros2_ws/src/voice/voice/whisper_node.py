@@ -35,6 +35,7 @@ from voice.transcriber import (
     WhisperLoadError,
     WhisperTranscriber,
 )
+from voice.gemma_intent import _FETCH_KEYWORDS, _RETURN_KEYWORDS
 from voice.wake_word import DEFAULT_WAKE_WORDS, apply_wake_word_gate
 
 
@@ -262,10 +263,13 @@ class WhisperNode(Node):
         recorder: MicRecorder,
         transcriber: WhisperTranscriber,
     ) -> str:
-        """웨이크워드만 발화된 경우 후속 명령을 한 번 더 녹음해 합쳐서 반환한다.
+        """웨이크워드 통과 후 행동 표현이 없으면 후속 발화를 한 번 더 녹음해 합친다.
 
-        "코봇" 만 말하고 멈췄을 때 → "명령을 말씀해주세요" 로그 출력 →
-        다음 발화를 녹음 → "코봇 스크류드라이버 가져와" 형태로 합침.
+        트리거 조건 (둘 다 커버):
+          1. "성현" — 웨이크워드만, 명령 없음
+          2. "성현 드라이버" — 웨이크워드 + 공구명, 행동 표현 없음
+
+        후속 발화 "반납" 등을 이어 붙여 "성현 드라이버 반납" 형태로 publish한다.
         """
 
         if not (
@@ -280,11 +284,20 @@ class WhisperNode(Node):
         )
         gate = apply_wake_word_gate(transcript, wake_words, require_wake_word=True)
 
-        if not (gate.accepted and not gate.command_text.strip()):
+        if not gate.accepted:
             return transcript
 
+        command = gate.command_text.strip()
+        all_action_keywords = _FETCH_KEYWORDS + _RETURN_KEYWORDS
+        has_action = any(kw in command for kw in all_action_keywords)
+
+        # 행동 표현이 이미 있으면 후속 녹음 불필요
+        if has_action:
+            return transcript
+
+        reason = "웨이크워드만" if not command else f"행동 표현 없음 ({command!r})"
         self.get_logger().info(
-            f"웨이크워드 감지 ({transcript!r}) — 명령을 말씀해주세요..."
+            f"{reason} — 후속 명령을 말씀해주세요..."
         )
 
         try:
@@ -303,7 +316,7 @@ class WhisperNode(Node):
             return transcript
 
         if not follow_text.strip():
-            self.get_logger().debug("후속 발화 없음 — 웨이크워드 단독 무시")
+            self.get_logger().debug("후속 발화 없음 — 무시")
             return transcript
 
         combined = transcript.strip() + " " + follow_text.strip()
