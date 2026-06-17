@@ -27,7 +27,7 @@ import numpy as np
 logging.basicConfig(format="[%(levelname)s] %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ArUco 딕셔너리 — 4x4, 50개 패턴 (scripts/aruco_markers/ 와 동일 규격)
+# ArUco 딕셔너리 — 4x4, 50개 패턴 (scripts/multi_item/markers/ 와 동일 규격)
 _ARUCO_DICT   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 _ARUCO_PARAMS = cv2.aruco.DetectorParameters()
 _DETECTOR     = cv2.aruco.ArucoDetector(_ARUCO_DICT, _ARUCO_PARAMS)

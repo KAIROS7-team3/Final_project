@@ -33,24 +33,63 @@ schema:
 
 # 공구함 자체 위치/크기 (운영자가 공구함을 옮기면 이 값만 갱신)
 toolbox:
-  origin: {x: 0.300, y: -0.200, z: 0.050}  # layer 0 기준 좌상단 모서리
+  origin: {x: 0.300, y: -0.200, z: 0.037}  # layer 0 기준 좌상단 모서리 — TCP 직접교시 실측 37.13mm (2026-06-15)
   orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
   slot_size: {x: 0.060, y: 0.060}  # 슬롯 격자 한 칸 (참조용 — 공구는 격자 무관하게 놓임)
   grid_layers: 2    # 서랍 수 (스캔 횟수와 일치)
   grid_rows: 1
   grid_cols: 3
-  layer_height_z: 0.080   # 층간 높이 — Phase 0 ② 실제 측정 후 갱신
+  # 층간 높이 [m] — TCP 직접교시 실측 (윗층 92.7mm - 아랫층 37.13mm = 55.57mm)
+  layer_height_z: 0.056
   slot_depth_z: 0.040
 
-# ArUco 마커 — 공구함 천장 부착, 탑뷰 ROI 동적 계산 기준점
+  # 공구함 외형 치수 — 실측값 (2026-06-15)
+  dimensions:
+    width_m: 0.460    # 가로 (좌우 폭)
+    height_m: 0.250   # 세로 (전면 높이, 상하)
+    depth_m: 0.220    # 깊이 (앞뒤)
+
+# ArUco 마커 (천장 부착) — D455f 탑뷰 ROI 동적 계산 기준점
 # ⚠️ marker_to_origin 오프셋은 마커 부착 후 실측 갱신 필요
 aruco:
-  marker_id: 0            # ArUco DICT_4X4_50 기준 ID
+  marker_id: 2            # ArUco DICT_4X4_50 기준 ID (실물 ID 2 부착 확인)
   marker_size_m: 0.050    # 마커 실제 한 변 길이 (pose 추정용)
   marker_to_origin:       # 마커 중심 → toolbox.origin 오프셋 (m)
     x: 0.0                # 실측 후 갱신
     y: 0.0                # 실측 후 갱신
     z: -0.120             # 천장 → layer 0 바닥까지 높이 — 실측 후 갱신
+
+# ArUco 마커 (전면 부착) — C270 그리퍼캠 서랍 층수 Z 유도용
+# 마커 중심 기준으로 각 서랍 중심까지 Z 오프셋을 부여해 2D → 유사 depth 변환
+aruco_front:
+  marker_id: 0             # ArUco DICT_4X4_50, ID 0 (천장 마커와 동일 ID, 크기로 구분)
+  marker_size_m: 0.050     # 5×5cm (단일 마커 고정 규격)
+
+  # 전면 기준 마커 중심 위치 (2026-06-15 실측)
+  # 기준: 전면 좌하단 = (0, 0), 오른쪽/위쪽 방향이 양수
+  center_from_left_m: 0.235    # (0.215+0.255) / 2
+  center_from_bottom_m: 0.230  # (0.210+0.250) / 2 — 전면 상단 20mm 아래
+
+  # 마커 중심 기준 각 서랍 중심까지 Z 오프셋 (아래 방향 +, 단위 m)
+  # 산출 근거: 전면 높이 250mm / 2층 균등 분할 → 각 층 125mm
+  # 마커 ID = layer ID 규칙: 0=아랫층(1층 서랍), 1=윗층(2층 서랍)
+  #   layer_0(아랫층) 중심: 전면 위에서 187.5mm → 마커(전면 위에서 20mm) 아래 167.5mm
+  #   layer_1(윗층)   중심: 전면 위에서 62.5mm  → 마커 아래 42.5mm
+  # ⚠️ 서랍 칸막이 두께 미반영 — 실제 서랍 개방 후 실측 갱신 권장
+  layer_z_offset:
+    layer_0: 0.1675   # 아랫층(1층 서랍) 서랍 중심 (m) — 마커 ID 0
+    layer_1: 0.0425   # 윗층(2층 서랍)   서랍 중심 (m) — 마커 ID 1
+
+# 층별 ArUco 마커 중심 BASE 좌표 — 직접교시 실측 2026-06-17 (단위: m)
+layer_markers_base:
+  layer_1:
+    x: 0.20282
+    y: 0.38803
+    z: 0.09270
+  layer_0:
+    x: 0.21000
+    y: 0.38717
+    z: 0.03713
 
 # 6종 공구 카탈로그 — 물리 치수·그립 정보만 관리.
 # 슬롯 위치(slot_layer/row/col)는 스캔 시 DB에 기록되며 여기서 관리하지 않음.
@@ -59,34 +98,50 @@ tools:
   - tool_id: screwdriver
     display_name: "십자 드라이버"
     aliases: ["십자 드라이버", "드라이버", "screwdriver"]
-    dimensions: {length: 0.180, diameter: 0.020}
+    dimensions: {length: 0.180, diameter: 0.011}
     mass_kg: 0.080
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.39242
+      y: 0.26422
+      z: 0.04265
+    notes: "실측 2026-06-15 (H_jig=3mm H_obj=5mm → grasp_h=11mm)"
 
   - tool_id: utility_knife
     display_name: "커터칼"
     aliases: ["커터", "커터칼", "utility knife", "knife"]
-    dimensions: {length: 0.160, width: 0.030, height: 0.015}
+    dimensions: {length: 0.160, width: 0.030, height: 0.023}
     mass_kg: 0.070
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.44547
+      y: 0.34787
+      z: 0.09987
+    notes: "실측 2026-06-15 (H_jig=4mm H_obj=15mm → grasp_h=23mm)"
 
   - tool_id: ratchet_wrench
     display_name: "라쳇 렌치"
     aliases: ["라쳇", "라쳇 렌치", "ratchet", "ratchet wrench"]
-    dimensions: {length: 0.200, width: 0.040, height: 0.030}
+    dimensions: {length: 0.200, width: 0.040, height: 0.041}
     mass_kg: 0.250
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.39761
+      y: 0.25850
+      z: 0.09732
+    notes: "실측 2026-06-15 (H_jig=13mm H_obj=15mm → grasp_h=41mm)"
 
   - tool_id: multi_tool
     display_name: "멕가이버"
     aliases: ["멕가이버", "맥가이버", "multi tool", "multitool"]
-    dimensions: {length: 0.110, width: 0.035, height: 0.020}
+    dimensions: {length: 0.110, width: 0.035, height: 0.034}
     mass_kg: 0.180
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.26128
+      y: 0.33282
+      z: 0.04959
+    notes: "실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)"
 
   - tool_id: spanner_16mm
     display_name: "스패너 16mm"
@@ -95,6 +150,10 @@ tools:
     dimensions: {length: 0.180, width: 0.040, height: 0.012}
     mass_kg: 0.120
     grasp_approach: top
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.43720
+      y: 0.34831
+      z: 0.05340
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: socket_19mm
@@ -109,10 +168,15 @@ tools:
         "socket",
         "socket 19mm",
       ]
-    dimensions: {length: 0.040, diameter: 0.026}
+    dimensions: {length: 0.040, diameter: 0.055}
     mass_kg: 0.090
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.25303
+      y: 0.34305
+      z: 0.11669
+    notes: "실측 2026-06-15 (H_jig=20mm 추정, H_obj=15mm 노출 → grasp_h=55mm)"
+
 
 # ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────
 # toolbox_seq_runner.py가 __init__에서 이 섹션을 로드. 값 변경 시 재시작 필요.

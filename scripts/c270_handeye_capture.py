@@ -30,7 +30,7 @@ _CONFIG_DIR  = os.path.join(_SCRIPT_DIR, '..', 'config')
 SAVE_DIR     = os.path.join(_SCRIPT_DIR, 'samples_c270_handeye')
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-DEVICE        = 2
+DEVICE        = '/dev/video8'
 WIDTH, HEIGHT = 640, 480
 
 # ── 카메라 intrinsic (ArUco 프리뷰용) ──────────────────────────────────────────
@@ -50,8 +50,8 @@ def _load_cam():
 
 K, DIST = _load_cam()
 MARKER_SIZE_M = 0.05
-_DICT   = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_50)
-_PARAMS = cv2.aruco.DetectorParameters_create()
+_DICT   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+_PARAMS = cv2.aruco.DetectorParameters()
 
 _half = MARKER_SIZE_M / 2.0
 OBJ_PTS = np.array([[-_half,  _half, 0], [ _half,  _half, 0],
@@ -89,7 +89,7 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
     if not cap.isOpened():
-        log.error('/dev/video%d 열기 실패', DEVICE)
+        log.error('%s 열기 실패', DEVICE)
         sys.exit(1)
 
     existing = sorted([f for f in os.listdir(SAVE_DIR) if f.startswith('pose_')])

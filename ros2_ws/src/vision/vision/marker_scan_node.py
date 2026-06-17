@@ -1,326 +1,393 @@
-"""탑뷰 D455f ArUco 다중 마커 스캔 노드.
+"""C270 그리퍼캠 ArUco 마커 기반 공구 3D 좌표 추출 노드 (Track A/B).
 
-감지된 모든 마커의 ID와 3D 위치를 robot base_link 좌표로 변환 후
-/vision/marker/map (MarkerMap) 토픽으로 발행한다.
+서랍 내부 ArUco 마커를 기준점으로 공구의 3D 좌표를 추출한다.
+  X, Y : 마커 중심 기준 공구 마스크 무게중심 오프셋 (m)
+  Z    : solvePnP로 추정한 카메라~서랍 바닥 거리 − 공구 두께/2
 
-동작 흐름:
-  RGB + aligned-depth 동기화 수신
-  → ArUco 마커 전체 감지
-  → depth 기반 3D 위치 보정
-  → hand_eye.yaml 변환 행렬로 robot base_link 좌표 변환
-  → MarkerMap 발행 (place_zone_radius 포함)
+마커 ID 규칙 (config/toolbox.yaml aruco_front):
+  ID 0 → 아랫층 (layer_0, 1층 서랍)
+  ID 1 → 윗층   (layer_1, 2층 서랍)
 
-핵심 설정: config/vision.yaml aruco 섹션
-좌표 단위: m (position), quaternion [x,y,z,w] (rotation) — E-1 준수
-DSR SDK(mm·deg) 변환은 motion 노드에서 수행
+Subscribe:
+  /c270/image_raw                  sensor_msgs/Image
+  /vision/detections/gripper       vision_msgs/Detection2DArray  ← yolo_node(gripper) 마스크 무게중심
+
+Publish:
+  /vision/tool_gripper_pose      geometry_msgs/PointStamped  (base_link frame, m)
+  /vision/debug/gripper_marker   sensor_msgs/Image           (debug 시에만)
 """
 from __future__ import annotations
 
-import time
+import logging
 from pathlib import Path
 
 import cv2
 import numpy as np
 import rclpy
+import rclpy.time
 import yaml
 from cv_bridge import CvBridge
+from geometry_msgs.msg import PointStamped
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
-from scipy.spatial.transform import Rotation
-from geometry_msgs.msg import Point, Pose, Quaternion
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Image
-from std_msgs.msg import Header
+from tf2_ros import (
+    Buffer,
+    ConnectivityException,
+    ExtrapolationException,
+    LookupException,
+    TransformListener,
+)
+from vision_msgs.msg import Detection2DArray
 
-from interfaces.msg import MarkerMap
-from vision.hand_eye_loader import HandEyeNotCalibratedError, camera_to_base, load_transform
+# 설정 경로는 패키지 파일 위치 기준 레포 루트로 해석한다 (CWD 의존 금지).
+# ros2_ws/src/vision/vision/marker_scan_node.py → repo_root (parents[4])
+_REPO_ROOT  = Path(__file__).resolve().parents[4]
+_CONFIG_CAM = _REPO_ROOT / "config/c270_camera_info.yaml"
+_CONFIG_HE  = _REPO_ROOT / "config/c270_hand_eye.yaml"
+_CONFIG_TB  = _REPO_ROOT / "config/toolbox.yaml"
+_CONFIG_RT  = _REPO_ROOT / "config/runtime.yaml"
+_CONFIG_VISION = _REPO_ROOT / "config/vision.yaml"
 
-_ARUCO_DICT_MAP: dict[str, int] = {
-    "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
-    "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
-    "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
-    "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
-    "DICT_6X6_50": cv2.aruco.DICT_6X6_50,
-}
+_ARUCO_DICT   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+_ARUCO_PARAMS = cv2.aruco.DetectorParameters()
+_DETECTOR     = cv2.aruco.ArucoDetector(_ARUCO_DICT, _ARUCO_PARAMS)
 
-_DEPTH_SCALE: float = 0.001          # D455f uint16 → m
-_SYNC_SLOP_SEC: float = 0.05
-_DEPTH_PATCH_HALF: int = 2           # 마커 중심 5×5 패치로 depth median
+_MARKER_ID_TO_LAYER: dict[int, str] = {0: "layer_0(아랫층)", 1: "layer_1(윗층)"}
 
-# config/vision.yaml 은 프로젝트 루트 기준 상대경로 (hand_eye_loader 관례 동일)
-_CONFIG_DIR = Path("config")
+_QOS_BE10 = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.BEST_EFFORT)
+
+
+def _quat_to_rot(x: float, y: float, z: float, w: float) -> np.ndarray:
+    """쿼터니언 → 3×3 회전행렬."""
+    n = np.sqrt(x*x + y*y + z*z + w*w)
+    x, y, z, w = x/n, y/n, z/n, w/n
+    return np.array([
+        [1-2*(y*y+z*z),   2*(x*y-z*w),   2*(x*z+y*w)],
+        [  2*(x*y+z*w), 1-2*(x*x+z*z),   2*(y*z-x*w)],
+        [  2*(x*z-y*w),   2*(y*z+x*w), 1-2*(x*x+y*y)],
+    ])
+
+
+def _select_drawer_marker(
+    corners_list: list[np.ndarray], ids: np.ndarray
+) -> tuple[np.ndarray, int] | None:
+    """검출된 마커 중 유효한 서랍 마커(ID 0/1)를 단일 선택한다.
+
+    PR #49 재검토 Medium-2: 두 층 마커가 동시에 보이면 어느 층의 Z인지
+    판단할 근거가 없으므로(현재 열려 있는 서랍을 알려주는 입력이 없음)
+    모호한 경우는 처리하지 않고 None을 반환해 호출측이 프레임을 스킵하게 한다.
+    """
+    valid = [
+        (corners, int(mid))
+        for corners, mid in zip(corners_list, ids.flatten())
+        if int(mid) in _MARKER_ID_TO_LAYER
+    ]
+    if len(valid) != 1:
+        return None
+    return valid[0]
 
 
 class MarkerScanNode(Node):
-    """탑뷰 D455f로 ArUco 전체 마커 스캔 → MarkerMap 발행."""
+    """ArUco 마커 기반 공구 3D 좌표 추출 노드."""
 
     def __init__(self) -> None:
         super().__init__("marker_scan_node")
+
         self._bridge = CvBridge()
+        self._cam_matrix, self._dist_coeffs = self._load_camera()
+        self._hand_eye_R, self._hand_eye_t  = self._load_hand_eye()
+        self._tool_heights                  = self._load_tool_heights()
+        self._marker_size_m: float          = self._load_marker_size()
+        self._base_frame, self._gripper_frame = self._load_frames()
 
-        self._load_camera_intrinsics()
-        self._load_aruco_config()
-        self._load_hand_eye()
-        self._build_detector()
+        # PR #49 재검토 High: marker_scan_node가 발행하던 좌표가 link_6(TCP)
+        # 프레임에서 멈춰 있었음. base_link←link_6 EE 포즈를 TF로 조회해
+        # 합성한 뒤에야 인터페이스 계약(base_link)을 만족한다.
+        self._tf_buf = Buffer()
+        self._tf_listener = TransformListener(self._tf_buf, self)
 
-        # 마지막 감지 시각 (stale 판정용)
-        self._last_detected_t: float = 0.0
+        debug_cfg = self._load_debug_flag()
 
-        # 토픽 구독: RGB + aligned depth 동기화
-        rgb_sub = Subscriber(self, Image, "/d455f/color/image_raw")
-        depth_sub = Subscriber(self, Image, "/d455f/aligned_depth_to_color/image_raw")
-        self._sync = ApproximateTimeSynchronizer(
-            [rgb_sub, depth_sub], queue_size=10, slop=_SYNC_SLOP_SEC
+        # 퍼블리셔
+        self._pose_pub = self.create_publisher(
+            PointStamped, "/vision/tool_gripper_pose", _QOS_BE10
         )
-        self._sync.registerCallback(self._on_rgbd)
-
-        # 발행
-        self._map_pub = self.create_publisher(MarkerMap, "/vision/marker/map", 10)
         self._debug_pub = (
-            self.create_publisher(Image, "/vision/marker/debug/image", 10)
-            if self._publish_debug
-            else None
+            self.create_publisher(Image, "/vision/debug/gripper_marker", 1)
+            if debug_cfg else None
         )
+
+        # 이미지 + 검출 결과 동기화 구독
+        img_sub = Subscriber(self, Image, "/c270/image_raw", qos_profile=qos_profile_sensor_data)
+        det_sub = Subscriber(self, Detection2DArray, "/vision/detections/gripper", qos_profile=_QOS_BE10)
+        self._sync = ApproximateTimeSynchronizer([img_sub, det_sub], queue_size=10, slop=0.1)
+        self._sync.registerCallback(self._on_sync)
 
         self.get_logger().info(
-            f"[marker_scan_node] ready — "
-            f"dict={self._dict_name} size={self._marker_size_m}m "
-            f"zone={self._place_zone_radius_mm}mm "
-            f"calibrated={self._calibrated}"
+            f"[marker_scan_node] ready — marker_size={self._marker_size_m*100:.1f}cm "
+            f"tool_heights={self._tool_heights}"
         )
 
-    # ------------------------------------------------------------------
-    # 초기화 헬퍼
-    # ------------------------------------------------------------------
+    # ─── 설정 로드 ────────────────────────────────────────────────────────────
 
-    def _load_camera_intrinsics(self) -> None:
-        path = _CONFIG_DIR / "camera_info.yaml"
-        with path.open() as f:
+    def _load_camera(self) -> tuple[np.ndarray, np.ndarray]:
+        with _CONFIG_CAM.open() as f:
             cfg = yaml.safe_load(f)
-        intr = cfg["intrinsics"]
-        self._fx = float(intr["fx"])
-        self._fy = float(intr["fy"])
-        self._cx_intr = float(intr["cx"])
-        self._cy_intr = float(intr["cy"])
-        coeffs = intr.get("coeffs", [0.0, 0.0, 0.0, 0.0, 0.0])
-        self._K = np.array(
-            [[self._fx, 0.0, self._cx_intr],
-             [0.0, self._fy, self._cy_intr],
-             [0.0, 0.0, 1.0]],
-            dtype=np.float64,
-        )
-        self._D = np.array(coeffs, dtype=np.float64)
+        K = np.array(cfg["camera_matrix_row_major"], dtype=np.float64)
+        D = np.array(cfg["intrinsics"]["coeffs"], dtype=np.float64)
+        return K, D
 
-    def _load_aruco_config(self) -> None:
-        path = _CONFIG_DIR / "vision.yaml"
-        with path.open() as f:
+    def _load_hand_eye(self) -> tuple[np.ndarray, np.ndarray]:
+        with _CONFIG_HE.open() as f:
             cfg = yaml.safe_load(f)
-        aruco = cfg.get("aruco", {})
-        self._dict_name: str = aruco.get("dictionary", "DICT_4X4_50")
-        self._marker_size_m: float = float(aruco.get("marker_size_m", 0.10))
-        self._place_zone_radius_mm: float = float(aruco.get("place_zone_radius_mm", 150.0))
-        self._stale_timeout_sec: float = float(aruco.get("stale_timeout_sec", 2.0))
-        self._publish_debug: bool = bool(aruco.get("publish_debug_image", True))
+        rot = cfg["transformation"]["rotation"]
+        tra = cfg["transformation"]["translation"]
+        R = _quat_to_rot(rot["x"], rot["y"], rot["z"], rot["w"])
+        t = np.array([tra["x"], tra["y"], tra["z"]], dtype=np.float64)
+        return R, t
 
-    def _load_hand_eye(self) -> None:
-        try:
-            self._T: np.ndarray | None = load_transform(_CONFIG_DIR / "hand_eye.yaml")
-            self._calibrated = True
-        except HandEyeNotCalibratedError:
-            self._T = None
-            self._calibrated = False
-            self.get_logger().warn(
-                "[marker_scan_node] hand_eye.yaml 미캘리브레이션 — "
-                "camera_color_optical_frame 기준으로 발행 (robot 변환 없음)"
-            )
+    def _load_tool_heights(self) -> dict[str, float]:
+        with _CONFIG_TB.open() as f:
+            cfg = yaml.safe_load(f)
+        heights: dict[str, float] = {}
+        for tool in cfg.get("tools", []):
+            dims = tool["dimensions"]
+            h = float(dims.get("height", dims.get("diameter", 0.020)))
+            heights[tool["tool_id"]] = h
+        return heights
 
-    def _build_detector(self) -> None:
-        dict_id = _ARUCO_DICT_MAP.get(self._dict_name)
-        if dict_id is None:
-            raise ValueError(
-                f"[marker_scan_node] 지원하지 않는 ArUco dictionary: {self._dict_name}"
-            )
-        aruco_dict = cv2.aruco.getPredefinedDictionary(dict_id)
-        aruco_params = cv2.aruco.DetectorParameters()
-        self._detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
+    def _load_marker_size(self) -> float:
+        with _CONFIG_TB.open() as f:
+            cfg = yaml.safe_load(f)
+        return float(cfg["aruco_front"]["marker_size_m"])
 
-    # ------------------------------------------------------------------
-    # 메인 콜백
-    # ------------------------------------------------------------------
+    def _load_frames(self) -> tuple[str, str]:
+        """runtime.yaml calibration 섹션에서 TF 프레임 이름 로드.
 
-    def _on_rgbd(self, rgb_msg: Image, depth_msg: Image) -> None:
-        bgr = self._bridge.imgmsg_to_cv2(rgb_msg, "bgr8")
-        depth_raw = self._bridge.imgmsg_to_cv2(depth_msg, "passthrough")
-        depth_m = depth_raw.astype(np.float32) * _DEPTH_SCALE
+        기존 코드는 top-level cfg.get("gripper_frame", ...)로 읽어
+        실제로는 항상 fallback("link_6")만 반환하고 있었다 (실값은
+        `calibration.gripper_frame`에 있음) — base_frame 추가하며 같이 수정.
+        """
+        with _CONFIG_RT.open() as f:
+            cfg = yaml.safe_load(f)
+        calib = cfg.get("calibration", {})
+        base_frame    = str(calib.get("base_frame", "base_link"))
+        gripper_frame = str(calib.get("gripper_frame", "link_6"))
+        return base_frame, gripper_frame
 
-        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = self._detector.detectMarkers(gray)
+    def _load_debug_flag(self) -> bool:
+        with _CONFIG_VISION.open() as f:
+            cfg = yaml.safe_load(f)
+        return bool(cfg.get("debug", {}).get("publish_annotated_image", True))
 
-        msg = self._build_marker_map_msg(rgb_msg.header.stamp, corners, ids, depth_m)
-        self._map_pub.publish(msg)
+    # ─── 핵심 계산 ───────────────────────────────────────────────────────────
 
-        if self._debug_pub is not None:
-            debug = self._annotate(bgr, corners, ids)
-            self._debug_pub.publish(self._bridge.cv2_to_imgmsg(debug, "bgr8"))
-
-    # ------------------------------------------------------------------
-    # MarkerMap 조립
-    # ------------------------------------------------------------------
-
-    def _build_marker_map_msg(
-        self,
-        stamp,
-        corners: list,
-        ids: np.ndarray | None,
-        depth_m: np.ndarray,
-    ) -> MarkerMap:
-        msg = MarkerMap()
-        msg.header = Header()
-        msg.header.stamp = stamp
-        msg.header.frame_id = "base_link" if self._calibrated else "camera_color_optical_frame"
-        msg.place_zone_radius = self._place_zone_radius_mm * 0.001  # mm → m
-        msg.calibrated = self._calibrated
-
-        if ids is None or len(corners) == 0:
-            # stale 체크: 일정 시간 감지 없으면 warn
-            if time.monotonic() - self._last_detected_t > self._stale_timeout_sec:
-                self.get_logger().debug(
-                    "[marker_scan_node] 마커 미감지 (stale)"
-                )
-            return msg
-
-        self._last_detected_t = time.monotonic()
-
-        for i, marker_id in enumerate(ids.flatten()):
-            pose = self._estimate_pose(corners[i], depth_m, int(marker_id))
-            if pose is None:
-                continue
-            msg.marker_ids.append(int(marker_id))
-            msg.poses_robot.append(pose)
-
-        if msg.marker_ids:
-            self.get_logger().debug(
-                f"[marker_scan_node] 감지 ID: {msg.marker_ids}"
-            )
-
-        return msg
-
-    # ------------------------------------------------------------------
-    # 포즈 추정: depth 기반 위치 + ArUco rvec 방향
-    # ------------------------------------------------------------------
-
-    def _estimate_pose(
-        self,
-        corner: np.ndarray,   # shape (1, 4, 2)
-        depth_m: np.ndarray,
-        marker_id: int,
-    ) -> Pose | None:
-        """마커 포즈 반환 (position: m, orientation: quaternion). depth=0이면 None."""
-        pts = corner[0]  # (4, 2)
-        cx_px = float(pts[:, 0].mean())
-        cy_px = float(pts[:, 1].mean())
-
-        # depth median (5×5 patch) — 단일 픽셀보다 노이즈에 강건
-        z_m = self._sample_depth(depth_m, cx_px, cy_px)
-        if z_m is None:
-            self.get_logger().warn(
-                f"[marker_scan_node] ID={marker_id} depth=0 — 프레임 skip"
-            )
-            return None
-
-        # depth 기반 3D 역투영 (카메라 좌표, 단위 m)
-        x_cam = (cx_px - self._cx_intr) * z_m / self._fx
-        y_cam = (cy_px - self._cy_intr) * z_m / self._fy
-        pos_cam_m = np.array([x_cam, y_cam, z_m], dtype=np.float64)
-
-        # ArUco rvec → 마커 방향 (카메라 좌표)
-        # estimatePoseSingleMarkers는 OpenCV 4.8+에서 제거됨 → solvePnP로 대체
+    def _marker_pose(
+        self, corners: np.ndarray
+    ) -> tuple[np.ndarray, float] | tuple[None, None]:
+        """solvePnP로 마커 포즈 추정. (rvec, tvec) 반환. tvec[2] = Z (m)."""
         half = self._marker_size_m / 2.0
         obj_pts = np.array([
             [-half,  half, 0.0],
             [ half,  half, 0.0],
             [ half, -half, 0.0],
             [-half, -half, 0.0],
-        ], dtype=np.float32)
-        _, rvec, _ = cv2.solvePnP(obj_pts, corner[0].astype(np.float32), self._K, self._D)
-        R_cam, _ = cv2.Rodrigues(rvec)
-
-        if self._calibrated and self._T is not None:
-            pos_out_m = camera_to_base(pos_cam_m, self._T)
-            R_out = self._T[:3, :3] @ R_cam
-        else:
-            pos_out_m = pos_cam_m
-            R_out = R_cam
-
-        # 회전 행렬 → quaternion [x, y, z, w] — E-1
-        quat = Rotation.from_matrix(R_out).as_quat()  # scipy: [x, y, z, w]
-
-        pose = Pose()
-        pose.position = Point(
-            x=float(pos_out_m[0]),
-            y=float(pos_out_m[1]),
-            z=float(pos_out_m[2]),
+        ], dtype=np.float64)
+        img_pts = corners[0].astype(np.float64)
+        ok, rvec, tvec = cv2.solvePnP(
+            obj_pts, img_pts, self._cam_matrix, self._dist_coeffs
         )
-        pose.orientation = Quaternion(
-            x=float(quat[0]),
-            y=float(quat[1]),
-            z=float(quat[2]),
-            w=float(quat[3]),
-        )
-        return pose
+        if not ok:
+            return None, None
+        return rvec, tvec.flatten()
 
-    def _sample_depth(
-        self, depth_m: np.ndarray, cx_px: float, cy_px: float
-    ) -> float | None:
-        h, w = depth_m.shape
-        x0 = max(0, int(cx_px) - _DEPTH_PATCH_HALF)
-        y0 = max(0, int(cy_px) - _DEPTH_PATCH_HALF)
-        x1 = min(w, int(cx_px) + _DEPTH_PATCH_HALF + 1)
-        y1 = min(h, int(cy_px) + _DEPTH_PATCH_HALF + 1)
-        valid = depth_m[y0:y1, x0:x1]
-        valid = valid[valid > 0]
-        if len(valid) == 0:
+    def _pixel_to_cam(self, u: float, v: float, Z: float) -> np.ndarray:
+        """픽셀 좌표 (u, v) + 깊이 Z → 카메라 프레임 3D 좌표."""
+        fx = self._cam_matrix[0, 0]
+        fy = self._cam_matrix[1, 1]
+        cx = self._cam_matrix[0, 2]
+        cy = self._cam_matrix[1, 2]
+        return np.array([(u - cx) * Z / fx, (v - cy) * Z / fy, Z])
+
+    def _ray_plane_cam(self, u: float, v: float,
+                       rvec: np.ndarray, tvec: np.ndarray,
+                       tool_h: float) -> np.ndarray | None:
+        """픽셀 ray와 기울어진 마커 평면의 교점 → 카메라 프레임 3D 좌표.
+
+        rvec/tvec은 solvePnP 결과. 마커 Z축(법선)을 BASE 변환 없이
+        카메라 프레임 안에서 직접 계산하므로 TF 불필요.
+        """
+        fx = self._cam_matrix[0, 0]
+        fy = self._cam_matrix[1, 1]
+        cx = self._cam_matrix[0, 2]
+        cy = self._cam_matrix[1, 2]
+
+        # 마커 법선 → 카메라 프레임 (rvec Z축)
+        import cv2 as _cv2
+        R_m2cam, _ = _cv2.Rodrigues(rvec.flatten())
+        n_cam = R_m2cam @ np.array([0.0, 0.0, 1.0])
+        if n_cam[2] > 0:  # 법선이 카메라 방향 반대면 반전
+            n_cam = -n_cam
+
+        # 파지점 평면: 마커 중심에서 법선 반대 방향으로 tool_h/2 (공구 두께)
+        P_m = tvec.flatten()
+        P_plane = P_m - (tool_h / 2.0) * n_cam
+
+        # ray: 원점(카메라) → 픽셀 방향
+        d = np.array([(u - cx) / fx, (v - cy) / fy, 1.0])
+
+        denom = np.dot(n_cam, d)
+        if abs(denom) < 1e-6:
             return None
-        return float(np.median(valid))
+        t = np.dot(n_cam, P_plane) / denom
+        if t < 0:
+            return None
+        return d * t
 
-    # ------------------------------------------------------------------
-    # 디버그 이미지 생성
-    # ------------------------------------------------------------------
+    def _cam_to_tcp(self, p_cam: np.ndarray) -> np.ndarray:
+        """카메라 프레임 → TCP(link_6) 프레임 변환 (c270_hand_eye.yaml)."""
+        return self._hand_eye_R @ p_cam + self._hand_eye_t
 
-    def _annotate(
-        self,
-        bgr: np.ndarray,
-        corners: list,
-        ids: np.ndarray | None,
-    ) -> np.ndarray:
-        out = bgr.copy()
-        if ids is None or len(corners) == 0:
-            return out
+    def _lookup_base_from_gripper(self) -> np.ndarray | None:
+        """TF base_frame ← gripper_frame 4×4 변환 조회.
 
-        cv2.aruco.drawDetectedMarkers(out, corners, ids)
+        EE 포즈를 구해야 link_6(TCP) 좌표를 base_link로 합성할 수 있다.
+        조회 실패 시 잘못된 프레임으로 좌표를 발행하느니 None을 반환해
+        호출측이 이번 프레임을 스킵하도록 한다 (E-5 silent fallback 금지
+        — 예외를 삼키되 결과를 무시하지 않고 호출측에 실패를 알린다).
+        """
+        try:
+            tf = self._tf_buf.lookup_transform(
+                self._base_frame, self._gripper_frame, rclpy.time.Time()
+            )
+        except (LookupException, ConnectivityException, ExtrapolationException) as e:
+            self.get_logger().warning(
+                f"[marker_scan] TF {self._base_frame}<-{self._gripper_frame} "
+                f"조회 실패 — 이번 프레임 스킵: {e}"
+            )
+            return None
+        t = tf.transform.translation
+        q = tf.transform.rotation
+        T = np.eye(4)
+        T[:3, :3] = _quat_to_rot(q.x, q.y, q.z, q.w)
+        T[:3, 3]  = [t.x, t.y, t.z]
+        return T
 
-        for i, corner in enumerate(corners):
-            pts = corner[0]
-            cx_px = int(pts[:, 0].mean())
-            cy_px = int(pts[:, 1].mean())
+    # ─── 콜백 ────────────────────────────────────────────────────────────────
 
-            # place zone 원 — 마커 한 변 픽셀 길이로 m/px 스케일 추정
-            side_px = float(np.linalg.norm(pts[0] - pts[1]))
-            if side_px > 0:
-                px_per_m = side_px / self._marker_size_m
-                zone_px = max(1, int(self._place_zone_radius_mm * 0.001 * px_per_m))
-            else:
-                zone_px = 30
+    def _on_sync(self, img_msg: Image, det_msg: Detection2DArray) -> None:
+        if not det_msg.detections:
+            return
 
-            cv2.circle(out, (cx_px, cy_px), zone_px, (0, 165, 255), 2)
-            zone_m = self._place_zone_radius_mm * 0.001
-            label = f"ID:{ids[i][0]}  zone={zone_m:.3f}m"
-            cv2.putText(
-                out, label,
-                (cx_px - 50, cy_px - zone_px - 8),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2,
+        bgr = self._bridge.imgmsg_to_cv2(img_msg, desired_encoding="bgr8")
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+
+        corners_list, ids, _ = _DETECTOR.detectMarkers(gray)
+        if ids is None:
+            return
+
+        # 가장 신뢰도 높은 검출 하나 선택
+        best = max(det_msg.detections, key=lambda d: d.results[0].hypothesis.score)
+        tool_id = best.results[0].hypothesis.class_id
+        tool_cx = best.bbox.center.position.x
+        tool_cy = best.bbox.center.position.y
+        tool_h  = self._tool_heights.get(tool_id, 0.020)
+
+        # 유효한 서랍 마커(ID 0 또는 1) 단일 선택 — 동시에 여러 개 보이면
+        # 어느 층 Z인지 판단 근거가 없으므로 이번 프레임은 스킵한다.
+        selected = _select_drawer_marker(corners_list, ids)
+        if selected is None:
+            return
+        corners, marker_id = selected
+        rvec, tvec = self._marker_pose(corners)
+        if tvec is None:
+            return
+        Z_floor = float(tvec[2])   # 로그용
+
+        # 공구 마스크 무게중심 → 카메라 프레임 3D (서랍 기울기 반영)
+        # rvec으로 마커 실제 평면 법선을 구해 ray-plane 교점 계산
+        P_cam = self._ray_plane_cam(tool_cx, tool_cy, rvec, tvec, tool_h)
+        if P_cam is None:
+            return
+
+        # 카메라 → TCP(link_6) 프레임
+        P_tcp = self._cam_to_tcp(P_cam)
+
+        # TCP(link_6) → base_link 프레임 — 현재 EE 포즈 합성 (PR #49 재검토 High)
+        T_base_gripper = self._lookup_base_from_gripper()
+        if T_base_gripper is None:
+            return
+        P_base = T_base_gripper[:3, :3] @ P_tcp + T_base_gripper[:3, 3]
+
+        # 발행 — img_msg.header를 그대로 대입하면 frame_id 변경이 원본
+        # 메시지(동기화 큐에서 다른 콜백과 공유될 수 있음)까지 변형시키므로
+        # stamp만 복사하고 frame_id는 새로 지정한다.
+        msg = PointStamped()
+        msg.header.stamp = img_msg.header.stamp
+        msg.header.frame_id = self._base_frame
+        msg.point.x = float(P_base[0])
+        msg.point.y = float(P_base[1])
+        msg.point.z = float(P_base[2])
+        self._pose_pub.publish(msg)
+
+        self.get_logger().info(
+            f"[marker_scan] {tool_id} | marker_id={marker_id} "
+            f"({_MARKER_ID_TO_LAYER.get(marker_id, '?')}) | "
+            f"Z_floor={Z_floor*1000:.1f}mm | "
+            f"BASE=({P_base[0]*1000:.1f}, {P_base[1]*1000:.1f}, {P_base[2]*1000:.1f})mm"
+        )
+
+        if self._debug_pub is not None:
+            vis = self._draw_debug(bgr, corners_list, ids, tool_cx, tool_cy,
+                                   tool_id, P_base, Z_floor)
+            self._debug_pub.publish(
+                self._bridge.cv2_to_imgmsg(vis, encoding="bgr8")
             )
 
-        return out
+    def _draw_debug(
+        self,
+        img: np.ndarray,
+        corners_list: list,
+        ids: np.ndarray,
+        tool_cx: float,
+        tool_cy: float,
+        tool_id: str,
+        P_base: np.ndarray,
+        Z_floor: float,
+    ) -> np.ndarray:
+        vis = img.copy()
+        cv2.aruco.drawDetectedMarkers(vis, corners_list, ids)
+
+        # 마커 중심 — 실제 사용된 서랍 마커(ID 0/1) 기준, 다른 마커가 같이
+        # 보여도(layer 모호 시 _on_sync가 이미 스킵하므로 여기 도달 시엔
+        # 단일 후보) 잘못된 마커를 표시하지 않도록 동일 선택 로직 재사용
+        selected = _select_drawer_marker(corners_list, ids)
+        c = selected[0][0] if selected is not None else corners_list[0][0]
+        marker_id = selected[1] if selected is not None else int(ids[0][0])
+        mx, my = int(c[:, 0].mean()), int(c[:, 1].mean())
+        cv2.circle(vis, (mx, my), 6, (0, 255, 255), -1)
+
+        # 공구 중심
+        tx, ty = int(tool_cx), int(tool_cy)
+        cv2.circle(vis, (tx, ty), 8, (0, 165, 255), -1)
+        cv2.line(vis, (mx, my), (tx, ty), (255, 255, 0), 1)
+
+        # 오프셋 벡터 표시
+        cv2.putText(vis, tool_id, (tx + 8, ty - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 165, 255), 2)
+        cv2.putText(
+            vis,
+            f"BASE ({P_base[0]*1000:.0f},{P_base[1]*1000:.0f},{P_base[2]*1000:.0f})mm",
+            (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2,
+        )
+        cv2.putText(
+            vis,
+            f"Z_floor={Z_floor*1000:.0f}mm  marker_id={marker_id}",
+            (10, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1,
+        )
+        return vis
 
 
 def main() -> None:
