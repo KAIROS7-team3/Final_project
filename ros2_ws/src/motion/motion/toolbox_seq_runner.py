@@ -918,10 +918,14 @@ class ToolboxSeqRunner(Node):
         if not pose.valid:
             self.get_logger().error(f'  [TOP_XY] 그리퍼 캠 좌표 미수신 ({topic})')
             return False
+        import math
+        if not math.isfinite(pose.rz) or not (-185.0 <= pose.rz <= 185.0):
+            self.get_logger().error(f'  [TOP_XY] rz 비정상값 거부: {pose.rz!r}°')
+            return False
         if not self._check_vision_coords('TOP_XY', pose.x, pose.y, self._tool_approach_z_mm):
             return False
         ori = list(self._tool_approach_ori)
-        ori[2] = pose.rz  # rz 비전값으로 대체
+        ori[2] = pose.rz
         pos = [pose.x, pose.y, self._tool_approach_z_mm] + ori
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
         self.get_logger().info(
@@ -998,6 +1002,10 @@ class ToolboxSeqRunner(Node):
                 f'  [TOOL_XYZ] tool_id={self._tool_id!r} grasp_z_mm 미등록 — 그리퍼 캠 Z 사용: {z:.2f}mm'
             )
 
+        import math
+        if not math.isfinite(pose.rz) or not (-185.0 <= pose.rz <= 185.0):
+            self.get_logger().error(f'  [TOOL_XYZ] rz 비정상값 거부: {pose.rz!r}°')
+            return False
         if not self._check_vision_coords('TOOL_XYZ', pose.x, pose.y, z):
             return False
         ori = list(self._tool_descent_ori)
@@ -1015,15 +1023,19 @@ class ToolboxSeqRunner(Node):
             self.get_logger().error('  [STAGING_XYZ] 그리퍼 캠 좌표 미수신 (/vision/return/tool_gripper_pose)')
             return False
 
+        import math
+        if not math.isfinite(pose.rz) or not (-185.0 <= pose.rz <= 185.0):
+            self.get_logger().error(f'  [STAGING_XYZ] rz 비정상값 거부: {pose.rz!r}°')
+            return False
+
         return_z = self._return_z_map.get(self._tool_id)
-        if return_z is not None:
-            z = return_z
-            self.get_logger().info(f'  [STAGING_XYZ] Z = {z:.2f}mm (toolbox.yaml, tool_id={self._tool_id})')
-        else:
-            z = pose.z
-            self.get_logger().warn(
-                f'  [STAGING_XYZ] tool_id={self._tool_id!r} return_z_mm 미등록 — 그리퍼 캠 Z 사용: {z:.2f}mm'
+        if return_z is None:
+            self.get_logger().error(
+                f'  [STAGING_XYZ] tool_id={self._tool_id!r} return_z_mm 미등록 — 실행 중단'
             )
+            return False
+        z = return_z
+        self.get_logger().info(f'  [STAGING_XYZ] Z = {z:.2f}mm (toolbox.yaml, tool_id={self._tool_id})')
 
         if not self._check_vision_coords('STAGING_XYZ', pose.x, pose.y, z):
             return False
