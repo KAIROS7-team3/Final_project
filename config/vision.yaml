@@ -21,12 +21,13 @@ yolo:
   # robot_arm.db tools 테이블 tool_id와 일치 필수
   # ⚠️ v2부터 알파벳순 (Roboflow 기준) — v1과 인덱스 다름, 혼용 금지
   class_names:
-    - multi_tool     # 0  멕가이버
-    - ratchet_wrench  # 1  라쳇 렌치
-    - screwdriver    # 2  십자 드라이버
-    - socket_19mm    # 3  복스 소켓 19mm
-    - spanner_16mm   # 4  스패너 16mm
-    - utility_knife  # 5  커터칼
+    - multi_tool       # 0  멕가이버
+    - ratchet_wrench   # 1  라쳇 렌치
+    - screwdriver      # 2  십자 드라이버
+    - socket_19mm      # 3  복스 소켓 19mm (측면)
+    - socket_19mm_top  # 4  복스 소켓 19mm (상면) — gripper_model v2 신규 (2026-06-17)
+    - spanner_16mm     # 5  스패너 16mm
+    - utility_knife    # 6  커터칼
 
 tracker:
   min_hits: 3          # 트랙 확정까지 필요한 연속 검출 프레임 수
@@ -40,7 +41,8 @@ aruco:
   dictionary: "DICT_4X4_50"
 
   # 실제 인쇄된 마커 한 변 길이 [m] — 오차 ±1mm 이내로 측정
-  # 천장 마커: ID 2, 5×5cm / 전면 마커: ID 0, 4×4cm (toolbox.yaml aruco_front)
+  # 천장 마커: ID 2, 5×5cm / 전면 마커: ID 0, 5×5cm (toolbox.yaml aruco_front)
+  # ↑ 전면 마커도 5cm. (구버전 주석 "4cm" 오기 — 2026-06-17 정정)
   marker_size_m: 0.05
 
   # 마커 중심 기준 공구 place 허용 반경 [mm]

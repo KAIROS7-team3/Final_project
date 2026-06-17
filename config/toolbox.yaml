@@ -63,7 +63,7 @@ aruco:
 # 마커 중심 기준으로 각 서랍 중심까지 Z 오프셋을 부여해 2D → 유사 depth 변환
 aruco_front:
   marker_id: 0             # ArUco DICT_4X4_50, ID 0 (천장 마커와 동일 ID, 크기로 구분)
-  marker_size_m: 0.040     # 4×4cm — 실측값 (2026-06-15)
+  marker_size_m: 0.050     # 5×5cm (단일 마커 고정 규격)
 
   # 전면 기준 마커 중심 위치 (2026-06-15 실측)
   # 기준: 전면 좌하단 = (0, 0), 오른쪽/위쪽 방향이 양수
@@ -80,6 +80,17 @@ aruco_front:
     layer_0: 0.1675   # 아랫층(1층 서랍) 서랍 중심 (m) — 마커 ID 0
     layer_1: 0.0425   # 윗층(2층 서랍)   서랍 중심 (m) — 마커 ID 1
 
+# 층별 ArUco 마커 중심 BASE 좌표 — 직접교시 실측 2026-06-17 (단위: m)
+layer_markers_base:
+  layer_1:
+    x: 0.20282
+    y: 0.38803
+    z: 0.09270
+  layer_0:
+    x: 0.21000
+    y: 0.38717
+    z: 0.03713
+
 # 6종 공구 카탈로그 — 물리 치수·그립 정보만 관리.
 # 슬롯 위치(slot_layer/row/col)는 스캔 시 DB에 기록되며 여기서 관리하지 않음.
 # ⚠️ 치수·질량은 임의값. Phase 0 ② 실측 후 확정.
@@ -87,34 +98,50 @@ tools:
   - tool_id: screwdriver
     display_name: "십자 드라이버"
     aliases: ["십자 드라이버", "드라이버", "screwdriver"]
-    dimensions: {length: 0.180, diameter: 0.020}
+    dimensions: {length: 0.180, diameter: 0.011}
     mass_kg: 0.080
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.39242
+      y: 0.26422
+      z: 0.04265
+    notes: "실측 2026-06-15 (H_jig=3mm H_obj=5mm → grasp_h=11mm)"
 
   - tool_id: utility_knife
     display_name: "커터칼"
     aliases: ["커터", "커터칼", "utility knife", "knife"]
-    dimensions: {length: 0.160, width: 0.030, height: 0.015}
+    dimensions: {length: 0.160, width: 0.030, height: 0.023}
     mass_kg: 0.070
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.44547
+      y: 0.34787
+      z: 0.09987
+    notes: "실측 2026-06-15 (H_jig=4mm H_obj=15mm → grasp_h=23mm)"
 
   - tool_id: ratchet_wrench
     display_name: "라쳇 렌치"
     aliases: ["라쳇", "라쳇 렌치", "ratchet", "ratchet wrench"]
-    dimensions: {length: 0.200, width: 0.040, height: 0.030}
+    dimensions: {length: 0.200, width: 0.040, height: 0.041}
     mass_kg: 0.250
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.39761
+      y: 0.25850
+      z: 0.09732
+    notes: "실측 2026-06-15 (H_jig=13mm H_obj=15mm → grasp_h=41mm)"
 
   - tool_id: multi_tool
     display_name: "멕가이버"
     aliases: ["멕가이버", "맥가이버", "multi tool", "multitool"]
-    dimensions: {length: 0.110, width: 0.035, height: 0.020}
+    dimensions: {length: 0.110, width: 0.035, height: 0.034}
     mass_kg: 0.180
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.26128
+      y: 0.33282
+      z: 0.04959
+    notes: "실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)"
 
   - tool_id: spanner_16mm
     display_name: "스패너 16mm"
@@ -123,6 +150,10 @@ tools:
     dimensions: {length: 0.180, width: 0.040, height: 0.012}
     mass_kg: 0.120
     grasp_approach: top
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.43720
+      y: 0.34831
+      z: 0.05340
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: socket_19mm
@@ -137,10 +168,15 @@ tools:
         "socket",
         "socket 19mm",
       ]
-    dimensions: {length: 0.040, diameter: 0.026}
+    dimensions: {length: 0.040, diameter: 0.055}
     mass_kg: 0.090
     grasp_approach: top
-    notes: "임의값 — 실측 후 갱신"
+    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
+      x: 0.25303
+      y: 0.34305
+      z: 0.11669
+    notes: "실측 2026-06-15 (H_jig=20mm 추정, H_obj=15mm 노출 → grasp_h=55mm)"
+
 
 # ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────
 # toolbox_seq_runner.py가 __init__에서 이 섹션을 로드. 값 변경 시 재시작 필요.
