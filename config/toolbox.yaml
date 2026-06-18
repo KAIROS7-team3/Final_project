@@ -94,6 +94,8 @@ layer_markers_base:
 # - grasp_z_mm        : vision_fetch_seq ⑥번 Z값 (tw기준 + 2mm 적용 완료)
 # - staging_pickup_z_mm: vision_return_seq ⑥번 Z값 (staging에서 공구 파지) — ⚠️ 실측 후 갱신
 # - return_z_mm       : vision_return_seq ⑩번 Z값 (slot 반납 하강) — tw z + 3mm
+# - grip_stroke       : 공구 파지 stroke (기본값 650 오버라이드).
+#                       RH-P12-RN raw pulse 0~740 범위, gripper_node에서 클램프.
 # 참고 원본: Downloads/사물함내부_객체별base좌표.tw (BASE 좌표계, mm)
 #
 # 6종 공구 카탈로그 — 물리 치수·그립 정보만 관리.
@@ -113,7 +115,7 @@ tools:
     grasp_z_mm: 44.65            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
     return_z_mm: 45.65          # slot 반납 Z (tw z=42.65 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; RH-P12-RN raw pulse 범위 0~740, gripper_node에서 클램프)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
     notes: "실측 2026-06-15 (H_jig=3mm H_obj=5mm → grasp_h=11mm)"
 
   - tool_id: utility_knife
@@ -129,7 +131,7 @@ tools:
     grasp_z_mm: 101.87            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
     return_z_mm: 102.87          # slot 반납 Z (tw z=99.87 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; RH-P12-RN raw pulse 범위 0~740, gripper_node에서 클램프)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
     notes: "실측 2026-06-15 (H_jig=4mm H_obj=15mm → grasp_h=23mm)"
 
   - tool_id: ratchet_wrench
@@ -145,7 +147,7 @@ tools:
     grasp_z_mm: 99.32            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
     return_z_mm: 100.32          # slot 반납 Z (tw z=97.32 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; RH-P12-RN raw pulse 범위 0~740, gripper_node에서 클램프)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
     notes: "실측 2026-06-15 (H_jig=13mm H_obj=15mm → grasp_h=41mm)"
 
   - tool_id: multi_tool
@@ -161,7 +163,7 @@ tools:
     grasp_z_mm: 51.59            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
     return_z_mm: 52.59          # slot 반납 Z (tw z=49.59 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; RH-P12-RN raw pulse 범위 0~740, gripper_node에서 클램프)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
     notes: "실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)"
 
   - tool_id: spanner_16mm
@@ -178,7 +180,7 @@ tools:
     grasp_z_mm: 55.4            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: -9.12  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
     return_z_mm: 56.4          # slot 반납 Z (tw z=53.4 + 3mm, 임의값)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; RH-P12-RN raw pulse 범위 0~740, gripper_node에서 클램프)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: socket_19mm
@@ -203,7 +205,7 @@ tools:
     grasp_z_mm: 118.69            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
     return_z_mm: 119.69          # slot 반납 Z (tw z=116.69 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; RH-P12-RN raw pulse 범위 0~740, gripper_node에서 클램프)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
     notes: "실측 2026-06-15 (H_jig=20mm 추정, H_obj=15mm 노출 → grasp_h=55mm)"
 
 # ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────
