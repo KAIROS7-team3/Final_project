@@ -189,8 +189,8 @@ LAYER1_V2_CLOSE_END:   list = [369.0, 291.56, 115.7,  89.99, 89.99, 90.0]
 # ── socket 공구 위치 (toolboxapproach_box2_socket_*.tw 실측값, DSR BASE 좌표계, mm/deg) ──
 SOCKET_APPROACH_XY:  list = [269.98, 362.81, 234.0,   53.23,  180.0,  -38.07]
 SOCKET_APPROACH_Z:   list = [269.98, 362.8,  122.8,   48.74, -180.0,  -42.55]
-SOCKET_BOTTOM_XY:    list = [550.0, -172.72, 235.73, 160.43,  180.0,   73.74]
-SOCKET_BOTTOM:       list = [550.0, -172.72,  -0.12, 158.87,  180.0,   72.17]
+SOCKET_BOTTOM_XY:    list = [550.0, -142.0, 235.73, 160.43,  180.0,   73.74]
+SOCKET_BOTTOM:       list = [550.0, -142.0,  -0.12, 158.87,  180.0,   72.17]
 SOCKET_CATCH_HOME_L: list = [373.0,    0.0,  245.0,    3.13, -180.0,    3.13]
 
 
