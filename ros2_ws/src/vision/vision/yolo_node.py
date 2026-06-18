@@ -73,6 +73,7 @@ class YoloNode(Node):
         self._device: str = yolo_cfg["device"]
         self._class_names: list[str] = yolo_cfg["class_names"]
         self._publish_debug: bool = debug_cfg["publish_annotated_image"]
+        self._camera_type: str = camera_type
 
         model_path = yolo_cfg.get(_MODEL_KEYS[camera_type])
         self._model = self._load_model(model_path)
@@ -84,6 +85,13 @@ class YoloNode(Node):
         # camera_type별 토픽 분리 — 동시 기동 시 top_view/gripper 검출 결과 혼용 방지
         self._det_pub = self.create_publisher(
             Detection2DArray, f"/vision/detections/{camera_type}", _QOS_BEST_EFFORT_10
+        )
+
+        # gripper 타입일 때 최고 신뢰도 검출의 이진 마스크 발행 (PCA theta용)
+        self._gripper_mask_pub = (
+            self.create_publisher(Image, "/vision/masks/gripper", _QOS_BEST_EFFORT_10)
+            if camera_type == "gripper"
+            else None
         )
 
         if self._publish_debug:
@@ -135,6 +143,13 @@ class YoloNode(Node):
 
         det_array = self._build_detection_array(msg, results[0])
         self._det_pub.publish(det_array)
+
+        if self._gripper_mask_pub is not None:
+            best_mask = self._build_best_mask(rgb, results[0])
+            if best_mask is not None:
+                mask_msg = self._bridge.cv2_to_imgmsg(best_mask, encoding="mono8")
+                mask_msg.header = msg.header
+                self._gripper_mask_pub.publish(mask_msg)
 
         if self._debug_pub is not None:
             annotated = results[0].plot()
@@ -214,6 +229,22 @@ class YoloNode(Node):
             )
 
         return array
+
+    def _build_best_mask(self, img: np.ndarray, result) -> np.ndarray | None:
+        """최고 신뢰도 검출의 이진 마스크(mono8) 반환. 마스크 없으면 None."""
+        if result.boxes is None or result.masks is None:
+            return None
+        best_i = int(result.boxes.conf.argmax().item())
+        if best_i >= len(result.masks.xy):
+            return None
+        xy = result.masks.xy[best_i]
+        if len(xy) == 0:
+            return None
+        h, w = img.shape[:2]
+        mask = np.zeros((h, w), dtype=np.uint8)
+        pts = xy.astype(np.int32).reshape((-1, 1, 2))
+        cv2.fillPoly(mask, [pts], 255)
+        return mask
 
     def _build_mask_image(self, img: np.ndarray, result) -> np.ndarray:
         """마스크 윤곽선 + 무게중심점을 원본 이미지에 오버레이해서 반환."""

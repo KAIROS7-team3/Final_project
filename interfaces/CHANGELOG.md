@@ -46,6 +46,10 @@
     - 단위: m. frame_id: `base_link`.
     - rationale: vision_return 시퀀스 슬롯 복귀 정렬(MOVE_L_SLOT_XY) 좌표 공급.
     - migration: 신규 토픽.
+  - `/vision/masks/gripper` (`sensor_msgs/Image`, encoding: mono8): 그리퍼 캠 YOLO 검출 중 최고 신뢰도 검출의 이진 마스크. 발행자: `vision/yolo_node` (camera_type=gripper). 구독자: `vision/gripper_marker_scan_node`. QoS: Best Effort / depth 10.
+    - 픽셀값: 255 = 공구 마스크, 0 = 배경. 해상도는 원본 C270 이미지와 동일.
+    - rationale: `Detection2DArray`는 마스크 픽셀을 미포함. 마스크 별도 토픽으로 PCA theta 계산 정확도 향상 (Canny ROI 근사 대비).
+    - migration: 신규 토픽. seg 모델 사용 시에만 발행 (detection 모델이면 미발행 → marker_scan_node가 Canny ROI 폴백으로 자동 전환).
   > **비전팀 확인 필요**: 토픽명·메시지 타입·단위·frame_id는 비전팀과 합의 전 잠정 정의. 확정 후 이 항목 갱신 필수.
 - `srv/GripperSetPosition.srv`: RH-P12-RN 그리퍼 위치 제어 서비스 추가 (Track B Phase 1, PR #35).
   - 필드: request `position`(pulse), `current`(mA), `timeout_sec` / response `success`, `message`, `final_position`, `final_current`.

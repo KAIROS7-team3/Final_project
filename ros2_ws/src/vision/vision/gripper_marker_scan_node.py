@@ -117,6 +117,11 @@ class MarkerScanNode(Node):
         self._THETA_ALPHA = 0.25
         self._THETA_OUTLIER_DEG = 30.0  # 이 이상 순간 점프하면 해당 프레임 무시
 
+        # 마스크 캐시 — /vision/masks/gripper 구독, _on_sync에서 마스크 PCA 우선 사용
+        self._latest_mask: np.ndarray | None = None
+        self._latest_mask_stamp: float = 0.0
+        self._MASK_STALE_SEC = 0.5
+
         debug_cfg = self._load_debug_flag()
 
         # 퍼블리셔
@@ -127,6 +132,9 @@ class MarkerScanNode(Node):
             self.create_publisher(Image, "/vision/debug/gripper_marker", 1)
             if debug_cfg else None
         )
+
+        # 마스크 토픽 별도 구독 (캐싱 방식 — 3-way sync 없이 최신 마스크 재사용)
+        self.create_subscription(Image, "/vision/masks/gripper", self._on_mask, _QOS_BE10)
 
         # 이미지 + 검출 결과 동기화 구독
         img_sub = Subscriber(self, Image, "/c270/image_raw", qos_profile=qos_profile_sensor_data)
@@ -284,6 +292,11 @@ class MarkerScanNode(Node):
         T[:3, 3]  = [t.x, t.y, t.z]
         return T
 
+    def _on_mask(self, msg: Image) -> None:
+        """yolo_node가 발행하는 최고 신뢰도 검출 이진 마스크 캐싱."""
+        self._latest_mask = self._bridge.imgmsg_to_cv2(msg, desired_encoding="mono8")
+        self._latest_mask_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+
     # ─── 콜백 ────────────────────────────────────────────────────────────────
 
     def _on_sync(self, img_msg: Image, det_msg: Detection2DArray) -> None:
@@ -331,7 +344,13 @@ class MarkerScanNode(Node):
         P_base = T_base_gripper[:3, :3] @ P_tcp + T_base_gripper[:3, 3]
 
         # PCA로 공구 마스크 주축 방향각(rz) 계산 + 이상치 게이팅 + EMA 스무딩
-        rz_raw = _compute_pca_rz(gray, tool_cx, tool_cy, radius=60)
+        # 마스크가 최신이면 마스크 PCA 우선, 아니면 Canny ROI 폴백
+        now = img_msg.header.stamp.sec + img_msg.header.stamp.nanosec * 1e-9
+        if (self._latest_mask is not None
+                and abs(now - self._latest_mask_stamp) < self._MASK_STALE_SEC):
+            rz_raw = _compute_pca_rz_from_mask(self._latest_mask)
+        else:
+            rz_raw = _compute_pca_rz(gray, tool_cx, tool_cy, radius=60)
         s = math.sin(math.radians(rz_raw))
         c = math.cos(math.radians(rz_raw))
         if self._theta_ema_s is None:
@@ -452,6 +471,29 @@ def _compute_pca_rz(gray: np.ndarray, cx: float, cy: float, radius: int = 60) ->
     v1 = eigenvectors[:, np.argmax(eigenvalues)]
     # 180° 모호성 해소: 엣지 포인트를 v1에 투영해 더 긴 쪽을 +v1로 고정
     # centered shape: (N, 2) — row=y, col=x 순서이므로 v1도 (col, row) 매핑
+    proj = centered[:, 1] * v1[0] + centered[:, 0] * v1[1]
+    if abs(proj.min()) > abs(proj.max()):
+        v1 = -v1
+    return float(math.degrees(math.atan2(float(v1[1]), float(v1[0]))))
+
+
+def _compute_pca_rz_from_mask(mask: np.ndarray) -> float:
+    """이진 마스크(mono8) 픽셀 전체로 PCA 주축 방향각(deg) 계산.
+
+    test_marker_scan.py와 동일한 입력을 사용하므로 Canny ROI 근사보다 안정적.
+    PCA가 불안정하면 0.0 반환.
+    """
+    pts = np.argwhere(mask > 0).astype(np.float32)
+    if len(pts) < 5:
+        return 0.0
+    mean = pts.mean(axis=0)
+    centered = pts - mean
+    x, y = centered[:, 1], centered[:, 0]
+    n = len(pts)
+    cov = np.array([[np.sum(x**2)/n, np.sum(x*y)/n],
+                    [np.sum(x*y)/n,  np.sum(y**2)/n]], dtype=np.float64)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    v1 = eigenvectors[:, np.argmax(eigenvalues)]
     proj = centered[:, 1] * v1[0] + centered[:, 0] * v1[1]
     if abs(proj.min()) > abs(proj.max()):
         v1 = -v1
