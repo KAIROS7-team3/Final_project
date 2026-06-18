@@ -232,21 +232,22 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
 
 공구를 staging area에서 집어 공구함 slot으로 반납.
 
-### 구조 (13스텝)
+### 구조 (14스텝)
 
 | 스텝 | 동작 | 좌표 출처 |
 |------|------|-----------|
 | ① | JOINT_HOME | 고정 |
-| ② | GRIP_RELEASE | — |
+| ② | grip(0) — 완전 개방 | pulse=0 |
 | ③ | MoveJ — 그리퍼 캠 스캔 자세 | `VISION_RETURN_SCAN_J_DEG` = `[-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]` deg |
 | ④ | WAIT_VISION_RETURN_XY | `/vision/return/tool_gripper_pose` 수신 대기 (5초 타임아웃) |
+| ④-1 | GRIP_RELEASE — 파지 준비 개방 | pulse=450 |
 | ⑤ | MoveL — staging 위 | 그리퍼 캠 XY + rz + 고정 Z 234mm |
-| ⑥ | MoveL — staging 파지 하강 | 그리퍼 캠 XY + rz + `staging_pickup_z_mm` ⚠️ 실측 후 갱신 |
-| ⑦ | GRIP_TOOL (pulse=650) | — |
+| ⑥ | MoveL — staging 파지 하강 | 그리퍼 캠 XY + rz + `staging_pickup_z_mm` |
+| ⑦ | GRIP_TOOL (pulse=650→grip_stroke) | — |
 | ⑧ | MoveL — staging 위 상승 | 그리퍼 캠 XY + rz + 고정 Z 234mm |
 | ⑨ | MoveL — slot 위 | `grasp_pose_base` XY (yaml, m→mm) + 고정 Z 234mm |
-| ⑩ | MoveL — slot 반납 하강 | `grasp_pose_base` XY + `return_z_mm` (tw z + 3mm) |
-| ⑪ | GRIP_RELEASE | — |
+| ⑩ | MoveL — slot 반납 하강 | `grasp_pose_base` XY + `return_z_mm` |
+| ⑪ | GRIP_RELEASE | pulse=450 |
 | ⑫ | MoveL — slot 위 상승 | `grasp_pose_base` XY + 고정 Z 234mm |
 | ⑬ | JOINT_HOME | 고정 |
 
