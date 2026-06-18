@@ -113,6 +113,7 @@ tools:
     grasp_z_mm: 44.65            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: 45.65  # staging 파지 Z — ⚠️ 실측 후 갱신
     return_z_mm: 45.65          # slot 반납 Z (tw z=42.65 + 3mm)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드)
     notes: "실측 2026-06-15 (H_jig=3mm H_obj=5mm → grasp_h=11mm)"
 
   - tool_id: utility_knife
@@ -128,6 +129,7 @@ tools:
     grasp_z_mm: 101.87            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: 102.87  # staging 파지 Z — ⚠️ 실측 후 갱신
     return_z_mm: 102.87          # slot 반납 Z (tw z=99.87 + 3mm)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드)
     notes: "실측 2026-06-15 (H_jig=4mm H_obj=15mm → grasp_h=23mm)"
 
   - tool_id: ratchet_wrench
@@ -143,6 +145,7 @@ tools:
     grasp_z_mm: 99.32            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: 100.32  # staging 파지 Z — ⚠️ 실측 후 갱신
     return_z_mm: 100.32          # slot 반납 Z (tw z=97.32 + 3mm)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드)
     notes: "실측 2026-06-15 (H_jig=13mm H_obj=15mm → grasp_h=41mm)"
 
   - tool_id: multi_tool
@@ -158,6 +161,7 @@ tools:
     grasp_z_mm: 51.59            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: 52.59  # staging 파지 Z — ⚠️ 실측 후 갱신
     return_z_mm: 52.59          # slot 반납 Z (tw z=49.59 + 3mm)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드)
     notes: "실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)"
 
   - tool_id: spanner_16mm
@@ -174,6 +178,7 @@ tools:
     grasp_z_mm: 55.4            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: 56.4  # staging 파지 Z — ⚠️ 실측 후 갱신 (임의값)
     return_z_mm: 56.4          # slot 반납 Z (tw z=53.4 + 3mm, 임의값)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드)
     notes: "임의값 — 실측 후 갱신"
 
   - tool_id: socket_19mm
@@ -198,6 +203,7 @@ tools:
     grasp_z_mm: 118.69            # fetch Z (tw기준 + 2mm)
     staging_pickup_z_mm: 119.69  # staging 파지 Z — ⚠️ 실측 후 갱신
     return_z_mm: 119.69          # slot 반납 Z (tw z=116.69 + 3mm)
+    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드)
     notes: "실측 2026-06-15 (H_jig=20mm 추정, H_obj=15mm 노출 → grasp_h=55mm)"
 
 # ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────
@@ -212,7 +218,7 @@ vision_motion:
   workspace_limits:
     x: [50.0, 800.0]
     y: [-600.0, 600.0]
-    z: [-22.0, 700.0]
+    z: [-31.0, 700.0]
 
 # 수락 기준 (docs/conventions.md):
 # - 공구 분류 정확도 ≥ 95% (실험실 조명)
