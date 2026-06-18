@@ -298,9 +298,9 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_return -p tool
 - [ ] **초기 상태 읽기**: 노드 시작 시 DRL로 현재 그리퍼 위치(present_position)를 읽어 `_current_hz_pos` 초기화
 - [ ] **VS 실기 튜닝**: `config/visual_servo.yaml` handle/tool 각 섹션 kp·임계값 실측 보정
 - [x] **비전팀 인터페이스 확정**: `/vision/tool_gripper_pose` 단일 토픽 `PoseStamped` (XY + rz) — `docs/interfaces.md` §4 반영 완료
-- [ ] **staging_pickup_z_mm 실측**: 6종 공구 모두 직접교시로 실측 후 toolbox.yaml 갱신
+- [x] **staging_pickup_z_mm 실측**: 6종 공구 직접교시 실측 완료 (2026-06-18)
 - [ ] **spanner_16mm 전체 Z 실측**: grasp_z_mm / staging_pickup_z_mm / return_z_mm 모두 임의값
-- [ ] **config/toolbox.yaml workspace_limits z_min**: -22.0mm 임시값, 실측 후 갱신
+- [x] **config/toolbox.yaml workspace_limits z_min**: -31.0mm (2026-06-18 실측 기준 갱신 완료)
 - [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place)
 
 ---

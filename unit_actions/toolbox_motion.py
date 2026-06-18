@@ -37,8 +37,8 @@ class StepKind(Enum):
     VISUAL_SERVO_XY     = auto()   # 공구 XY 정렬 VS — runner에서 ToolServoController 실행
     MOVE_L_TOOL_XYZ     = auto()   # 그리퍼 캠 XYZ 하강 — runner가 /vision/tool_gripper_pose 좌표 사용
     MOVE_L_SLOT_XY      = auto()   # return ⑨⑫: toolbox.yaml grasp_pose_base XY + 고정 approach_z 이동
-    WAIT_VISION_TOP_XY    = auto()   # fetch: /vision/fetch/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
-    WAIT_VISION_RETURN_XY = auto()   # return: /vision/return/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
+    WAIT_VISION_TOP_XY    = auto()   # fetch: /vision/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
+    WAIT_VISION_RETURN_XY = auto()   # return: /vision/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
     MOVE_L_SLOT_XYZ       = auto()   # return ⑩: toolbox.yaml slot XY + return_z_mm 하강
     MOVE_L_STAGING_XYZ    = auto()   # return ⑥: 그리퍼 캠 XY + staging_pickup_z_mm 하강
 
@@ -485,7 +485,7 @@ def vision_fetch_seq() -> list[Step]:
     ① JOINT_HOME
     ② grip(0)         — 완전 개방 (pulse=0)
     ③ MoveJ → VISION_FETCH_SCAN_J_DEG  (그리퍼 캠 스캔 자세)
-    ④ WAIT_VISION_TOP_XY — 캐시 초기화 후 /vision/fetch/tool_gripper_pose 신규 수신 대기
+    ④ WAIT_VISION_TOP_XY — 캐시 초기화 후 /vision/tool_gripper_pose 신규 수신 대기
     ④-1 GRIP_RELEASE  — 파지 준비 개방 (pulse=450)
     ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 XY + APPROACH_Z 로 이동
     ⑥ MOVE_L_TOOL_XYZ — 그리퍼 캠 XY + grasp_z_mm 로 공구 위치 하강
@@ -545,7 +545,7 @@ def vision_return_seq() -> list[Step]:
     ① JOINT_HOME
     ② grip(0)         — 완전 개방 (pulse=0)
     ③ MoveJ → VISION_RETURN_SCAN_J_DEG (그리퍼 캠 스캔 자세)
-    ④ WAIT_VISION_RETURN_XY — 캐시 초기화 후 /vision/return/tool_gripper_pose 신규 수신 대기
+    ④ WAIT_VISION_RETURN_XY — 캐시 초기화 후 /vision/tool_gripper_pose 신규 수신 대기
     ④-1 GRIP_RELEASE  — 파지 준비 개방 (pulse=450)
     ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 XY + rz + 고정 Z (staging 위)
     ⑥ MOVE_L_STAGING_XYZ — 그리퍼 캠 XY + rz + staging_pickup_z_mm 로 staging 공구 파지 하강
@@ -564,7 +564,7 @@ def vision_return_seq() -> list[Step]:
         JOINT_HOME(),                               # ①
         grip(0),                                    # ② 완전 개방 (pulse=0)
         mj_abs(VISION_RETURN_SCAN_J_DEG),           # ③ 그리퍼 캠 스캔 자세
-        Step(kind=StepKind.WAIT_VISION_RETURN_XY),  # ④ /vision/return/tool_gripper_pose 수신 대기
+        Step(kind=StepKind.WAIT_VISION_RETURN_XY),  # ④ /vision/tool_gripper_pose 수신 대기
         GRIP_RELEASE(),                             # ④-1 파지 준비 개방 (pulse=450)
         Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + rz + 고정 Z (staging 위)
         Step(kind=StepKind.MOVE_L_STAGING_XYZ),     # ⑥ 그리퍼 캠 XY + rz + staging_pickup_z_mm 하강

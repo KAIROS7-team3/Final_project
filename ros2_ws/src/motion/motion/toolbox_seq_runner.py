@@ -17,6 +17,7 @@ toolbox_motion.py 시퀀스를 virtual/real 모드에서 실행하는 테스트 
 """
 
 import logging
+import math
 import os
 import sys
 import threading
@@ -72,6 +73,7 @@ from unit_actions.toolbox_motion import (
     StepKind,
     Step,
     VEL_L, ACC_L, VEL_R, ACC_R, VEL_J, ACC_J,
+    PULSE_GRIP_TOOL,
     home_seq,
     drawer_open_seq,
     drawer_close_seq,
@@ -393,7 +395,6 @@ class ToolboxSeqRunner(Node):
 
     def _on_tool_gripper_pose(self, msg: PoseStamped) -> None:
         """그리퍼 캠 공구 좌표 수신 (/vision/tool_gripper_pose) — fetch/return 공통."""
-        import math
         q = msg.pose.orientation
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
@@ -766,7 +767,7 @@ class ToolboxSeqRunner(Node):
         req.sync_type  = 0
         fut = self._movel_cli.call_async(req)
         _POLL = 0.1
-        _TIMEOUT = 5.0
+        _TIMEOUT = 30.0
         elapsed = 0.0
         while not fut.done() and elapsed < _TIMEOUT:
             rclpy.spin_until_future_complete(self, fut, timeout_sec=_POLL)
@@ -795,7 +796,7 @@ class ToolboxSeqRunner(Node):
         req.sync_type  = 0
         fut = self._movej_cli.call_async(req)
         _POLL = 0.1
-        _TIMEOUT = 5.0
+        _TIMEOUT = 20.0
         elapsed = 0.0
         while not fut.done() and elapsed < _TIMEOUT:
             rclpy.spin_until_future_complete(self, fut, timeout_sec=_POLL)
@@ -815,7 +816,7 @@ class ToolboxSeqRunner(Node):
     def _grip(self, step: Step) -> bool:
         pulse = step.pulse if step.pulse is not None else 0
         # tool_id별 grip_stroke 오버라이드 (PULSE_GRIP_TOOL 계열 step에만 적용)
-        if pulse == 650 and self._tool_id in self._grip_stroke_map:
+        if pulse == PULSE_GRIP_TOOL and self._tool_id in self._grip_stroke_map:
             pulse = self._grip_stroke_map[self._tool_id]
             self.get_logger().info(f'  [GRIP] tool_id={self._tool_id!r} grip_stroke 오버라이드 → {pulse}')
         current = 400 if pulse > 450 else 0  # grip: 400mA, open/release: gripper_node 기본값
@@ -919,7 +920,6 @@ class ToolboxSeqRunner(Node):
         if not pose.valid:
             self.get_logger().error('  [TOP_XY] 그리퍼 캠 좌표 미수신 (/vision/tool_gripper_pose)')
             return False
-        import math
         if not math.isfinite(pose.rz) or not (-185.0 <= pose.rz <= 185.0):
             self.get_logger().error(f'  [TOP_XY] rz 비정상값 거부: {pose.rz!r}°')
             return False
@@ -1003,7 +1003,6 @@ class ToolboxSeqRunner(Node):
                 f'  [TOOL_XYZ] tool_id={self._tool_id!r} grasp_z_mm 미등록 — 그리퍼 캠 Z 사용: {z:.2f}mm'
             )
 
-        import math
         if not math.isfinite(pose.rz) or not (-185.0 <= pose.rz <= 185.0):
             self.get_logger().error(f'  [TOOL_XYZ] rz 비정상값 거부: {pose.rz!r}°')
             return False
@@ -1024,7 +1023,6 @@ class ToolboxSeqRunner(Node):
             self.get_logger().error('  [STAGING_XYZ] 그리퍼 캠 좌표 미수신 (/vision/tool_gripper_pose)')
             return False
 
-        import math
         if not math.isfinite(pose.rz) or not (-185.0 <= pose.rz <= 185.0):
             self.get_logger().error(f'  [STAGING_XYZ] rz 비정상값 거부: {pose.rz!r}°')
             return False
@@ -1041,9 +1039,7 @@ class ToolboxSeqRunner(Node):
         if not self._check_vision_coords('STAGING_XYZ', pose.x, pose.y, z):
             return False
         ori = list(self._tool_descent_ori)
-        ori[0] = 180.0   # RX 고정
-        ori[1] = 180.0   # RY 고정
-        ori[2] = pose.rz  # RZ = vision rz
+        ori[2] = pose.rz  # RZ = vision rz (RX/RY는 config tool_descent_ori 사용)
         pos = [pose.x, pose.y, z] + ori
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
         self.get_logger().info(f'  [STAGING_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {z:.1f}) rz={pose.rz:.1f}°')
