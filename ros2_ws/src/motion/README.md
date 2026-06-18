@@ -182,23 +182,24 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_close_1
 
 ## vision_fetch 시퀀스 (feat/track-b-vision-sequences)
 
-### 구조 (13스텝)
+### 구조 (14스텝)
 
 Visual Servo 없이 그리퍼 캠 한 번 스캔 → 직접 이동 방식.
 
 | 스텝 | 동작 | 좌표 출처 |
 |------|------|-----------|
 | ① | JOINT_HOME | 고정 |
-| ② | GRIP_RELEASE | — |
+| ② | grip(0) — 완전 개방 | pulse=0 |
 | ③ | MoveJ — 그리퍼 캠 스캔 자세 | `VISION_FETCH_SCAN_J_DEG` = `[-30.1, 15.5, 74.7, 20.9, 101.2, -27.8]` deg |
 | ④ | WAIT_VISION_TOP_XY — 토픽 수신 대기 | `/vision/fetch/tool_gripper_pose` 신규 수신 대기 |
+| ④-1 | GRIP_RELEASE — 파지 준비 개방 | pulse=450 |
 | ⑤ | MoveL — 공구 위쪽 | 그리퍼 캠 XY + `tool_approach_z_mm` (고정 234mm) |
 | ⑥ | MoveL — 공구 하강 | 그리퍼 캠 XY + `grasp_z_mm` |
-| ⑦ | GRIP_SOCKET (pulse=650) | — |
+| ⑦ | GRIP_TOOL (pulse=650→grip_stroke) | — |
 | ⑧ | MoveL — 위로 상승 | 그리퍼 캠 XY + 234mm (⑤과 동일) |
 | ⑨ | MoveL — staging 위 | `SOCKET_BOTTOM_XY` = `[550.0, -172.72, 235.73, ...]` 고정 |
 | ⑩ | MoveL — staging 하강 | `SOCKET_BOTTOM` = `[550.0, -172.72, -0.12, ...]` 고정 |
-| ⑪ | GRIP_RELEASE | — |
+| ⑪ | GRIP_RELEASE | pulse=450 |
 | ⑫ | MoveL — staging 위 | `SOCKET_BOTTOM_XY` 고정 |
 | ⑬ | JOINT_HOME | 고정 |
 
@@ -241,7 +242,7 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
 | ④ | WAIT_VISION_RETURN_XY | `/vision/return/tool_gripper_pose` 수신 대기 (5초 타임아웃) |
 | ⑤ | MoveL — staging 위 | 그리퍼 캠 XY + rz + 고정 Z 234mm |
 | ⑥ | MoveL — staging 파지 하강 | 그리퍼 캠 XY + rz + `staging_pickup_z_mm` ⚠️ 실측 후 갱신 |
-| ⑦ | GRIP_SOCKET (pulse=650) | — |
+| ⑦ | GRIP_TOOL (pulse=650) | — |
 | ⑧ | MoveL — staging 위 상승 | 그리퍼 캠 XY + rz + 고정 Z 234mm |
 | ⑨ | MoveL — slot 위 | `grasp_pose_base` XY (yaml, m→mm) + 고정 Z 234mm |
 | ⑩ | MoveL — slot 반납 하강 | `grasp_pose_base` XY + `return_z_mm` (tw z + 3mm) |

@@ -321,7 +321,7 @@ class ToolboxSeqRunner(Node):
                 for t in cfg.get('tools', [])
                 if 'staging_pickup_z_mm' in t
             }
-            # 공구별 grip_stroke (미등록 시 PULSE_GRIP_SOCKET=650 사용)
+            # 공구별 grip_stroke (미등록 시 PULSE_GRIP_TOOL=650 사용)
             self._grip_stroke_map: dict[str, int] = {
                 t['tool_id']: int(t['grip_stroke'])
                 for t in cfg.get('tools', [])
@@ -816,7 +816,7 @@ class ToolboxSeqRunner(Node):
 
     def _grip(self, step: Step) -> bool:
         pulse = step.pulse if step.pulse is not None else 0
-        # tool_id별 grip_stroke 오버라이드 (PULSE_GRIP_SOCKET 계열 step에만 적용)
+        # tool_id별 grip_stroke 오버라이드 (PULSE_GRIP_TOOL 계열 step에만 적용)
         if pulse == 650 and self._tool_id in self._grip_stroke_map:
             pulse = self._grip_stroke_map[self._tool_id]
             self.get_logger().info(f'  [GRIP] tool_id={self._tool_id!r} grip_stroke 오버라이드 → {pulse}')
