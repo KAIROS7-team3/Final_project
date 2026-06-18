@@ -64,7 +64,7 @@ def _load_offset_tools(config_path: Path) -> dict[str, dict]:
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="C270 centroid extraction")
     p.add_argument("--model",  type=Path, default=_DEFAULT_MODEL)
-    p.add_argument("--device", default="/dev/video8",
+    p.add_argument("--device", default="/dev/video2",
                    help="카메라 장치 (--images 미지정 시 사용)")
     p.add_argument("--images", type=Path, default=None,
                    help="이미지 파일 또는 폴더 경로 (지정 시 카메라 대신 사용)")

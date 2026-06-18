@@ -47,7 +47,7 @@ calibration:
   error_ok_mm: 3.0              # 이 값 초과 시 추가 수집 권장
 
   # c270 카메라 장치 경로
-  c270_device: /dev/video8
+  c270_device: /dev/video2
   c270_width: 640
   c270_height: 480
 

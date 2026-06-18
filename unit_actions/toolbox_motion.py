@@ -470,8 +470,8 @@ def socket_fetch_seq() -> list[Step]:
     ]
 
 
-VISION_FETCH_SCAN_J_DEG_DEG:  list = [-30.1,  15.5,  74.7,  20.9,  101.2,  -27.8]   # fetch 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
-VISION_RETURN_SCAN_J_DEG_DEG: list = [-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]  # return 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
+VISION_FETCH_SCAN_J_DEG:  list = [-30.1,  15.5,  74.7,  20.9,  101.2,  -27.8]   # fetch 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
+VISION_RETURN_SCAN_J_DEG: list = [-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]  # return 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
 
 
 def vision_fetch_seq() -> list[Step]:

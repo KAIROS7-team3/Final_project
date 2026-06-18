@@ -321,6 +321,12 @@ class ToolboxSeqRunner(Node):
                 for t in cfg.get('tools', [])
                 if 'staging_pickup_z_mm' in t
             }
+            # 공구별 grip_stroke (미등록 시 PULSE_GRIP_SOCKET=650 사용)
+            self._grip_stroke_map: dict[str, int] = {
+                t['tool_id']: int(t['grip_stroke'])
+                for t in cfg.get('tools', [])
+                if 'grip_stroke' in t
+            }
             # 공구별 slot XY (grasp_pose_base, m → mm 변환)
             self._slot_xy_map: dict[str, tuple[float, float]] = {
                 t['tool_id']: (
@@ -349,6 +355,7 @@ class ToolboxSeqRunner(Node):
             self._grasp_z_map = {}
             self._return_z_map = {}
             self._staging_pickup_z_map = {}
+            self._grip_stroke_map = {}
             self._slot_xy_map = {}
 
     # ── 콜백 ──────────────────────────────────────────────────────────────
@@ -809,6 +816,10 @@ class ToolboxSeqRunner(Node):
 
     def _grip(self, step: Step) -> bool:
         pulse = step.pulse if step.pulse is not None else 0
+        # tool_id별 grip_stroke 오버라이드 (PULSE_GRIP_SOCKET 계열 step에만 적용)
+        if pulse == 650 and self._tool_id in self._grip_stroke_map:
+            pulse = self._grip_stroke_map[self._tool_id]
+            self.get_logger().info(f'  [GRIP] tool_id={self._tool_id!r} grip_stroke 오버라이드 → {pulse}')
         current = 400 if pulse > 450 else 0  # grip: 400mA, open/release: gripper_node 기본값
 
         req = GripperSetPosition.Request()
