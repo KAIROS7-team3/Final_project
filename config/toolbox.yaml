@@ -211,8 +211,8 @@ tools:
 # 실기 검증 후 공구별로 분리 예정.
 vision_motion:
   tool_approach_z_mm: 234.0                    # 공구 위 대기 높이 (mm, DSR BASE)
-  tool_approach_ori: [53.23, 180.0, -38.07]    # approach 자세 [rx,ry,rz] (deg)
-  tool_descent_ori: [48.74, -180.0, -42.55]    # 하강 자세 [rx,ry,rz] (deg)
+  tool_approach_ori: [180.0, 180.0, 90.0]    # approach 자세 [rx,ry,rz] (deg)
+  tool_descent_ori: [180.0, 180.0, 90.0]     # 하강 자세 [rx,ry,rz] (deg)
   # 비전 좌표 허용 범위 (DSR BASE 좌표계, mm) — S-5 소프트 workspace 리밋
   # ⚠️ 실제 비전 좌표 수신 후 실측값으로 갱신 필요
   workspace_limits:

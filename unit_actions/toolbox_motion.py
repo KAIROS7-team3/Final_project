@@ -187,10 +187,15 @@ LAYER1_V2_CLOSE_END:   list = [369.0, 291.56, 115.7,  89.99, 89.99, 90.0]
 
 
 # ── socket 공구 위치 (toolboxapproach_box2_socket_*.tw 실측값, DSR BASE 좌표계, mm/deg) ──
-SOCKET_APPROACH_XY:  list = [269.98, 362.81, 234.0,   53.23,  180.0,  -38.07]
-SOCKET_APPROACH_Z:   list = [269.98, 362.8,  122.8,   48.74, -180.0,  -42.55]
-SOCKET_BOTTOM_XY:    list = [550.0, -142.0, 235.73, 160.43,  180.0,   73.74]
-SOCKET_BOTTOM:       list = [550.0, -142.0,  -0.12, 158.87,  180.0,   72.17]
+SOCKET_APPROACH_XY:  list = [269.98, 362.81, 234.0,  180.0,  180.0,   90.0]
+SOCKET_APPROACH_Z:   list = [269.98, 362.8,  122.8,  180.0,  180.0,   90.0]
+# SOCKET_BOTTOM Z=-0.12mm 은 소켓 측면 상단을 잡는 기준 (바닥 아님).
+# staging_pickup_z_mm(-29.06mm)과 다른 이유: vision_return ⑥은 A4 staging 바닥에서 공구를 집고,
+# socket_fetch/return ⑨⑩은 소켓 윗면 파지 기준이라 높게 설정.
+# 추후 A4 아래 지그/패드를 덧대어 높이 조정 예정.
+# spanner_16mm은 바닥 지그 위에서 파지하므로 staging_pickup_z_mm이 -9.12mm로 별도 설정됨 (정상).
+SOCKET_BOTTOM_XY:    list = [550.0, -142.0, 235.73, 180.0,  180.0,   90.0]
+SOCKET_BOTTOM:       list = [550.0, -142.0,  -0.12, 180.0,  180.0,   90.0]
 SOCKET_CATCH_HOME_L: list = [373.0,    0.0,  245.0,    3.13, -180.0,    3.13]
 
 

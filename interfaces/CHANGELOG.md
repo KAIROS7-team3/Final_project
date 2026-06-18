@@ -33,10 +33,11 @@
     - 단위: m (runner 내부에서 ×1000 → mm 변환). frame_id: `base_link`.
     - rationale: vision_fetch 시퀀스 step ③ 공구 위 이동(MOVE_L_TOP_XY)에 탑뷰 rough XY 좌표 공급.
     - migration: 신규 토픽. 비전팀이 발행 미구현 시 해당 step에서 "좌표 미수신" 오류로 시퀀스 실패.
-  - `/vision/tool_gripper_pose` (`geometry_msgs/PointStamped`): 그리퍼 캠 C270이 제공하는 공구 중심 XYZ 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+  - `/vision/tool_gripper_pose` (`geometry_msgs/PoseStamped`): 그리퍼 캠 C270이 제공하는 공구 중심 XYZ + 방향각(rz). 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 10.
     - 단위: m. frame_id: `base_link`.
-    - rationale: vision_fetch step ④ ToolServoController XY VS 정렬 및 step ⑤ 하강 Z 좌표 공급.
-    - migration: 신규 토픽.
+    - orientation: quaternion (yaw-only, PCA 주축 방향각). `pca_theta - 90°` 변환 후 robot rz로 사용.
+    - rationale: PCA theta 전달 필요로 PointStamped → PoseStamped 변경. fetch/return 분리 토픽을 단일 토픽으로 통합.
+    - migration: 기존 `PointStamped` 구독자는 `PoseStamped`로 타입 교체 필요. rz는 `pose.orientation` quaternion에서 추출.
   - `/vision/handle_pose` (`geometry_msgs/PointStamped`): 그리퍼 캠 C270이 제공하는 서랍 손잡이 중심 XZ 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
     - 단위: m. frame_id: `base_link`. (Y는 HandleServoController에서 미사용 — XZ만 보정)
     - rationale: vision_open/close step ④⑤ HandleServoController XZ VS 정렬 좌표 공급.

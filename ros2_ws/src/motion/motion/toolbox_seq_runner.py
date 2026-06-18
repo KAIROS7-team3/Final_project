@@ -260,6 +260,10 @@ class ToolboxSeqRunner(Node):
             self._db.connect()
         except Exception as e:
             self.get_logger().warn(f'[runner] DB 연결 실패 (fetch/return 실행 불가): {e}')
+            try:
+                self._plc.set_error()  # F8: DB 미연결 시 PLC 빨강으로 운영자 즉시 인지
+            except Exception:
+                pass
 
         # E-5: PLC 클라이언트 — 시퀀스 실패 시 오류 상태 표시
         self._plc = PLCClient()
@@ -287,12 +291,12 @@ class ToolboxSeqRunner(Node):
                 cfg = yaml.safe_load(f)
             vm = cfg.get('vision_motion', {})
             self._tool_approach_z_mm: float = float(vm.get('tool_approach_z_mm', 234.0))
-            self._tool_approach_ori: list   = list(vm.get('tool_approach_ori', [53.23, 180.0, -38.07]))
-            self._tool_descent_ori: list    = list(vm.get('tool_descent_ori', [48.74, -180.0, -42.55]))
+            self._tool_approach_ori: list   = list(vm.get('tool_approach_ori', [180.0, 180.0, 90.0]))
+            self._tool_descent_ori: list    = list(vm.get('tool_descent_ori', [180.0, 180.0, 90.0]))
             lim = vm.get('workspace_limits', {})
             x = lim.get('x', [50.0, 800.0])
             y = lim.get('y', [-600.0, 600.0])
-            z = lim.get('z', [-5.0, 700.0])
+            z = lim.get('z', [-31.0, 700.0])
             self._vis_x_min, self._vis_x_max = float(x[0]), float(x[1])
             self._vis_y_min, self._vis_y_max = float(y[0]), float(y[1])
             self._vis_z_min, self._vis_z_max = float(z[0]), float(z[1])
@@ -338,11 +342,11 @@ class ToolboxSeqRunner(Node):
         except Exception as e:
             self.get_logger().error(f'[runner] toolbox.yaml 로드 실패: {e} — 기본값 사용')
             self._tool_approach_z_mm = 234.0
-            self._tool_approach_ori  = [53.23, 180.0, -38.07]
-            self._tool_descent_ori   = [48.74, -180.0, -42.55]
+            self._tool_approach_ori  = [180.0, 180.0, 90.0]
+            self._tool_descent_ori   = [180.0, 180.0, 90.0]
             self._vis_x_min, self._vis_x_max = 50.0, 800.0
             self._vis_y_min, self._vis_y_max = -600.0, 600.0
-            self._vis_z_min, self._vis_z_max = -5.0, 700.0
+            self._vis_z_min, self._vis_z_max = -31.0, 700.0
             self._grasp_z_map = {}
             self._return_z_map = {}
             self._staging_pickup_z_map = {}
@@ -393,7 +397,12 @@ class ToolboxSeqRunner(Node):
         q = msg.pose.orientation
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        rz = math.degrees(math.atan2(siny_cosp, cosy_cosp))
+        pca_theta = math.degrees(math.atan2(siny_cosp, cosy_cosp))
+        # PCA theta(공구 장축) → 로봇 rz(그리퍼 파지 방향) 변환: -90° 오프셋
+        # ±180°가 동일 자세이므로 (-180°, 180°] 범위로 정규화
+        rz = pca_theta - 90.0
+        if rz < -180.0:
+            rz += 360.0
         with self._tool_gripper_lock:
             self._latest_tool_gripper = ToolPose(
                 x=msg.pose.position.x * 1000.0,
@@ -535,7 +544,22 @@ class ToolboxSeqRunner(Node):
             self._on_sequence_failure()
             if self._estop_triggered:
                 # S-3: E-stop 상태에서는 홈 복귀 시퀀스 진입 금지 — actuator 명령 누출 차단
+                # S-3: PLC 빨강 Solid + DB 로그 기록 필수
                 self.get_logger().error(f'[runner] E-stop으로 시퀀스 중단: {self._seq_name} — 홈 복귀 생략')
+                try:
+                    self._plc.set_error()
+                except Exception as e:
+                    self.get_logger().error(f'[runner] E-stop PLC 오류 표시 실패: {e}')
+                try:
+                    if self._db is not None:
+                        self._db.log_event(
+                            tool_id=self._tool_id or 'unknown',
+                            event_type='error',
+                            track='A',
+                            notes=f'estop_abort seq={self._seq_name}',
+                        )
+                except Exception as e:
+                    self.get_logger().error(f'[runner] E-stop DB 로그 실패: {e}')
                 self._is_moving_pub.publish(Bool(data=False))
                 rclpy.shutdown()
                 return
@@ -560,7 +584,7 @@ class ToolboxSeqRunner(Node):
         if self._stop_cli.service_is_ready():
             try:
                 fut = self._stop_cli.call_async(MoveStop.Request())
-                rclpy.spin_until_future_complete(self, fut, timeout_sec=0.5)
+                rclpy.spin_until_future_complete(self, fut, timeout_sec=0.2)
                 self.get_logger().info('[runner] 시퀀스 실패 — DSR move_stop 전송')
                 time.sleep(0.3)  # DSR 감속 완료 대기 — HIL 실측 후 조정
             except Exception as e:
@@ -1017,7 +1041,9 @@ class ToolboxSeqRunner(Node):
         if not self._check_vision_coords('STAGING_XYZ', pose.x, pose.y, z):
             return False
         ori = list(self._tool_descent_ori)
-        ori[2] = pose.rz
+        ori[0] = 180.0   # RX 고정
+        ori[1] = 180.0   # RY 고정
+        ori[2] = pose.rz  # RZ = vision rz
         pos = [pose.x, pose.y, z] + ori
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
         self.get_logger().info(f'  [STAGING_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {z:.1f}) rz={pose.rz:.1f}°')
@@ -1047,12 +1073,12 @@ class ToolboxSeqRunner(Node):
         return self._movel(step, DR_MV_MOD_ABS)
 
     def _get_latest_gripper_tool(self) -> ToolPose:
-        with self._gripper_tool_lock:
+        with self._tool_gripper_lock:
             return ToolPose(
-                x=self._latest_gripper_tool.x,
-                y=self._latest_gripper_tool.y,
-                z=self._latest_gripper_tool.z,
-                valid=self._latest_gripper_tool.valid,
+                x=self._latest_tool_gripper.x,
+                y=self._latest_tool_gripper.y,
+                z=self._latest_tool_gripper.z,
+                valid=self._latest_tool_gripper.valid,
             )
 
     def _exec_move_l_slot_xy(self) -> bool:

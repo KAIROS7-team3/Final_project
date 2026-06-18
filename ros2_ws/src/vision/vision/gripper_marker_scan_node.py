@@ -111,6 +111,11 @@ class MarkerScanNode(Node):
         self._tf_buf = Buffer()
         self._tf_listener = TransformListener(self._tf_buf, self)
 
+        # theta EMA 스무딩 (sin/cos 분리로 각도 wraparound 안전)
+        self._theta_ema_s: float | None = None  # sin 누적
+        self._theta_ema_c: float | None = None  # cos 누적
+        self._THETA_ALPHA = 0.25
+
         debug_cfg = self._load_debug_flag()
 
         # 퍼블리셔
@@ -324,9 +329,16 @@ class MarkerScanNode(Node):
             return
         P_base = T_base_gripper[:3, :3] @ P_tcp + T_base_gripper[:3, 3]
 
-        # PCA로 공구 마스크 주축 방향각(rz) 계산
-        # Detection2DArray는 bbox center만 제공하므로 마스크 픽셀은 gray 이미지에서 근사
-        rz_deg = _compute_pca_rz(gray, tool_cx, tool_cy)
+        # PCA로 공구 마스크 주축 방향각(rz) 계산 + EMA 스무딩
+        rz_raw = _compute_pca_rz(gray, tool_cx, tool_cy)
+        s = math.sin(math.radians(rz_raw))
+        c = math.cos(math.radians(rz_raw))
+        if self._theta_ema_s is None:
+            self._theta_ema_s, self._theta_ema_c = s, c
+        else:
+            self._theta_ema_s = self._THETA_ALPHA * s + (1.0 - self._THETA_ALPHA) * self._theta_ema_s
+            self._theta_ema_c = self._THETA_ALPHA * c + (1.0 - self._THETA_ALPHA) * self._theta_ema_c
+        rz_deg = math.degrees(math.atan2(self._theta_ema_s, self._theta_ema_c))
 
         # quaternion 변환 (yaw only: roll=0, pitch=0)
         half_yaw = math.radians(rz_deg) / 2.0
@@ -428,8 +440,13 @@ def _compute_pca_rz(gray: np.ndarray, cx: float, cy: float, radius: int = 40) ->
     n = len(pts)
     cov = np.array([[np.sum(x**2)/n, np.sum(x*y)/n],
                     [np.sum(x*y)/n,  np.sum(y**2)/n]], dtype=np.float64)
-    eigenvalues, eigenvectors = np.linalg.eig(cov)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
     v1 = eigenvectors[:, np.argmax(eigenvalues)]
+    # 180° 모호성 해소: 엣지 포인트를 v1에 투영해 더 긴 쪽을 +v1로 고정
+    # centered shape: (N, 2) — row=y, col=x 순서이므로 v1도 (col, row) 매핑
+    proj = centered[:, 1] * v1[0] + centered[:, 0] * v1[1]
+    if abs(proj.min()) > abs(proj.max()):
+        v1 = -v1
     return float(math.degrees(math.atan2(float(v1[1]), float(v1[0]))))
 
 
