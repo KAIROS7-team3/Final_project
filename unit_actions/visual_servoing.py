@@ -36,13 +36,15 @@ logger = logging.getLogger(__name__)
 class ToolPose:
     """그리퍼 카메라가 제공하는 공구 중심 좌표.
 
-    x, y : robot base frame 기준 (mm) — XY VS 정렬에 사용
-    z    : robot base frame 기준 (mm) — VS 완료 후 하강 거리에 사용
+    x, y : robot base frame 기준 (mm) — XY 이동에 사용
+    z    : robot base frame 기준 (mm) — 하강 거리에 사용
+    rz   : robot base frame 기준 (deg) — 공구 방위각 (yaw)
     valid: 해당 프레임 좌표 유효 여부
     """
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
+    rz: float = 0.0
     valid: bool = False
 
 

@@ -185,6 +185,28 @@ class _TFListener:
 # 마우스 클릭 선택 상태
 _state: dict = {"selected": -1, "polys": []}
 
+# theta EMA 스무딩 (클래스별, sin/cos 분리로 각도 wraparound 안전)
+_THETA_ALPHA = 0.25        # 낮을수록 더 부드럽고 느림, 높을수록 빠르고 노이즈 많음
+_THETA_OUTLIER_DEG = 30.0  # 이 이상 순간 점프하면 해당 프레임 무시
+_theta_ema: dict[str, tuple[float, float]] = {}  # name -> (sin_avg, cos_avg)
+
+def _ema_theta(name: str, theta_deg: float) -> float:
+    import math as _m
+    s = _m.sin(_m.radians(theta_deg))
+    c = _m.cos(_m.radians(theta_deg))
+    if name not in _theta_ema:
+        _theta_ema[name] = (s, c)
+    else:
+        ps, pc = _theta_ema[name]
+        cur_deg = _m.degrees(_m.atan2(ps, pc))
+        diff = abs((theta_deg - cur_deg + 180.0) % 360.0 - 180.0)
+        if diff > _THETA_OUTLIER_DEG:
+            return cur_deg  # 이상치 — EMA 그대로 유지
+        s = _THETA_ALPHA * s + (1.0 - _THETA_ALPHA) * ps
+        c = _THETA_ALPHA * c + (1.0 - _THETA_ALPHA) * pc
+        _theta_ema[name] = (s, c)
+    return float(_m.degrees(_m.atan2(_theta_ema[name][0], _theta_ema[name][1])))
+
 def _on_mouse(event, x, y, flags, param):
     if event != cv2.EVENT_LBUTTONDOWN:
         return
@@ -340,6 +362,17 @@ def main() -> None:
 
                 if pca is not None:
                     cx_pca, cy_pca, v1, reliability = pca
+
+                    # 180° 모호성 해소: 더 긴 쪽을 +v1 방향으로 고정
+                    pts_f = np.argwhere(mask_2d > 0).astype(np.float32)
+                    centered_f = pts_f - np.array([cy_pca, cx_pca])
+                    proj_f = centered_f[:, 1] * v1[0] + centered_f[:, 0] * v1[1]
+                    if len(proj_f) > 0 and abs(proj_f.min()) > abs(proj_f.max()):
+                        v1 = -v1
+                    import math as _math
+                    theta_raw = _math.degrees(_math.atan2(float(v1[1]), float(v1[0])))
+                    theta_deg = _ema_theta(name, theta_raw)
+
                     # 선택된 객체이거나 조건 충족 시 PCA 화살표 + 파지점 표시
                     show_pca = selected or (name in GRASP_OFFSET and reliability > 1.5)
                     if show_pca:
@@ -357,11 +390,11 @@ def main() -> None:
                         grasp_cx, grasp_cy = int(gx), int(gy)
                         cv2.drawMarker(vis, (grasp_cx, grasp_cy), draw_color,
                                        cv2.MARKER_CROSS, 24, 2)
-                        label_suffix = f" [PCA r={reliability:.1f}]"
+                        label_suffix = f" [PCA r={reliability:.1f} th={theta_deg:.1f}deg]"
                     else:
                         grasp_cx, grasp_cy = int(cx_pca), int(cy_pca)
                         cv2.circle(vis, (grasp_cx, grasp_cy), 6, color, -1)
-                        label_suffix = f" [centroid r={reliability:.1f}]"
+                        label_suffix = f" [centroid r={reliability:.1f} th={theta_deg:.1f}deg]"
                 else:
                     grasp_cx = int(xy[:, 0].mean())
                     grasp_cy = int(xy[:, 1].mean())

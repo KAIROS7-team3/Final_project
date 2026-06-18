@@ -34,18 +34,24 @@ model_library/
 ```bash
 # gdown 사용 예시
 pip install gdown
-gdown "<drive_url>" -O ros2_ws/src/vision/model_library/top_view_model/v2/weights/best.pt
+
+# top_view 모델 (drive_url은 해당 model_info.yaml 확인)
+gdown "<drive_url>" -O ros2_ws/src/vision/model_library/top_view_model/v3-2/weights/best.pt
+
+# gripper_view 모델 (C270, v1)
+gdown "https://drive.google.com/file/d/1R6OaOKuF2wCM6QxsFsRnNgbGIXPKvB9N/view?usp=sharing" \
+    --fuzzy -O ros2_ws/src/vision/model_library/gripper_model/v1/weights/best.pt
 ```
 
 ---
 
 ## 현재 운용 버전
 
-| 카메라 | 버전 | 태스크 | mAP@0.5 | 상태 |
-|--------|------|--------|---------|------|
-| top_view (D455f) | v3-2 | Detection | 0.952 | ✅ 운용 중 |
-| top_view (D455f) | v3-seg | Segmentation | 0.977 | 🆕 검증 대기 |
-| gripper_view (C270) | — | — | — | ⏳ 미학습 |
+| 카메라 | 버전 | 태스크 | mAP@0.5 | 상태 | Drive 링크 |
+|--------|------|--------|---------|------|------------|
+| top_view (D455f) | v3-2 | Detection | 0.952 | ✅ 운용 중 | `top_view_model/v3-2/model_info.yaml` 참조 |
+| top_view (D455f) | v3-seg | Segmentation | 0.977 | 🆕 검증 대기 | `top_view_model/v3-seg/model_info.yaml` 참조 |
+| gripper_view (C270) | v1 | Segmentation | — | ✅ 운용 중 | [Google Drive](https://drive.google.com/file/d/1R6OaOKuF2wCM6QxsFsRnNgbGIXPKvB9N/view?usp=sharing) |
 
 운용 버전은 각 `model_info.yaml`의 `active: true` 항목 기준.  
 `config/vision.yaml`의 `top_view_model_path`가 실제 사용 경로.

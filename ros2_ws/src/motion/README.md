@@ -182,42 +182,26 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_close_1
 
 ## vision_fetch 시퀀스 (feat/track-b-vision-sequences)
 
-### 구조 (12스텝)
+### 구조 (14스텝)
+
+Visual Servo 없이 그리퍼 캠 한 번 스캔 → 직접 이동 방식.
 
 | 스텝 | 동작 | 좌표 출처 |
 |------|------|-----------|
 | ① | JOINT_HOME | 고정 |
-| ② | GRIP_RELEASE | — |
-| ③ | MoveL — 공구 위쪽 | **탑뷰 D455f XY** + `TOOL_APPROACH_Z_MM` (고정 234mm) |
-| ④ | **VISUAL_SERVO_XY** | 그리퍼 캠 C270 XY P제어 수렴 |
-| ⑤ | MoveL — 공구로 하강 | **그리퍼 캠 C270 XYZ** |
-| ⑥ | GRIP_SOCKET (pulse=650) | — |
-| ⑦ | MoveL — 위로 상승 | 탑뷰 XY + 고정 Z (③과 동일) |
-| ⑧ | MoveL — staging 위 | `SOCKET_BOTTOM_XY` 고정 |
-| ⑨ | MoveL — staging 하강 | `SOCKET_BOTTOM` 고정 |
-| ⑩ | GRIP_RELEASE | — |
-| ⑪ | MoveL — staging 위 | `SOCKET_BOTTOM_XY` 고정 |
-| ⑫ | JOINT_HOME | 고정 |
-
-### Visual Servoing (④) 개념
-
-탑뷰 rough XY로 공구 위로 이동한 뒤, 그리퍼 카메라로 XY 오차를 폐루프로 수렴.
-
-```
-[그리퍼 캠] 공구 XY 좌표 읽기
-        ↓
-현재 EE XY와 오차 계산
-        ↓
-vx = Kp × err_x,  vy = Kp × err_y,  vz = 0 (Z 고정)
-        ↓
-movel_delta_xy 로 조금 이동 → 다시 읽기 → 반복
-        ↓
-|err_xy| ≤ xy_align_thr_mm → DONE → 그리퍼 캠 Z로 하강
-```
-
-- **vz = 0 고정**: Z는 VS 완료 후 그리퍼 캠 Z값으로 별도 하강
-- **파라미터**: `config/visual_servo.yaml` `tool` 섹션
-- **구현체**: `unit_actions/visual_servoing.py` — `ToolServoController`
+| ② | grip(0) — 완전 개방 | pulse=0 |
+| ③ | MoveJ — 그리퍼 캠 스캔 자세 | `VISION_FETCH_SCAN_J_DEG` = `[-30.1, 15.5, 74.7, 20.9, 101.2, -27.8]` deg |
+| ④ | WAIT_VISION_TOP_XY — 토픽 수신 대기 | `/vision/tool_gripper_pose` 신규 수신 대기 |
+| ④-1 | GRIP_RELEASE — 파지 준비 개방 | pulse=450 |
+| ⑤ | MoveL — 공구 위쪽 | 그리퍼 캠 XY + `tool_approach_z_mm` (고정 234mm) |
+| ⑥ | MoveL — 공구 하강 | 그리퍼 캠 XY + `grasp_z_mm` |
+| ⑦ | GRIP_TOOL (pulse=650→grip_stroke) | — |
+| ⑧ | MoveL — 위로 상승 | 그리퍼 캠 XY + 234mm (⑤과 동일) |
+| ⑨ | MoveL — staging 위 | `SOCKET_BOTTOM_XY` = `[550.0, -172.72, 235.73, ...]` 고정 |
+| ⑩ | MoveL — staging 하강 | `SOCKET_BOTTOM` = `[550.0, -172.72, -0.12, ...]` 고정 |
+| ⑪ | GRIP_RELEASE | pulse=450 |
+| ⑫ | MoveL — staging 위 | `SOCKET_BOTTOM_XY` 고정 |
+| ⑬ | JOINT_HOME | 고정 |
 
 ### 실행
 
@@ -225,20 +209,82 @@ movel_delta_xy 로 조금 이동 → 다시 읽기 → 반복
 ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_id:=socket_19mm
 ```
 
-> 좌표 파라미터 불필요 — 탑뷰/그리퍼 토픽에서 실시간 수신.
+> 좌표 파라미터 불필요 — 그리퍼 캠 토픽에서 실시간 수신.
 
 ### 비전팀 연결 시 확인 필요 (vision_fetch)
 
 | 항목 | 현재 가정 | 확인 필요 |
 |------|-----------|-----------|
-| 탑뷰 공구 좌표 토픽 | `/vision/tool_top_pose` | 토픽명 확정 |
 | 그리퍼 캠 공구 좌표 토픽 | `/vision/tool_gripper_pose` | 토픽명 확정 |
-| 메시지 타입 | `geometry_msgs/PointStamped` | 타입 확정 |
+| 메시지 타입 | `geometry_msgs/PoseStamped` (XY + rz) | 타입 확정 |
 | 좌표 단위 | m (runner에서 ×1000 → mm 변환) | 단위 확정 |
-| `TOOL_APPROACH_Z_MM` | 234.0 mm (소켓 TW 실측) | 공구별 적정 높이 조정 |
-| `TOOL_APPROACH_ORI` | `[53.23, 180.0, -38.07]` deg | 공구별 자세 조정 |
-| `config/visual_servo.yaml` `tool.kp` | 1.0 | 실기 튜닝 필요 |
-| `config/visual_servo.yaml` `tool.xy_align_thr_mm` | 3.0 mm | 실기 튜닝 필요 |
+| theta(rz) | `PoseStamped.pose.orientation` → rz 추출 | **gripper_marker_scan_node에 PCA theta 미구현 — 추가 필요** |
+| `tool_approach_z_mm` | 234.0 mm | 공구별 적정 높이 조정 |
+| `tool_approach_ori` | `[53.23, 180.0, -38.07]` deg | 공구별 자세 조정 |
+
+### TODO
+
+- [ ] **비전팀 필수 작업**: `gripper_marker_scan_node.py` — PCA theta 계산 추가 + `PointStamped` → `PoseStamped` 퍼블리시 변경 (`docs/interfaces.md` §4 참조, PR 검토 시 확인)
+
+---
+
+## vision_return 시퀀스 (feat/motion-drawer-v2)
+
+공구를 staging area에서 집어 공구함 slot으로 반납.
+
+### 구조 (14스텝)
+
+| 스텝 | 동작 | 좌표 출처 |
+|------|------|-----------|
+| ① | JOINT_HOME | 고정 |
+| ② | grip(0) — 완전 개방 | pulse=0 |
+| ③ | MoveJ — 그리퍼 캠 스캔 자세 | `VISION_RETURN_SCAN_J_DEG` = `[-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]` deg |
+| ④ | WAIT_VISION_RETURN_XY | `/vision/tool_gripper_pose` 수신 대기 (5초 타임아웃) |
+| ④-1 | GRIP_RELEASE — 파지 준비 개방 | pulse=450 |
+| ⑤ | MoveL — staging 위 | 그리퍼 캠 XY + rz + 고정 Z 234mm |
+| ⑥ | MoveL — staging 파지 하강 | 그리퍼 캠 XY + rz + `staging_pickup_z_mm` |
+| ⑦ | GRIP_TOOL (pulse=650→grip_stroke) | — |
+| ⑧ | MoveL — staging 위 상승 | 그리퍼 캠 XY + rz + 고정 Z 234mm |
+| ⑨ | MoveL — slot 위 | `grasp_pose_base` XY (yaml, m→mm) + 고정 Z 234mm |
+| ⑩ | MoveL — slot 반납 하강 | `grasp_pose_base` XY + `return_z_mm` |
+| ⑪ | GRIP_RELEASE | pulse=450 |
+| ⑫ | MoveL — slot 위 상승 | `grasp_pose_base` XY + 고정 Z 234mm |
+| ⑬ | JOINT_HOME | 고정 |
+
+### 좌표 출처 정리
+
+| 단계 | XY 출처 | Z 출처 |
+|------|---------|--------|
+| ⑤⑥⑧ | `/vision/tool_gripper_pose` (PoseStamped, m→mm) | ⑤⑧: 234mm 고정 / ⑥: `staging_pickup_z_mm` |
+| ⑨⑩⑫ | `config/toolbox.yaml` `grasp_pose_base.x/y` × 1000 | ⑨⑫: 234mm 고정 / ⑩: `return_z_mm` |
+
+### 실행
+
+```bash
+ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_return -p tool_id:=socket_19mm
+```
+
+### 공구별 Z값 (config/toolbox.yaml)
+
+| 공구 | staging_pickup_z_mm | return_z_mm | slot XY (mm) |
+|------|---------------------|-------------|--------------|
+| screwdriver | 45.65 ⚠️ | 45.65 | (392.4, 264.2) |
+| utility_knife | 102.87 ⚠️ | 102.87 | (445.5, 347.9) |
+| ratchet_wrench | 100.32 ⚠️ | 100.32 | (397.6, 258.5) |
+| multi_tool | 52.59 ⚠️ | 52.59 | (261.3, 332.8) |
+| spanner_16mm | 56.4 ⚠️임의값 | 56.4 ⚠️임의값 | (437.2, 348.3) |
+| socket_19mm | 119.69 ⚠️ | 119.69 | (253.0, 343.1) |
+
+> ⚠️ `staging_pickup_z_mm`은 모두 임시값(return_z_mm과 동일). 실기 테스트 전 직접교시로 실측 필요.
+
+### 비전팀 연결 시 확인 필요 (vision_return)
+
+| 항목 | 현재 가정 | 확인 필요 |
+|------|-----------|-----------|
+| 토픽명 | `/vision/tool_gripper_pose` | 비전팀 합의 필요 (기존 `/vision/tool_gripper_pose`에서 변경) |
+| 메시지 타입 | `geometry_msgs/PoseStamped` | 기존 `PointStamped`에서 변경 — 비전팀 구현 필요 |
+| 좌표 단위 | position: m (runner에서 ×1000), orientation: quaternion | 확인 필요 |
+| rz 추출 | quaternion → yaw (atan2) | 범위 -185~185° 벗어나면 runner가 거부 |
 
 ---
 
@@ -247,9 +293,25 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
 - [x] **virtual 모드 대응**: `mode` 파라미터로 virtual 감지 → DRL/flange 초기화 생략 (에뮬레이터 블로킹 버그 수정)
   - launch 파일이 `mode:=virtual` 시 gripper_node에 `mode` 파라미터 전달
   - `_init_drl_server()` 진입 시 virtual이면 즉시 반환
+- [x] **E-stop 블로킹 개선**: `_movel/_movej` 30초 블로킹 → 0.1s 폴링 × 5초 + E-stop 즉시 감지
+- [x] **vision_return 시퀀스 구현**: 토픽 분리, rz 수신, staging/slot Z 분리, slot XY yaml 로드
 - [ ] **초기 상태 읽기**: 노드 시작 시 DRL로 현재 그리퍼 위치(present_position)를 읽어 `_current_hz_pos` 초기화
-  - `_init_drl_server` 완료 후 `_fc03(slave_id, REG_PRESENT_POSITION, 2)` 호출해 실제 pulse 값 반영
-  - RViz에서 시작부터 실제 그리퍼 상태 표시 가능
 - [ ] **VS 실기 튜닝**: `config/visual_servo.yaml` handle/tool 각 섹션 kp·임계값 실측 보정
-- [ ] **비전팀 인터페이스 확정**: 위 표 항목 확인 후 토픽명·타입·단위 반영
-- [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place 각각 VS 적용)
+- [x] **비전팀 인터페이스 확정**: `/vision/tool_gripper_pose` 단일 토픽 `PoseStamped` (XY + rz) — `docs/interfaces.md` §4 반영 완료
+- [x] **staging_pickup_z_mm 실측**: 6종 공구 직접교시 실측 완료 (2026-06-18)
+- [ ] **spanner_16mm 전체 Z 실측**: grasp_z_mm / staging_pickup_z_mm / return_z_mm 모두 임의값
+- [x] **config/toolbox.yaml workspace_limits z_min**: -31.0mm (2026-06-18 실측 기준 갱신 완료)
+- [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place)
+
+---
+
+## PR 리뷰어 체크리스트
+
+> motion 패키지 PR 머지 전 리뷰어가 반드시 확인할 항목.
+
+- [ ] **`/vision/tool_gripper_pose` 타입 확인**: 비전팀이 `geometry_msgs/PoseStamped`로 퍼블리시하는지 확인 (`PointStamped` 아님)
+  - `pose.position.x/y/z` — 공구 위치 (m, base_link frame)
+  - `pose.orientation` — quaternion → rz(theta, deg) 추출 (PCA 기반)
+  - 미구현 시 runner `WAIT_VISION_TOP_XY` / `WAIT_VISION_RETURN_XY` 스텝에서 rz=0 으로 동작하여 파지 자세 오류 발생
+- [ ] `config/toolbox.yaml` `staging_pickup_z_mm` 실측값 반영 여부
+- [ ] `config/toolbox.yaml` `workspace_limits.z` 범위가 실제 동작 Z를 포함하는지

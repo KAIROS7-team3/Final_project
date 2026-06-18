@@ -1,8 +1,9 @@
-"""C270 그리퍼캠 ArUco 마커 기반 공구 3D 좌표 추출 노드 (Track A/B).
+"""C270 그리퍼캠 ArUco 마커 기반 공구 3D 좌표 + theta 추출 노드 (Track A/B).
 
-서랍 내부 ArUco 마커를 기준점으로 공구의 3D 좌표를 추출한다.
+서랍 내부 ArUco 마커를 기준점으로 공구의 3D 좌표와 방향각을 추출한다.
   X, Y : 마커 중심 기준 공구 마스크 무게중심 오프셋 (m)
   Z    : solvePnP로 추정한 카메라~서랍 바닥 거리 − 공구 두께/2
+  rz   : PCA 주축 방향각 (deg) → quaternion으로 변환해 orientation에 담음
 
 마커 ID 규칙 (config/toolbox.yaml aruco_front):
   ID 0 → 아랫층 (layer_0, 1층 서랍)
@@ -13,8 +14,8 @@ Subscribe:
   /vision/detections/gripper       vision_msgs/Detection2DArray  ← yolo_node(gripper) 마스크 무게중심
 
 Publish:
-  /vision/tool_gripper_pose      geometry_msgs/PointStamped  (base_link frame, m)
-  /vision/debug/gripper_marker   sensor_msgs/Image           (debug 시에만)
+  /vision/tool_gripper_pose      geometry_msgs/PoseStamped  (base_link frame, m + rz)
+  /vision/debug/gripper_marker   sensor_msgs/Image          (debug 시에만)
 """
 from __future__ import annotations
 
@@ -27,7 +28,9 @@ import rclpy
 import rclpy.time
 import yaml
 from cv_bridge import CvBridge
-from geometry_msgs.msg import PointStamped
+import math
+
+from geometry_msgs.msg import PoseStamped
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
@@ -108,16 +111,30 @@ class MarkerScanNode(Node):
         self._tf_buf = Buffer()
         self._tf_listener = TransformListener(self._tf_buf, self)
 
+        # theta EMA 스무딩 (sin/cos 분리로 각도 wraparound 안전)
+        self._theta_ema_s: float | None = None  # sin 누적
+        self._theta_ema_c: float | None = None  # cos 누적
+        self._THETA_ALPHA = 0.25
+        self._THETA_OUTLIER_DEG = 30.0  # 이 이상 순간 점프하면 해당 프레임 무시
+
+        # 마스크 캐시 — /vision/masks/gripper 구독, _on_sync에서 마스크 PCA 우선 사용
+        self._latest_mask: np.ndarray | None = None
+        self._latest_mask_stamp: float = 0.0
+        self._MASK_STALE_SEC = 0.5
+
         debug_cfg = self._load_debug_flag()
 
         # 퍼블리셔
         self._pose_pub = self.create_publisher(
-            PointStamped, "/vision/tool_gripper_pose", _QOS_BE10
+            PoseStamped, "/vision/tool_gripper_pose", _QOS_BE10
         )
         self._debug_pub = (
             self.create_publisher(Image, "/vision/debug/gripper_marker", 1)
             if debug_cfg else None
         )
+
+        # 마스크 토픽 별도 구독 (캐싱 방식 — 3-way sync 없이 최신 마스크 재사용)
+        self.create_subscription(Image, "/vision/masks/gripper", self._on_mask, _QOS_BE10)
 
         # 이미지 + 검출 결과 동기화 구독
         img_sub = Subscriber(self, Image, "/c270/image_raw", qos_profile=qos_profile_sensor_data)
@@ -275,6 +292,11 @@ class MarkerScanNode(Node):
         T[:3, 3]  = [t.x, t.y, t.z]
         return T
 
+    def _on_mask(self, msg: Image) -> None:
+        """yolo_node가 발행하는 최고 신뢰도 검출 이진 마스크 캐싱."""
+        self._latest_mask = self._bridge.imgmsg_to_cv2(msg, desired_encoding="mono8")
+        self._latest_mask_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+
     # ─── 콜백 ────────────────────────────────────────────────────────────────
 
     def _on_sync(self, img_msg: Image, det_msg: Detection2DArray) -> None:
@@ -321,22 +343,56 @@ class MarkerScanNode(Node):
             return
         P_base = T_base_gripper[:3, :3] @ P_tcp + T_base_gripper[:3, 3]
 
+        # PCA로 공구 마스크 주축 방향각(rz) 계산 + 이상치 게이팅 + EMA 스무딩
+        # 마스크가 최신이면 마스크 PCA 우선, 아니면 Canny ROI 폴백
+        now = img_msg.header.stamp.sec + img_msg.header.stamp.nanosec * 1e-9
+        if (self._latest_mask is not None
+                and abs(now - self._latest_mask_stamp) < self._MASK_STALE_SEC):
+            rz_raw = _compute_pca_rz_from_mask(self._latest_mask)
+        else:
+            rz_raw = _compute_pca_rz(gray, tool_cx, tool_cy, radius=60)
+        s = math.sin(math.radians(rz_raw))
+        c = math.cos(math.radians(rz_raw))
+        if self._theta_ema_s is None:
+            self._theta_ema_s, self._theta_ema_c = s, c
+            rz_deg = rz_raw
+        else:
+            cur_deg = math.degrees(math.atan2(self._theta_ema_s, self._theta_ema_c))
+            diff = abs((rz_raw - cur_deg + 180.0) % 360.0 - 180.0)
+            if diff > self._THETA_OUTLIER_DEG:
+                # 30° 초과 순간 점프 → 이번 프레임 무시, EMA 유지
+                rz_deg = cur_deg
+            else:
+                self._theta_ema_s = self._THETA_ALPHA * s + (1.0 - self._THETA_ALPHA) * self._theta_ema_s
+                self._theta_ema_c = self._THETA_ALPHA * c + (1.0 - self._THETA_ALPHA) * self._theta_ema_c
+                rz_deg = math.degrees(math.atan2(self._theta_ema_s, self._theta_ema_c))
+
+        # quaternion 변환 (yaw only: roll=0, pitch=0)
+        half_yaw = math.radians(rz_deg) / 2.0
+        qw = math.cos(half_yaw)
+        qz = math.sin(half_yaw)
+
         # 발행 — img_msg.header를 그대로 대입하면 frame_id 변경이 원본
         # 메시지(동기화 큐에서 다른 콜백과 공유될 수 있음)까지 변형시키므로
         # stamp만 복사하고 frame_id는 새로 지정한다.
-        msg = PointStamped()
+        msg = PoseStamped()
         msg.header.stamp = img_msg.header.stamp
         msg.header.frame_id = self._base_frame
-        msg.point.x = float(P_base[0])
-        msg.point.y = float(P_base[1])
-        msg.point.z = float(P_base[2])
+        msg.pose.position.x = float(P_base[0])
+        msg.pose.position.y = float(P_base[1])
+        msg.pose.position.z = float(P_base[2])
+        msg.pose.orientation.x = 0.0
+        msg.pose.orientation.y = 0.0
+        msg.pose.orientation.z = qz
+        msg.pose.orientation.w = qw
         self._pose_pub.publish(msg)
 
         self.get_logger().info(
             f"[marker_scan] {tool_id} | marker_id={marker_id} "
             f"({_MARKER_ID_TO_LAYER.get(marker_id, '?')}) | "
             f"Z_floor={Z_floor*1000:.1f}mm | "
-            f"BASE=({P_base[0]*1000:.1f}, {P_base[1]*1000:.1f}, {P_base[2]*1000:.1f})mm"
+            f"BASE=({P_base[0]*1000:.1f}, {P_base[1]*1000:.1f}, {P_base[2]*1000:.1f})mm | "
+            f"rz={rz_deg:.1f}°"
         )
 
         if self._debug_pub is not None:
@@ -388,6 +444,60 @@ class MarkerScanNode(Node):
             (10, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1,
         )
         return vis
+
+
+def _compute_pca_rz(gray: np.ndarray, cx: float, cy: float, radius: int = 60) -> float:
+    """공구 마스크 근사 영역에서 PCA 주축 방향각(deg) 계산.
+
+    Detection2DArray는 마스크 픽셀을 제공하지 않으므로 bbox 중심 주변
+    원형 ROI의 엣지 픽셀을 마스크 대용으로 사용한다.
+    PCA가 불안정하면 0.0 반환.
+    """
+    h, w = gray.shape
+    y0, y1 = max(0, int(cy) - radius), min(h, int(cy) + radius)
+    x0, x1 = max(0, int(cx) - radius), min(w, int(cx) + radius)
+    roi = gray[y0:y1, x0:x1]
+    edges = cv2.Canny(roi, 50, 150)
+    pts = np.argwhere(edges > 0).astype(np.float32)
+    if len(pts) < 5:
+        return 0.0
+    mean = pts.mean(axis=0)
+    centered = pts - mean
+    x, y = centered[:, 1], centered[:, 0]
+    n = len(pts)
+    cov = np.array([[np.sum(x**2)/n, np.sum(x*y)/n],
+                    [np.sum(x*y)/n,  np.sum(y**2)/n]], dtype=np.float64)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    v1 = eigenvectors[:, np.argmax(eigenvalues)]
+    # 180° 모호성 해소: 엣지 포인트를 v1에 투영해 더 긴 쪽을 +v1로 고정
+    # centered shape: (N, 2) — row=y, col=x 순서이므로 v1도 (col, row) 매핑
+    proj = centered[:, 1] * v1[0] + centered[:, 0] * v1[1]
+    if abs(proj.min()) > abs(proj.max()):
+        v1 = -v1
+    return float(math.degrees(math.atan2(float(v1[1]), float(v1[0]))))
+
+
+def _compute_pca_rz_from_mask(mask: np.ndarray) -> float:
+    """이진 마스크(mono8) 픽셀 전체로 PCA 주축 방향각(deg) 계산.
+
+    test_marker_scan.py와 동일한 입력을 사용하므로 Canny ROI 근사보다 안정적.
+    PCA가 불안정하면 0.0 반환.
+    """
+    pts = np.argwhere(mask > 0).astype(np.float32)
+    if len(pts) < 5:
+        return 0.0
+    mean = pts.mean(axis=0)
+    centered = pts - mean
+    x, y = centered[:, 1], centered[:, 0]
+    n = len(pts)
+    cov = np.array([[np.sum(x**2)/n, np.sum(x*y)/n],
+                    [np.sum(x*y)/n,  np.sum(y**2)/n]], dtype=np.float64)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    v1 = eigenvectors[:, np.argmax(eigenvalues)]
+    proj = centered[:, 1] * v1[0] + centered[:, 0] * v1[1]
+    if abs(proj.min()) > abs(proj.max()):
+        v1 = -v1
+    return float(math.degrees(math.atan2(float(v1[1]), float(v1[0]))))
 
 
 def main() -> None:

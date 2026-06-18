@@ -33,10 +33,11 @@
     - 단위: m (runner 내부에서 ×1000 → mm 변환). frame_id: `base_link`.
     - rationale: vision_fetch 시퀀스 step ③ 공구 위 이동(MOVE_L_TOP_XY)에 탑뷰 rough XY 좌표 공급.
     - migration: 신규 토픽. 비전팀이 발행 미구현 시 해당 step에서 "좌표 미수신" 오류로 시퀀스 실패.
-  - `/vision/tool_gripper_pose` (`geometry_msgs/PointStamped`): 그리퍼 캠 C270이 제공하는 공구 중심 XYZ 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
+  - `/vision/tool_gripper_pose` (`geometry_msgs/PoseStamped`): 그리퍼 캠 C270이 제공하는 공구 중심 XYZ + 방향각(rz). 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 10.
     - 단위: m. frame_id: `base_link`.
-    - rationale: vision_fetch step ④ ToolServoController XY VS 정렬 및 step ⑤ 하강 Z 좌표 공급.
-    - migration: 신규 토픽.
+    - orientation: quaternion (yaw-only, PCA 주축 방향각). `pca_theta - 90°` 변환 후 robot rz로 사용.
+    - rationale: PCA theta 전달 필요로 PointStamped → PoseStamped 변경. fetch/return 분리 토픽을 단일 토픽으로 통합.
+    - migration: 기존 `PointStamped` 구독자는 `PoseStamped`로 타입 교체 필요. rz는 `pose.orientation` quaternion에서 추출.
   - `/vision/handle_pose` (`geometry_msgs/PointStamped`): 그리퍼 캠 C270이 제공하는 서랍 손잡이 중심 XZ 좌표. 발행자: `vision` 패키지. 구독자: `motion/toolbox_seq_runner`. QoS: Best Effort / depth 1.
     - 단위: m. frame_id: `base_link`. (Y는 HandleServoController에서 미사용 — XZ만 보정)
     - rationale: vision_open/close step ④⑤ HandleServoController XZ VS 정렬 좌표 공급.
@@ -45,6 +46,10 @@
     - 단위: m. frame_id: `base_link`.
     - rationale: vision_return 시퀀스 슬롯 복귀 정렬(MOVE_L_SLOT_XY) 좌표 공급.
     - migration: 신규 토픽.
+  - `/vision/masks/gripper` (`sensor_msgs/Image`, encoding: mono8): 그리퍼 캠 YOLO 검출 중 최고 신뢰도 검출의 이진 마스크. 발행자: `vision/yolo_node` (camera_type=gripper). 구독자: `vision/gripper_marker_scan_node`. QoS: Best Effort / depth 10.
+    - 픽셀값: 255 = 공구 마스크, 0 = 배경. 해상도는 원본 C270 이미지와 동일.
+    - rationale: `Detection2DArray`는 마스크 픽셀을 미포함. 마스크 별도 토픽으로 PCA theta 계산 정확도 향상 (Canny ROI 근사 대비).
+    - migration: 신규 토픽. seg 모델 사용 시에만 발행 (detection 모델이면 미발행 → marker_scan_node가 Canny ROI 폴백으로 자동 전환).
   > **비전팀 확인 필요**: 토픽명·메시지 타입·단위·frame_id는 비전팀과 합의 전 잠정 정의. 확정 후 이 항목 갱신 필수.
 - `srv/GripperSetPosition.srv`: RH-P12-RN 그리퍼 위치 제어 서비스 추가 (Track B Phase 1, PR #35).
   - 필드: request `position`(pulse), `current`(mA), `timeout_sec` / response `success`, `message`, `final_position`, `final_current`.

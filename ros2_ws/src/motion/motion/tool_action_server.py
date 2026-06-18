@@ -150,7 +150,7 @@ class ToolActionServer(Node):
         self._plc_pub = self.create_publisher(String, "/plc/system_state", 1)
 
         # ── 상태 ──────────────────────────────────────────────────────────
-        self._estop_latch: bool = False  # E-stop 래치 (set 후 reset 전까지 모든 동작 거부)
+        self._estop_latch = threading.Event()  # E-stop 래치 (set 후 reset 전까지 모든 동작 거부)
         self._action_lock = threading.Lock()  # 동시 액션 방지
 
         # ── 액션 서버 ─────────────────────────────────────────────────────
@@ -241,7 +241,7 @@ class ToolActionServer(Node):
     # ── 액션 goal/cancel 핸들러 ─────────────────────────────────────────────
 
     def _goal_callback(self, _goal_request) -> GoalResponse:
-        if self._estop_latch:
+        if self._estop_latch.is_set():
             self.get_logger().warn("[TAS] goal 거부 — E-stop 래치 활성")
             return GoalResponse.REJECT
         return GoalResponse.ACCEPT
@@ -348,7 +348,7 @@ class ToolActionServer(Node):
     # ── 서비스 핸들러 ───────────────────────────────────────────────────────
 
     def _on_home(self, _req, response: Trigger.Response) -> Trigger.Response:
-        if self._estop_latch:
+        if self._estop_latch.is_set():
             response.success = False
             response.message = "E-stop 래치 — estop_reset 후 재시도"
             return response
@@ -407,7 +407,7 @@ class ToolActionServer(Node):
     def _run_toolbox_seq(
         self, seq: list, label: str, response: Trigger.Response
     ) -> Trigger.Response:
-        if self._estop_latch:
+        if self._estop_latch.is_set():
             response.success = False
             response.message = "E-stop 래치 — estop_reset 후 재시도"
             return response
@@ -442,7 +442,7 @@ class ToolActionServer(Node):
     def _on_estop(self, _req, response: Trigger.Response) -> Trigger.Response:
         """E-stop: move_stop + 래치. 고우선 콜백 그룹(estop_cbg)에서 실행."""
         self.get_logger().error("[TAS] E-STOP 요청 수신")
-        self._estop_latch = True
+        self._estop_latch.set()
         self._publish_status(is_moving=False)
         self._set_plc("e_stop")
 
@@ -468,7 +468,7 @@ class ToolActionServer(Node):
     def _on_estop_reset(self, _req, response: Trigger.Response) -> Trigger.Response:
         """E-stop 래치 해제 — 운영자 명시적 확인 후만 허용."""
         self.get_logger().warn("[TAS] E-stop 래치 해제")
-        self._estop_latch = False
+        self._estop_latch.clear()
         self._set_plc("idle")
         self._log_event_async("e_stop_reset", "운영자 E-stop 래치 해제")
         response.success = True
@@ -482,7 +482,7 @@ class ToolActionServer(Node):
     ) -> bool:
         total = len(steps)
         for i, step in enumerate(steps):
-            if self._estop_latch:
+            if self._estop_latch.is_set():
                 self.get_logger().warn(f"[TAS] E-stop 래치 — step {i+1} 중단")
                 return False
             if goal_handle is not None and goal_handle.is_cancel_requested:

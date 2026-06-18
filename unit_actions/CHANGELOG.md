@@ -27,6 +27,16 @@ Keep a Changelog 형식. 함수 시그니처 변경 시 갱신 (P-2).
 - `approach_tool_seq(layer)` → `approach_tool_seq(layer, tool_pose=None)` — 동일.
 - `fetch_from_drawer_seq(layer)` → `fetch_from_drawer_seq(layer, tool_pose=None)` — 동일.
 - `return_to_drawer_seq(layer)` → `return_to_drawer_seq(layer, tool_pose=None)` — 동일.
+- `StepKind.MOVE_L_SLOT_XY` 동작 변경 — 기존: `/vision/slot_top_pose` 토픽 XY 사용. 변경: `config/toolbox.yaml` `grasp_pose_base.x/y` (×1000 mm) 사용. vision_return_seq ⑨⑫번 slot 위 이동에 사용. runner의 `_slot_xy_map`에서 tool_id별로 로드.
+- `StepKind.MOVE_L_STAGING_XYZ` 동작 변경 — Z 출처: 기존 `return_z_mm` → 변경 `staging_pickup_z_mm`. vision_return_seq ⑥번 staging 파지 하강 전용. ⑩번 slot 반납은 `MOVE_L_SLOT_XYZ`(return_z_mm)와 분리.
+- `vision_return_seq()` 변경 — 단일 토픽 `/vision/tool_gripper_pose` (PoseStamped) 사용. rz(yaw) 수신 추가. ⑨⑩⑫ slot XY를 yaml 고정값으로 변경.
+- `ToolPose` (`visual_servoing.py`) — `rz: float = 0.0` 필드 추가. 기존 키워드 인수 호출 하위 호환.
+- `VISION_FETCH_SCAN_J` → `VISION_FETCH_SCAN_J_DEG` 상수명 변경 (deg 단위 명시).
+- `VISION_RETURN_SCAN_J` → `VISION_RETURN_SCAN_J_DEG` 상수명 변경 (deg 단위 명시).
+
+### Added (feat/motion-drawer-v2)
+- `StepKind.WAIT_VISION_RETURN_XY` — `/vision/tool_gripper_pose` 캐시 초기화 후 신규 수신 대기. vision_return_seq ④번.
+- `VISION_RETURN_SCAN_J_DEG` 상수 추가 — return 전용 그리퍼 캠 스캔 자세 `[-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]` deg.
 
 ### Deprecated
 ### Removed

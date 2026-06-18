@@ -33,10 +33,14 @@ class StepKind(Enum):
     GRIP            = auto()
     WAIT            = auto()
     VISUAL_SERVO_XZ = auto()   # 손잡이 XZ 정렬 VS — runner에서 HandleServoController 실행
-    MOVE_L_TOP_XY   = auto()   # 탑뷰 XY + 고정 Z 이동 — runner가 /vision/tool_top_pose 좌표 사용
-    VISUAL_SERVO_XY = auto()   # 공구 XY 정렬 VS — runner에서 ToolServoController 실행
-    MOVE_L_TOOL_XYZ = auto()   # 그리퍼 캠 XYZ 하강 — runner가 /vision/tool_gripper_pose 좌표 사용
-    MOVE_L_SLOT_XY  = auto()   # 탑뷰 slot XY + 고정 Z 이동 — runner가 /vision/slot_top_pose 좌표 사용
+    MOVE_L_TOP_XY       = auto()   # 탑뷰 XY + 고정 Z 이동 — runner가 /vision/tool_top_pose 좌표 사용
+    VISUAL_SERVO_XY     = auto()   # 공구 XY 정렬 VS — runner에서 ToolServoController 실행
+    MOVE_L_TOOL_XYZ     = auto()   # 그리퍼 캠 XYZ 하강 — runner가 /vision/tool_gripper_pose 좌표 사용
+    MOVE_L_SLOT_XY      = auto()   # return ⑨⑫: toolbox.yaml grasp_pose_base XY + 고정 approach_z 이동
+    WAIT_VISION_TOP_XY    = auto()   # fetch: /vision/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
+    WAIT_VISION_RETURN_XY = auto()   # return: /vision/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
+    MOVE_L_SLOT_XYZ       = auto()   # return ⑩: toolbox.yaml slot XY + return_z_mm 하강
+    MOVE_L_STAGING_XYZ    = auto()   # return ⑥: 그리퍼 캠 XY + staging_pickup_z_mm 하강
 
 
 PickPlaceMarker = Literal["pick", "place"]
@@ -90,7 +94,7 @@ ACC_J: float = 20.0
 #       두 모듈의 pulse 상수를 혼용하지 말 것.
 PULSE_RELEASE:      int = 450   # gripper_release stroke (TW SubRoutine 실측) — 부분 개방
 PULSE_GRIP_BOX:     int = 600   # gripper_grap_boxhand stroke (TW SubRoutine 실측)
-PULSE_GRIP_SOCKET:  int = 650   # socket 파지 stroke (TW SubRoutine 실측)
+PULSE_GRIP_TOOL:    int = 650   # 공구 파지 stroke 기본값 (tool_id별 grip_stroke로 오버라이드)
 
 
 # ── 웨이포인트 상수 (TaskWriter 실측값, DSR BASE 좌표계, mm/deg) ───────────
@@ -127,6 +131,18 @@ LAYER0_OPENDOWN:       list = [378.88, 243.86, 55.45, 90.0, 90.0, 90.0]
 LAYER0_CLOSE_END:      list = LAYER0_INNER
 
 
+# ── layer 0 v2 (1층 서랍, toolboxapproach_box1_{open,close}_v2.tw) ───────
+# x 좌표 수정 (378.88 → 369.0), open/silence/opendown y 조정 (243.86 → 213.86)
+# setup_j / close_setup_j 는 v1과 동일
+
+LAYER0_V2_APPROACH:    list = [369.0, 433.02, 65.45, 90.0, 90.0, 90.0]
+LAYER0_V2_OPEN:        list = [369.0, 213.86, 65.46, 90.0, 90.0, 90.0]
+LAYER0_V2_SILENCE:     list = [369.0, 213.86, 56.43, 90.0, 90.0, 90.0]
+LAYER0_V2_INNER:       list = [369.0, 169.1,  50.45, 90.0, 90.0, 90.0]
+LAYER0_V2_OPENDOWN:    list = [369.0, 213.86, 55.45, 90.0, 90.0, 90.0]
+LAYER0_V2_CLOSE_END:   list = LAYER0_V2_INNER
+
+
 # ── layer 1 (2층 서랍) ────────────────────────────────────────────────────
 # 출처: toolboxapproach_box2_open.tw / toolboxapproach_box2_close.tw
 
@@ -153,16 +169,33 @@ LAYER1_CLOSE_END:      list = [380.61, 291.56, 115.7,  89.99, 89.99, 90.0]
 LAYER_HEIGHT_Z_MM: float = 115.68 - 65.45   # ≈ 50.23 mm
 
 
+# ── layer 1 v2 (2층 서랍, toolboxapproach_box2_{open,close}_v2.tw) ───────
+# x 좌표 수정 (380.5x → 369.0), open/silence/opendown y 조정 (237.79 → 213.86)
+# setup_j / close_setup_j 는 v1과 동일
+
+LAYER1_V2_APPROACH:    list = [369.0, 427.51, 115.68, 90.0, 90.0, 90.0]
+LAYER1_V2_OPEN:        list = [369.0, 213.86, 115.69, 90.0, 90.0, 90.0]
+LAYER1_V2_SILENCE:     list = [369.0, 213.86, 106.7,  90.0, 90.0, 90.0]
+LAYER1_V2_INNER:       list = [369.0, 165.94, 103.69, 90.0, 90.0, 90.0]
+LAYER1_V2_OPENDOWN:    list = [369.0, 213.86, 103.69, 90.0, 90.0, 90.0]
+LAYER1_V2_CLOSE_END:   list = [369.0, 291.56, 115.7,  89.99, 89.99, 90.0]
+
+
 # ── 공구 접근 파라미터 ──────────────────────────────────────────────────────────
 # E-4: config/toolbox.yaml vision_motion 섹션으로 이관 완료.
 # toolbox_seq_runner.py가 __init__에서 로드 후 self._tool_approach_z_mm 등으로 사용.
 
 
 # ── socket 공구 위치 (toolboxapproach_box2_socket_*.tw 실측값, DSR BASE 좌표계, mm/deg) ──
-SOCKET_APPROACH_XY:  list = [269.98, 362.81, 234.0,   53.23,  180.0,  -38.07]
-SOCKET_APPROACH_Z:   list = [269.98, 362.8,  122.8,   48.74, -180.0,  -42.55]
-SOCKET_BOTTOM_XY:    list = [428.0, -172.72, 235.73, 160.43,  180.0,   73.74]
-SOCKET_BOTTOM:       list = [428.0, -172.72,  -0.12, 158.87,  180.0,   72.17]
+SOCKET_APPROACH_XY:  list = [269.98, 362.81, 234.0,  180.0,  180.0,   90.0]
+SOCKET_APPROACH_Z:   list = [269.98, 362.8,  122.8,  180.0,  180.0,   90.0]
+# SOCKET_BOTTOM Z=-0.12mm 은 소켓 측면 상단을 잡는 기준 (바닥 아님).
+# staging_pickup_z_mm(-29.06mm)과 다른 이유: vision_return ⑥은 A4 staging 바닥에서 공구를 집고,
+# socket_fetch/return ⑨⑩은 소켓 윗면 파지 기준이라 높게 설정.
+# 추후 A4 아래 지그/패드를 덧대어 높이 조정 예정.
+# spanner_16mm은 바닥 지그 위에서 파지하므로 staging_pickup_z_mm이 -9.12mm로 별도 설정됨 (정상).
+SOCKET_BOTTOM_XY:    list = [550.0, -142.0, 235.73, 180.0,  180.0,   90.0]
+SOCKET_BOTTOM:       list = [550.0, -142.0,  -0.12, 180.0,  180.0,   90.0]
 SOCKET_CATCH_HOME_L: list = [373.0,    0.0,  245.0,    3.13, -180.0,    3.13]
 
 
@@ -191,6 +224,29 @@ _LAYER_WP = {
     },
 }
 
+_LAYER_WP_V2 = {
+    0: {
+        "setup_j":       LAYER0_SETUP_J,
+        "close_setup_j": LAYER0_CLOSE_SETUP_J,
+        "approach":      LAYER0_V2_APPROACH,
+        "open":          LAYER0_V2_OPEN,
+        "silence":       LAYER0_V2_SILENCE,
+        "inner":         LAYER0_V2_INNER,
+        "opendown":      LAYER0_V2_OPENDOWN,
+        "close_end":     LAYER0_V2_CLOSE_END,
+    },
+    1: {
+        "setup_j":       LAYER1_SETUP_J,
+        "close_setup_j": LAYER1_CLOSE_SETUP_J,
+        "approach":      LAYER1_V2_APPROACH,
+        "open":          LAYER1_V2_OPEN,
+        "silence":       LAYER1_V2_SILENCE,
+        "inner":         LAYER1_V2_INNER,
+        "opendown":      LAYER1_V2_OPENDOWN,
+        "close_end":     LAYER1_V2_CLOSE_END,
+    },
+}
+
 
 # ── Step 헬퍼 팩토리 (chamjo 동일) ────────────────────────────────────────
 
@@ -211,7 +267,7 @@ def wait_step(sec: float) -> Step:
 
 GRIP_RELEASE = lambda: grip(PULSE_RELEASE)
 GRIP_BOX     = lambda: grip(PULSE_GRIP_BOX)
-GRIP_SOCKET  = lambda: grip(PULSE_GRIP_SOCKET)
+GRIP_TOOL    = lambda: grip(PULSE_GRIP_TOOL)
 JOINT_HOME   = lambda: mj_abs(JOINT_HOME_DEG)
 
 
@@ -226,6 +282,12 @@ def _wp(layer: int, key: str) -> list:
     if layer not in _LAYER_WP:
         raise ValueError(f"layer는 0 또는 1만 지원: {layer}")
     return _LAYER_WP[layer][key]
+
+
+def _wp_v2(layer: int, key: str) -> list:
+    if layer not in _LAYER_WP_V2:
+        raise ValueError(f"layer는 0 또는 1만 지원: {layer}")
+    return _LAYER_WP_V2[layer][key]
 
 
 def drawer_open_seq(
@@ -301,6 +363,44 @@ def drawer_close_seq(
     ]
 
 
+def drawer_open_seq_v2(layer: int) -> list[Step]:
+    """서랍 열기 시퀀스 v2 (toolboxapproach_box{n}_{open,close}_v2.tw 기준).
+
+    v1 대비 변경: x=369.0mm, open/silence/opendown y 좌표 조정.
+    layer: 0 = 1층, 1 = 2층
+    """
+    return [
+        GRIP_RELEASE(),
+        mj_abs(_wp_v2(layer, "setup_j")),
+        ml_abs(_wp_v2(layer, "approach")),
+        GRIP_BOX(),
+        ml_abs(_wp_v2(layer, "open")),
+        ml_abs(_wp_v2(layer, "silence")),
+        GRIP_RELEASE(),
+        ml_abs(_wp_v2(layer, "inner")),
+        JOINT_HOME(),
+    ]
+
+
+def drawer_close_seq_v2(layer: int) -> list[Step]:
+    """서랍 닫기 시퀀스 v2 (toolboxapproach_box{n}_{open,close}_v2.tw 기준).
+
+    v1 대비 변경: x=369.0mm, open/silence/opendown y 좌표 조정.
+    layer: 0 = 1층, 1 = 2층
+    """
+    return [
+        GRIP_RELEASE(),
+        mj_abs(_wp_v2(layer, "close_setup_j")),
+        ml_abs(_wp_v2(layer, "opendown")),
+        GRIP_BOX(),
+        ml_abs(_wp_v2(layer, "open")),
+        ml_abs(_wp_v2(layer, "approach")),
+        GRIP_RELEASE(),
+        ml_abs(_wp_v2(layer, "close_end")),
+        JOINT_HOME(),
+    ]
+
+
 def vision_drawer_close_seq(layer: int) -> list[Step]:
     """손잡이 XZ Visual Servoing 포함 서랍 닫기 시퀀스.
 
@@ -365,7 +465,7 @@ def socket_fetch_seq() -> list[Step]:
         GRIP_RELEASE(),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_APPROACH_Z),
-        GRIP_SOCKET(),
+        GRIP_TOOL(),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_BOTTOM),
@@ -375,38 +475,46 @@ def socket_fetch_seq() -> list[Step]:
     ]
 
 
+VISION_FETCH_SCAN_J_DEG:  list = [-30.1,  15.5,  74.7,  20.9,  101.2,  -27.8]   # fetch 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
+VISION_RETURN_SCAN_J_DEG: list = [-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]  # return 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
+
+
 def vision_fetch_seq() -> list[Step]:
-    """탑뷰 XY + 그리퍼 캠 VS 기반 공구 fetch 시퀀스 (12단계).
+    """그리퍼 캠 XY + grasp_z_mm 기반 공구 fetch 시퀀스 (14단계).
 
     ① JOINT_HOME
-    ② GRIP_RELEASE
-    ③ MOVE_L_TOP_XY   — runner가 /vision/tool_top_pose XY + TOOL_APPROACH_Z_MM 로 이동
-    ④ VISUAL_SERVO_XY — 그리퍼 캠 /vision/tool_gripper_pose 구독, XY P제어 수렴
-    ⑤ MOVE_L_TOOL_XYZ — VS 완료 후 그리퍼 캠 XYZ 로 공구 위치로 하강
-    ⑥ GRIP_SOCKET
-    ⑦ MOVE_L_TOP_XY   — 다시 TOOL_APPROACH_Z_MM 높이로 상승 (③과 동일)
-    ⑧ MoveL → SOCKET_BOTTOM_XY  (staging 위)
-    ⑨ MoveL → SOCKET_BOTTOM     (staging 하강)
-    ⑩ GRIP_RELEASE
-    ⑪ MoveL → SOCKET_BOTTOM_XY  (staging 위)
-    ⑫ JOINT_HOME
+    ② grip(0)         — 완전 개방 (pulse=0)
+    ③ MoveJ → VISION_FETCH_SCAN_J_DEG  (그리퍼 캠 스캔 자세)
+    ④ WAIT_VISION_TOP_XY — 캐시 초기화 후 /vision/tool_gripper_pose 신규 수신 대기
+    ④-1 GRIP_RELEASE  — 파지 준비 개방 (pulse=450)
+    ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 XY + APPROACH_Z 로 이동
+    ⑥ MOVE_L_TOOL_XYZ — 그리퍼 캠 XY + grasp_z_mm 로 공구 위치 하강
+    ⑦ GRIP_TOOL
+    ⑧ MOVE_L_TOP_XY   — 그리퍼 캠 XY + APPROACH_Z 로 상승 (⑤과 동일)
+    ⑨ MoveL → SOCKET_BOTTOM_XY  (staging 위)
+    ⑩ MoveL → SOCKET_BOTTOM     (staging 하강)
+    ⑪ GRIP_RELEASE
+    ⑫ MoveL → SOCKET_BOTTOM_XY  (staging 위 복귀)
+    ⑬ JOINT_HOME
 
     호출 전 팔이 홈 자세에 있어야 함.
     좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리 (파라미터 불필요).
     """
     return [
-        JOINT_HOME(),                           # ①
-        GRIP_RELEASE(),                         # ②
-        Step(kind=StepKind.MOVE_L_TOP_XY),      # ③ 탑뷰 XY + 고정 Z
-        Step(kind=StepKind.VISUAL_SERVO_XY),    # ④ 그리퍼 캠 XY VS
-        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑤ 그리퍼 캠 XYZ 하강
-        GRIP_SOCKET(),                          # ⑥
-        Step(kind=StepKind.MOVE_L_TOP_XY),      # ⑦ 상승 (③과 동일)
-        ml_abs(SOCKET_BOTTOM_XY),              # ⑧ staging 위
-        ml_abs(SOCKET_BOTTOM),                 # ⑨ staging 하강
-        GRIP_RELEASE(),                        # ⑩
-        ml_abs(SOCKET_BOTTOM_XY),             # ⑪ staging 위
-        JOINT_HOME(),                          # ⑫
+        JOINT_HOME(),                               # ①
+        grip(0),                                    # ② 완전 개방 (pulse=0)
+        mj_abs(VISION_FETCH_SCAN_J_DEG),            # ③ 그리퍼 캠 스캔 자세
+        Step(kind=StepKind.WAIT_VISION_TOP_XY),     # ④ 신규 그리퍼 캠 좌표 수신 대기
+        GRIP_RELEASE(),                             # ④-1 파지 준비 개방 (pulse=450)
+        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + 고정 Z
+        Step(kind=StepKind.MOVE_L_TOOL_XYZ),        # ⑥ 그리퍼 캠 XY + grasp_z_mm 하강
+        GRIP_TOOL(),                              # ⑦
+        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑧ 그리퍼 캠 XY + 고정 Z 상승
+        ml_abs(SOCKET_BOTTOM_XY),                   # ⑨ staging 위
+        ml_abs(SOCKET_BOTTOM),                      # ⑩ staging 하강
+        GRIP_RELEASE(),                             # ⑪
+        ml_abs(SOCKET_BOTTOM_XY),                   # ⑫ staging 위 복귀
+        JOINT_HOME(),                               # ⑬
     ]
 
 
@@ -421,7 +529,7 @@ def socket_return_seq() -> list[Step]:
         GRIP_RELEASE(),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_BOTTOM),
-        GRIP_SOCKET(),
+        GRIP_TOOL(),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_APPROACH_Z),
@@ -432,39 +540,41 @@ def socket_return_seq() -> list[Step]:
 
 
 def vision_return_seq() -> list[Step]:
-    """탑뷰 XY + 그리퍼 캠 VS 기반 공구 return 시퀀스 (13단계).
+    """그리퍼 캠 XY + grasp_z_mm/return_z_mm 기반 공구 return 시퀀스 (14단계).
 
     ① JOINT_HOME
-    ② GRIP_RELEASE
-    ③ MOVE_L_TOP_XY   — 탑뷰 /vision/tool_top_pose XY + 고정 Z (staging 위)
-    ④ VISUAL_SERVO_XY — 그리퍼 캠 XY VS → staging 공구 정밀 정렬
-    ⑤ MOVE_L_TOOL_XYZ — 그리퍼 캠 XYZ 로 staging 공구 위치로 하강
-    ⑥ GRIP_SOCKET
-    ⑦ MOVE_L_TOP_XY   — staging 위로 상승 (③과 동일)
-    ⑧ MOVE_L_SLOT_XY  — 탑뷰 /vision/slot_top_pose XY + 고정 Z (slot 위)
-    ⑨ VISUAL_SERVO_XY — 그리퍼 캠 XY VS → slot 위치 정밀 정렬
-    ⑩ MOVE_L_TOOL_XYZ — 그리퍼 캠 XYZ 로 slot 위치로 하강
+    ② grip(0)         — 완전 개방 (pulse=0)
+    ③ MoveJ → VISION_RETURN_SCAN_J_DEG (그리퍼 캠 스캔 자세)
+    ④ WAIT_VISION_RETURN_XY — 캐시 초기화 후 /vision/tool_gripper_pose 신규 수신 대기
+    ④-1 GRIP_RELEASE  — 파지 준비 개방 (pulse=450)
+    ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 XY + rz + 고정 Z (staging 위)
+    ⑥ MOVE_L_STAGING_XYZ — 그리퍼 캠 XY + rz + staging_pickup_z_mm 로 staging 공구 파지 하강
+    ⑦ GRIP_TOOL
+    ⑧ MOVE_L_TOP_XY   — 그리퍼 캠 XY + 고정 Z 상승 (⑤과 동일)
+    ⑨ MOVE_L_SLOT_XY  — grasp_pose_base XY + 고정 Z (slot 위)
+    ⑩ MOVE_L_SLOT_XYZ — grasp_pose_base XY + return_z_mm 하강
     ⑪ GRIP_RELEASE
-    ⑫ MOVE_L_SLOT_XY  — slot 위로 상승 (⑧과 동일)
+    ⑫ MOVE_L_SLOT_XY  — grasp_pose_base XY + 고정 Z 상승 (⑨과 동일)
     ⑬ JOINT_HOME
 
     호출 전 팔이 홈 자세에 있어야 함.
     좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리 (파라미터 불필요).
     """
     return [
-        JOINT_HOME(),                           # ①
-        GRIP_RELEASE(),                         # ②
-        Step(kind=StepKind.MOVE_L_TOP_XY),      # ③ staging 탑뷰 XY + 고정 Z
-        Step(kind=StepKind.VISUAL_SERVO_XY),    # ④ staging 그리퍼 캠 XY VS
-        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑤ staging 그리퍼 캠 XYZ 하강
-        GRIP_SOCKET(),                          # ⑥
-        Step(kind=StepKind.MOVE_L_TOP_XY),      # ⑦ staging 위로 상승
-        Step(kind=StepKind.MOVE_L_SLOT_XY),     # ⑧ slot 탑뷰 XY + 고정 Z
-        Step(kind=StepKind.VISUAL_SERVO_XY),    # ⑨ slot 그리퍼 캠 XY VS
-        Step(kind=StepKind.MOVE_L_TOOL_XYZ),   # ⑩ slot 그리퍼 캠 XYZ 하강
-        GRIP_RELEASE(),                         # ⑪
-        Step(kind=StepKind.MOVE_L_SLOT_XY),     # ⑫ slot 위로 상승
-        JOINT_HOME(),                           # ⑬
+        JOINT_HOME(),                               # ①
+        grip(0),                                    # ② 완전 개방 (pulse=0)
+        mj_abs(VISION_RETURN_SCAN_J_DEG),           # ③ 그리퍼 캠 스캔 자세
+        Step(kind=StepKind.WAIT_VISION_RETURN_XY),  # ④ /vision/tool_gripper_pose 수신 대기
+        GRIP_RELEASE(),                             # ④-1 파지 준비 개방 (pulse=450)
+        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + rz + 고정 Z (staging 위)
+        Step(kind=StepKind.MOVE_L_STAGING_XYZ),     # ⑥ 그리퍼 캠 XY + rz + staging_pickup_z_mm 하강
+        GRIP_TOOL(),                                # ⑦
+        Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑧ 그리퍼 캠 XY + 고정 Z 상승
+        Step(kind=StepKind.MOVE_L_SLOT_XY),         # ⑨ grasp_pose_base XY + 고정 Z (slot 위)
+        Step(kind=StepKind.MOVE_L_SLOT_XYZ),        # ⑩ grasp_pose_base XY + return_z_mm 하강
+        GRIP_RELEASE(),                             # ⑪
+        Step(kind=StepKind.MOVE_L_SLOT_XY),         # ⑫ grasp_pose_base XY + 고정 Z 상승
+        JOINT_HOME(),                               # ⑬
     ]
 
 
@@ -498,7 +608,7 @@ def full_socket_fetch_seq() -> list[Step]:
         JOINT_HOME(),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_APPROACH_Z),
-        marked(GRIP_SOCKET(), "pick"),
+        marked(GRIP_TOOL(), "pick"),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_BOTTOM),
@@ -529,7 +639,7 @@ def full_socket_return_seq() -> list[Step]:
         ml_abs(SOCKET_CATCH_HOME_L),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_BOTTOM),
-        marked(GRIP_SOCKET(), "pick"),
+        marked(GRIP_TOOL(), "pick"),
         ml_abs(SOCKET_BOTTOM_XY),
         ml_abs(SOCKET_APPROACH_XY),
         ml_abs(SOCKET_APPROACH_Z),
