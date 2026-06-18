@@ -234,7 +234,8 @@ int32 slot_col
 | `/vision/marker/map` | `interfaces/MarkerMap` | `marker_scan_node` | `orchestrator` BT ScanMarkers | Reliable / depth 1 |
 | `/vision/marker/debug/image` | `sensor_msgs/Image` | `marker_scan_node` | (디버그용) | Best Effort / depth 1 |
 | `/vision/tool_top_pose` | `geometry_msgs/PointStamped` | `vision` (탑뷰 D455f) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
-| `/vision/tool_gripper_pose` | `geometry_msgs/PoseStamped` | `vision` (그리퍼 캠 C270) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
+| `/vision/tool_gripper_pose` | `geometry_msgs/PoseStamped` | `vision` (그리퍼 캠 C270) | `motion/toolbox_seq_runner` | Best Effort / depth 10 |
+| `/vision/masks/gripper` | `sensor_msgs/Image` (mono8) | `vision/yolo_node` (gripper) | `vision/gripper_marker_scan_node` | Best Effort / depth 10 |
 | `/vision/handle_pose` | `geometry_msgs/PointStamped` | `vision` (그리퍼 캠 C270) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
 | `/vision/slot_top_pose` | `geometry_msgs/PointStamped` | `vision` (탑뷰 D455f) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
 
