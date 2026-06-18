@@ -186,7 +186,8 @@ class _TFListener:
 _state: dict = {"selected": -1, "polys": []}
 
 # theta EMA 스무딩 (클래스별, sin/cos 분리로 각도 wraparound 안전)
-_THETA_ALPHA = 0.25   # 낮을수록 더 부드럽고 느림, 높을수록 빠르고 노이즈 많음
+_THETA_ALPHA = 0.25        # 낮을수록 더 부드럽고 느림, 높을수록 빠르고 노이즈 많음
+_THETA_OUTLIER_DEG = 30.0  # 이 이상 순간 점프하면 해당 프레임 무시
 _theta_ema: dict[str, tuple[float, float]] = {}  # name -> (sin_avg, cos_avg)
 
 def _ema_theta(name: str, theta_deg: float) -> float:
@@ -197,6 +198,10 @@ def _ema_theta(name: str, theta_deg: float) -> float:
         _theta_ema[name] = (s, c)
     else:
         ps, pc = _theta_ema[name]
+        cur_deg = _m.degrees(_m.atan2(ps, pc))
+        diff = abs((theta_deg - cur_deg + 180.0) % 360.0 - 180.0)
+        if diff > _THETA_OUTLIER_DEG:
+            return cur_deg  # 이상치 — EMA 그대로 유지
         s = _THETA_ALPHA * s + (1.0 - _THETA_ALPHA) * ps
         c = _THETA_ALPHA * c + (1.0 - _THETA_ALPHA) * pc
         _theta_ema[name] = (s, c)

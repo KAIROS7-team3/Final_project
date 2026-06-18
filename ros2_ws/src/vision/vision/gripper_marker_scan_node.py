@@ -115,6 +115,7 @@ class MarkerScanNode(Node):
         self._theta_ema_s: float | None = None  # sin 누적
         self._theta_ema_c: float | None = None  # cos 누적
         self._THETA_ALPHA = 0.25
+        self._THETA_OUTLIER_DEG = 30.0  # 이 이상 순간 점프하면 해당 프레임 무시
 
         debug_cfg = self._load_debug_flag()
 
@@ -329,16 +330,23 @@ class MarkerScanNode(Node):
             return
         P_base = T_base_gripper[:3, :3] @ P_tcp + T_base_gripper[:3, 3]
 
-        # PCA로 공구 마스크 주축 방향각(rz) 계산 + EMA 스무딩
-        rz_raw = _compute_pca_rz(gray, tool_cx, tool_cy)
+        # PCA로 공구 마스크 주축 방향각(rz) 계산 + 이상치 게이팅 + EMA 스무딩
+        rz_raw = _compute_pca_rz(gray, tool_cx, tool_cy, radius=60)
         s = math.sin(math.radians(rz_raw))
         c = math.cos(math.radians(rz_raw))
         if self._theta_ema_s is None:
             self._theta_ema_s, self._theta_ema_c = s, c
+            rz_deg = rz_raw
         else:
-            self._theta_ema_s = self._THETA_ALPHA * s + (1.0 - self._THETA_ALPHA) * self._theta_ema_s
-            self._theta_ema_c = self._THETA_ALPHA * c + (1.0 - self._THETA_ALPHA) * self._theta_ema_c
-        rz_deg = math.degrees(math.atan2(self._theta_ema_s, self._theta_ema_c))
+            cur_deg = math.degrees(math.atan2(self._theta_ema_s, self._theta_ema_c))
+            diff = abs((rz_raw - cur_deg + 180.0) % 360.0 - 180.0)
+            if diff > self._THETA_OUTLIER_DEG:
+                # 30° 초과 순간 점프 → 이번 프레임 무시, EMA 유지
+                rz_deg = cur_deg
+            else:
+                self._theta_ema_s = self._THETA_ALPHA * s + (1.0 - self._THETA_ALPHA) * self._theta_ema_s
+                self._theta_ema_c = self._THETA_ALPHA * c + (1.0 - self._THETA_ALPHA) * self._theta_ema_c
+                rz_deg = math.degrees(math.atan2(self._theta_ema_s, self._theta_ema_c))
 
         # quaternion 변환 (yaw only: roll=0, pitch=0)
         half_yaw = math.radians(rz_deg) / 2.0
@@ -419,7 +427,7 @@ class MarkerScanNode(Node):
         return vis
 
 
-def _compute_pca_rz(gray: np.ndarray, cx: float, cy: float, radius: int = 40) -> float:
+def _compute_pca_rz(gray: np.ndarray, cx: float, cy: float, radius: int = 60) -> float:
     """공구 마스크 근사 영역에서 PCA 주축 방향각(deg) 계산.
 
     Detection2DArray는 마스크 픽셀을 제공하지 않으므로 bbox 중심 주변
