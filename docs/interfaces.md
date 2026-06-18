@@ -234,12 +234,15 @@ int32 slot_col
 | `/vision/marker/map` | `interfaces/MarkerMap` | `marker_scan_node` | `orchestrator` BT ScanMarkers | Reliable / depth 1 |
 | `/vision/marker/debug/image` | `sensor_msgs/Image` | `marker_scan_node` | (디버그용) | Best Effort / depth 1 |
 | `/vision/tool_top_pose` | `geometry_msgs/PointStamped` | `vision` (탑뷰 D455f) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
-| `/vision/tool_gripper_pose` | `geometry_msgs/PointStamped` | `vision` (그리퍼 캠 C270) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
+| `/vision/tool_gripper_pose` | `geometry_msgs/PoseStamped` | `vision` (그리퍼 캠 C270) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
 | `/vision/handle_pose` | `geometry_msgs/PointStamped` | `vision` (그리퍼 캠 C270) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
 | `/vision/slot_top_pose` | `geometry_msgs/PointStamped` | `vision` (탑뷰 D455f) | `motion/toolbox_seq_runner` | Best Effort / depth 1 |
 
 > **QoS 선택 기준:** 센서 데이터(비전, STT)는 Best Effort — 최신 프레임이 중요. 상태/의도 토픽은 Reliable — 손실 허용 불가.
 > **비전 좌표 토픽 주의:** `/vision/tool_top_pose`, `/vision/tool_gripper_pose`, `/vision/handle_pose`, `/vision/slot_top_pose` 4종은 비전팀과 잠정 합의된 인터페이스. 단위 m, frame_id `base_link`. runner 내부에서 ×1000 → mm 변환 적용. 확정 전 변경 가능.
+>
+> **`/vision/tool_gripper_pose` PR 검토 필수:** `PointStamped` → `PoseStamped`로 변경됨 (2026-06-18).
+> `pose.position` = XYZ (m), `pose.orientation` = quaternion → rz(theta) 추출. **비전팀(`gripper_marker_scan_node.py`)이 PCA theta 계산 후 `PoseStamped`로 퍼블리시해야 motion runner가 정상 동작함.**
 
 ---
 

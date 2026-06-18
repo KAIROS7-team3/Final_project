@@ -224,7 +224,7 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
 
 ### TODO
 
-- [ ] `gripper_marker_scan_node.py`: PCA theta 계산 추가 + `PointStamped` → `PoseStamped` 타입 변경 + `/vision/tool_gripper_pose` 토픽 분리
+- [ ] **비전팀 필수 작업**: `gripper_marker_scan_node.py` — PCA theta 계산 추가 + `PointStamped` → `PoseStamped` 퍼블리시 변경 (`docs/interfaces.md` §4 참조, PR 검토 시 확인)
 
 ---
 
