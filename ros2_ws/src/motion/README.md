@@ -191,7 +191,7 @@ Visual Servo 없이 그리퍼 캠 한 번 스캔 → 직접 이동 방식.
 | ① | JOINT_HOME | 고정 |
 | ② | grip(0) — 완전 개방 | pulse=0 |
 | ③ | MoveJ — 그리퍼 캠 스캔 자세 | `VISION_FETCH_SCAN_J_DEG` = `[-30.1, 15.5, 74.7, 20.9, 101.2, -27.8]` deg |
-| ④ | WAIT_VISION_TOP_XY — 토픽 수신 대기 | `/vision/fetch/tool_gripper_pose` 신규 수신 대기 |
+| ④ | WAIT_VISION_TOP_XY — 토픽 수신 대기 | `/vision/tool_gripper_pose` 신규 수신 대기 |
 | ④-1 | GRIP_RELEASE — 파지 준비 개방 | pulse=450 |
 | ⑤ | MoveL — 공구 위쪽 | 그리퍼 캠 XY + `tool_approach_z_mm` (고정 234mm) |
 | ⑥ | MoveL — 공구 하강 | 그리퍼 캠 XY + `grasp_z_mm` |
@@ -215,7 +215,7 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
 
 | 항목 | 현재 가정 | 확인 필요 |
 |------|-----------|-----------|
-| 그리퍼 캠 공구 좌표 토픽 | `/vision/fetch/tool_gripper_pose` | 토픽명 확정 |
+| 그리퍼 캠 공구 좌표 토픽 | `/vision/tool_gripper_pose` | 토픽명 확정 |
 | 메시지 타입 | `geometry_msgs/PoseStamped` (XY + rz) | 타입 확정 |
 | 좌표 단위 | m (runner에서 ×1000 → mm 변환) | 단위 확정 |
 | theta(rz) | `PoseStamped.pose.orientation` → rz 추출 | **gripper_marker_scan_node에 PCA theta 미구현 — 추가 필요** |
@@ -224,7 +224,7 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
 
 ### TODO
 
-- [ ] `gripper_marker_scan_node.py`: PCA theta 계산 추가 + `PointStamped` → `PoseStamped` 타입 변경 + `/vision/fetch/tool_gripper_pose` 토픽 분리
+- [ ] `gripper_marker_scan_node.py`: PCA theta 계산 추가 + `PointStamped` → `PoseStamped` 타입 변경 + `/vision/tool_gripper_pose` 토픽 분리
 
 ---
 
@@ -239,7 +239,7 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
 | ① | JOINT_HOME | 고정 |
 | ② | grip(0) — 완전 개방 | pulse=0 |
 | ③ | MoveJ — 그리퍼 캠 스캔 자세 | `VISION_RETURN_SCAN_J_DEG` = `[-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]` deg |
-| ④ | WAIT_VISION_RETURN_XY | `/vision/return/tool_gripper_pose` 수신 대기 (5초 타임아웃) |
+| ④ | WAIT_VISION_RETURN_XY | `/vision/tool_gripper_pose` 수신 대기 (5초 타임아웃) |
 | ④-1 | GRIP_RELEASE — 파지 준비 개방 | pulse=450 |
 | ⑤ | MoveL — staging 위 | 그리퍼 캠 XY + rz + 고정 Z 234mm |
 | ⑥ | MoveL — staging 파지 하강 | 그리퍼 캠 XY + rz + `staging_pickup_z_mm` |
@@ -255,7 +255,7 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_fetch -p tool_
 
 | 단계 | XY 출처 | Z 출처 |
 |------|---------|--------|
-| ⑤⑥⑧ | `/vision/return/tool_gripper_pose` (PoseStamped, m→mm) | ⑤⑧: 234mm 고정 / ⑥: `staging_pickup_z_mm` |
+| ⑤⑥⑧ | `/vision/tool_gripper_pose` (PoseStamped, m→mm) | ⑤⑧: 234mm 고정 / ⑥: `staging_pickup_z_mm` |
 | ⑨⑩⑫ | `config/toolbox.yaml` `grasp_pose_base.x/y` × 1000 | ⑨⑫: 234mm 고정 / ⑩: `return_z_mm` |
 
 ### 실행
@@ -281,7 +281,7 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_return -p tool
 
 | 항목 | 현재 가정 | 확인 필요 |
 |------|-----------|-----------|
-| 토픽명 | `/vision/return/tool_gripper_pose` | 비전팀 합의 필요 (기존 `/vision/tool_gripper_pose`에서 변경) |
+| 토픽명 | `/vision/tool_gripper_pose` | 비전팀 합의 필요 (기존 `/vision/tool_gripper_pose`에서 변경) |
 | 메시지 타입 | `geometry_msgs/PoseStamped` | 기존 `PointStamped`에서 변경 — 비전팀 구현 필요 |
 | 좌표 단위 | position: m (runner에서 ×1000), orientation: quaternion | 확인 필요 |
 | rz 추출 | quaternion → yaw (atan2) | 범위 -185~185° 벗어나면 runner가 거부 |
@@ -298,8 +298,8 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_return -p tool
 - [ ] **초기 상태 읽기**: 노드 시작 시 DRL로 현재 그리퍼 위치(present_position)를 읽어 `_current_hz_pos` 초기화
 - [ ] **VS 실기 튜닝**: `config/visual_servo.yaml` handle/tool 각 섹션 kp·임계값 실측 보정
 - [ ] **비전팀 인터페이스 확정**
-  - `/vision/fetch/tool_gripper_pose` (`PoseStamped`) — fetch 스캔 자세 공구 XY + rz
-  - `/vision/return/tool_gripper_pose` (`PoseStamped`) — return 스캔 자세 공구 XY + rz
+  - `/vision/tool_gripper_pose` (`PoseStamped`) — fetch 스캔 자세 공구 XY + rz
+  - `/vision/tool_gripper_pose` (`PoseStamped`) — return 스캔 자세 공구 XY + rz
   - fetch/return 스캔 자세가 다르므로 **토픽 반드시 분리** 구현
 - [ ] **staging_pickup_z_mm 실측**: 6종 공구 모두 직접교시로 실측 후 toolbox.yaml 갱신
 - [ ] **spanner_16mm 전체 Z 실측**: grasp_z_mm / staging_pickup_z_mm / return_z_mm 모두 임의값
