@@ -297,11 +297,21 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_return -p tool
 - [x] **vision_return 시퀀스 구현**: 토픽 분리, rz 수신, staging/slot Z 분리, slot XY yaml 로드
 - [ ] **초기 상태 읽기**: 노드 시작 시 DRL로 현재 그리퍼 위치(present_position)를 읽어 `_current_hz_pos` 초기화
 - [ ] **VS 실기 튜닝**: `config/visual_servo.yaml` handle/tool 각 섹션 kp·임계값 실측 보정
-- [ ] **비전팀 인터페이스 확정**
-  - `/vision/tool_gripper_pose` (`PoseStamped`) — fetch 스캔 자세 공구 XY + rz
-  - `/vision/tool_gripper_pose` (`PoseStamped`) — return 스캔 자세 공구 XY + rz
-  - fetch/return 스캔 자세가 다르므로 **토픽 반드시 분리** 구현
+- [x] **비전팀 인터페이스 확정**: `/vision/tool_gripper_pose` 단일 토픽 `PoseStamped` (XY + rz) — `docs/interfaces.md` §4 반영 완료
 - [ ] **staging_pickup_z_mm 실측**: 6종 공구 모두 직접교시로 실측 후 toolbox.yaml 갱신
 - [ ] **spanner_16mm 전체 Z 실측**: grasp_z_mm / staging_pickup_z_mm / return_z_mm 모두 임의값
 - [ ] **config/toolbox.yaml workspace_limits z_min**: -22.0mm 임시값, 실측 후 갱신
 - [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place)
+
+---
+
+## PR 리뷰어 체크리스트
+
+> motion 패키지 PR 머지 전 리뷰어가 반드시 확인할 항목.
+
+- [ ] **`/vision/tool_gripper_pose` 타입 확인**: 비전팀이 `geometry_msgs/PoseStamped`로 퍼블리시하는지 확인 (`PointStamped` 아님)
+  - `pose.position.x/y/z` — 공구 위치 (m, base_link frame)
+  - `pose.orientation` — quaternion → rz(theta, deg) 추출 (PCA 기반)
+  - 미구현 시 runner `WAIT_VISION_TOP_XY` / `WAIT_VISION_RETURN_XY` 스텝에서 rz=0 으로 동작하여 파지 자세 오류 발생
+- [ ] `config/toolbox.yaml` `staging_pickup_z_mm` 실측값 반영 여부
+- [ ] `config/toolbox.yaml` `workspace_limits.z` 범위가 실제 동작 Z를 포함하는지
