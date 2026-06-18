@@ -176,7 +176,7 @@ tools:
       y: 0.34831
       z: 0.05340
     grasp_z_mm: 55.4            # fetch Z (tw기준 + 2mm)
-    staging_pickup_z_mm: 56.4  # staging 파지 Z — ⚠️ 실측 후 갱신 (임의값)
+    staging_pickup_z_mm: -9.12  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
     return_z_mm: 56.4          # slot 반납 Z (tw z=53.4 + 3mm, 임의값)
     grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드)
     notes: "임의값 — 실측 후 갱신"
