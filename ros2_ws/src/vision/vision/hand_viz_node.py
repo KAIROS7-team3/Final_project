@@ -18,9 +18,12 @@ from handpose_interfaces.msg import Hands
 from vision.hand_eye_loader import load_transform
 
 _QOS_BE = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.BEST_EFFORT)
-_HANDOVER_CFG = Path("config/handover.yaml")
-_CAMERA_INFO = Path("config/camera_info.yaml")
-_HAND_EYE = Path("config/hand_eye.yaml")
+_REPO_ROOT = next(
+    p for p in Path(__file__).resolve().parents if (p / "config" / "handover.yaml").exists()
+)
+_HANDOVER_CFG = _REPO_ROOT / "config" / "handover.yaml"
+_CAMERA_INFO = _REPO_ROOT / "config" / "camera_info.yaml"
+_HAND_EYE = _REPO_ROOT / "config" / "hand_eye.yaml"
 _WIN = "Hand Monitor"
 
 # MediaPipe 손 스켈레톤 연결선 (21개 랜드마크)
@@ -77,8 +80,9 @@ def _load_roi() -> tuple[bool, tuple[int, int, int, int]]:
             int(cfg.get("roi_y_max", 449)),
         )
         return enabled, roi
-    except Exception:
-        return False, (441, 585, 248, 449)
+    except Exception as e:
+        print(f"[hand_viz] ROI yaml 로드 실패: {e} — 기본값 사용")
+        return True, (695, 839, 248, 449)
 
 
 def _imgmsg_to_bgr(msg: Image) -> np.ndarray:
@@ -136,7 +140,10 @@ class HandVizNode(Node):
 
         self._pose: PoseStamped | None = None
         self._ready: bool = False
-        self._roi_enabled, self._roi = _load_roi()
+        loaded_enabled, loaded_roi = _load_roi()
+        self._roi_enabled: bool = loaded_enabled
+        self._roi: tuple[int, int, int, int] = loaded_roi
+        print(f"[hand_viz] ROI enabled={self._roi_enabled} roi={self._roi}")
         self._frame: np.ndarray | None = None
         self._debug_str: str = ""
         self._landmarks_flat: list | None = None
@@ -184,6 +191,11 @@ class HandVizNode(Node):
             return
 
         img = self._frame.copy()
+        h, w = img.shape[:2]
+
+        # 이미지 해상도 + ROI 좌표를 화면에 출력 (디버그용)
+        cv2.putText(img, f"img:{w}x{h}  ROI:({self._roi[0]},{self._roi[2]})-({self._roi[1]},{self._roi[3]})",
+                    (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 50), 1)
 
         # ── 랜드마크 오버레이 ─────────────────────────────────────────────
         if self._landmarks_flat is not None:
