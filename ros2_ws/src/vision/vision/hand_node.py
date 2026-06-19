@@ -240,6 +240,12 @@ class HandNode(Node):
                 wx, wy = int(canon[_WRIST][0]), int(canon[_WRIST][1])
                 x_min, x_max, y_min, y_max = self._roi
                 if not (x_min <= wx <= x_max and y_min <= wy <= y_max):
+                    self._publish_debug(
+                        f"wrist=({wx},{wy}) "
+                        f"ROI=({x_min}~{x_max},{y_min}~{y_max}) "
+                        f"score={hand_msg.score:.2f} "
+                        f"[OUTSIDE_ROI]"
+                    )
                     if self._locked:
                         self.get_logger().info(
                             f"[hand_node] lock 해제 — ROI 이탈 "

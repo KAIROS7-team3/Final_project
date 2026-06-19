@@ -193,10 +193,6 @@ class HandVizNode(Node):
         img = self._frame.copy()
         h, w = img.shape[:2]
 
-        # 이미지 해상도 + ROI 좌표를 화면에 출력 (디버그용)
-        cv2.putText(img, f"img:{w}x{h}  ROI:({self._roi[0]},{self._roi[2]})-({self._roi[1]},{self._roi[3]})",
-                    (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 50), 1)
-
         # ── 랜드마크 오버레이 ─────────────────────────────────────────────
         if self._landmarks_flat is not None:
             _draw_landmarks(img, self._landmarks_flat, self._ready)
@@ -218,14 +214,19 @@ class HandVizNode(Node):
         elif not self._ready:
             self._lock_px = None
 
-        # ── ROI 박스 ──────────────────────────────────────────────────────
+        # ── ROI 박스 (항상 표시 — enabled: 색상, disabled: 회색) ──────────
+        x_min, x_max, y_min, y_max = self._roi
         if self._roi_enabled:
-            x_min, x_max, y_min, y_max = self._roi
             roi_color = (0, 255, 0) if self._ready else (0, 165, 255)
-            cv2.rectangle(img, (x_min, y_min), (x_max, y_max), roi_color, 2)
             label = "READY" if self._ready else "WAITING"
-            cv2.putText(img, label, (x_min + 4, y_min - 6),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, roi_color, 2)
+            thickness = 2
+        else:
+            roi_color = (120, 120, 120)
+            label = "ROI(OFF)"
+            thickness = 1
+        cv2.rectangle(img, (x_min, y_min), (x_max, y_max), roi_color, thickness)
+        cv2.putText(img, label, (x_min + 4, y_min - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, roi_color, 1)
 
         # ── 상태 + XYZ + Yaw 오버레이 (상단 바) ─────────────────────────
         color = (0, 255, 0) if self._ready else (0, 165, 255)
