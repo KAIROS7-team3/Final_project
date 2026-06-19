@@ -110,18 +110,34 @@ def _deproject(u: float, v: float, depth_m: float, K: _Intrinsics) -> np.ndarray
     return np.array([x, y, depth_m], dtype=np.float64)
 
 
-def _palm_normal_to_quat(normal_base: np.ndarray) -> np.ndarray:
-    """손바닥 법선 벡터(base_link) → 쿼터니언 (x, y, z, w).
+def _palm_normal_to_quat(
+    normal_base: np.ndarray,
+    finger_dir_base: np.ndarray,
+) -> np.ndarray:
+    """손바닥 법선 + 손가락 방향(base_link) → 쿼터니언 (x, y, z, w).
 
-    EE의 Z축을 normal_base 방향으로 정렬한 회전을 반환.
+    Z축 = palm normal (위)
+    Y축 = 손가락 방향 (손목→중지MCP)
+    X축 = 손잡이 방향 (새끼→검지, 손가락과 수직) — 로봇이 이 축으로 손잡이를 내밀어야 함
     """
     z = normal_base / np.linalg.norm(normal_base)
-    ref = np.array([0.0, 1.0, 0.0])
-    if abs(np.dot(z, ref)) > 0.99:
-        ref = np.array([1.0, 0.0, 0.0])
-    x = np.cross(ref, z)
+
+    # 손가락 방향을 손바닥 평면에 투영 → Y축
+    y_raw = finger_dir_base / (np.linalg.norm(finger_dir_base) + 1e-9)
+    y = y_raw - np.dot(y_raw, z) * z
+    norm_y = np.linalg.norm(y)
+    if norm_y < 1e-6:
+        ref = np.array([0.0, 1.0, 0.0])
+        if abs(np.dot(z, ref)) > 0.99:
+            ref = np.array([1.0, 0.0, 0.0])
+        y = np.cross(z, ref)
+        y /= np.linalg.norm(y)
+    else:
+        y /= norm_y
+
+    # X축 = 손잡이 방향 (Y×Z 아니라 Z×Y — 오른손 좌표계 유지)
+    x = np.cross(y, z)
     x /= np.linalg.norm(x)
-    y = np.cross(z, x)
     R = np.column_stack([x, y, z])
     return Rotation.from_matrix(R).as_quat()  # (x, y, z, w)
 
@@ -236,7 +252,7 @@ class HandNode(Node):
                     return
 
             # ── Phase 2: 손바닥 위 방향 판단 ───────────────────────────────
-            palm_normal_base, palm_pos_base = self._compute_palm(
+            palm_normal_base, palm_pos_base, finger_dir_base = self._compute_palm(
                 canon, depth_img, hand_label=hand_msg.label
             )
             if palm_normal_base is None:
@@ -304,7 +320,7 @@ class HandNode(Node):
             if not self._locked:
                 self._locked = True
                 self._locked_pos = palm_pos_base.copy()
-                self._locked_quat = _palm_normal_to_quat(palm_normal_base)
+                self._locked_quat = _palm_normal_to_quat(palm_normal_base, finger_dir_base)
                 self.get_logger().info(
                     f"[hand_node] 위치 lock: "
                     f"x={self._locked_pos[0]:.3f} "
@@ -332,7 +348,7 @@ class HandNode(Node):
                 # 위치 업데이트 구간: 3~15cm → lock 갱신 + 재안정화 (로봇 정지)
                 if dist_3d >= self._lock_update_dist:
                     self._locked_pos = palm_pos_base.copy()
-                    self._locked_quat = _palm_normal_to_quat(palm_normal_base)
+                    self._locked_quat = _palm_normal_to_quat(palm_normal_base, finger_dir_base)
                     self._locked = False          # 재안정화 필요
                     self._pose_history.clear()    # stable 카운트 초기화
                     self.get_logger().info(
@@ -343,12 +359,16 @@ class HandNode(Node):
                     self._publish_ready(False)
                     return
 
+            yaw_deg = float(
+                Rotation.from_quat(self._locked_quat).as_euler("xyz", degrees=True)[2]
+            )
             self._publish_debug(
                 f"normal_z={palm_normal_base[2]:+.3f} "
                 f"palm_up=O hand_open=O "
                 f"score={hand_msg.score:.2f} "
                 f"stable={stable_cur}/{self._stable_frames} "
                 f"spread={spread:.4f}m "
+                f"yaw={yaw_deg:.1f}deg "
                 f"[LOCKED] xyz=({self._locked_pos[0]:.3f},{self._locked_pos[1]:.3f},{self._locked_pos[2]:.3f})"
             )
 
@@ -362,17 +382,20 @@ class HandNode(Node):
         canon: np.ndarray,
         depth_img: np.ndarray,
         hand_label: str = "right",
-    ) -> tuple[np.ndarray | None, np.ndarray | None]:
-        """손바닥 법선 + 중심 위치를 base_link 기준으로 반환.
+    ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None]:
+        """손바닥 법선 + 중심 위치 + 손가락 방향을 base_link 기준으로 반환.
 
-        depth 획득 실패 시 (None, None) 반환.
+        depth 획득 실패 시 (None, None, None) 반환.
+        반환: (palm_normal_base, palm_pos_base, finger_dir_base)
+          - palm_normal_base : 손바닥 법선 단위벡터 (위=+Z 기대)
+          - palm_pos_base    : 손바닥 중심 3D 위치 [m]
+          - finger_dir_base  : 손목→중지MCP 방향 단위벡터 (손가락 방향, yaw 정보)
         """
-        # 손목 / 검지MCP / 새끼MCP 픽셀 좌표
         pts_px = {
-            "wrist":     (int(canon[_WRIST][0]),     int(canon[_WRIST][1])),
-            "index_mcp": (int(canon[_INDEX_MCP][0]), int(canon[_INDEX_MCP][1])),
-            "pinky_mcp": (int(canon[_PINKY_MCP][0]), int(canon[_PINKY_MCP][1])),
-            "middle_mcp":(int(canon[_MIDDLE_MCP][0]),int(canon[_MIDDLE_MCP][1])),
+            "wrist":     (int(canon[_WRIST][0]),      int(canon[_WRIST][1])),
+            "index_mcp": (int(canon[_INDEX_MCP][0]),  int(canon[_INDEX_MCP][1])),
+            "pinky_mcp": (int(canon[_PINKY_MCP][0]),  int(canon[_PINKY_MCP][1])),
+            "middle_mcp":(int(canon[_MIDDLE_MCP][0]), int(canon[_MIDDLE_MCP][1])),
         }
 
         pts_3d: dict[str, np.ndarray] = {}
@@ -380,7 +403,7 @@ class HandNode(Node):
             d = _sample_depth(depth_img, u, v, self._depth_radius, self._min_depth_px)
             if d is None or d <= 0.0:
                 self.get_logger().debug(f"[hand_node] depth 획득 실패: {name}")
-                return None, None
+                return None, None, None
             pts_3d[name] = _deproject(u, v, d, self._K)
 
         p0  = pts_3d["wrist"]
@@ -393,21 +416,29 @@ class HandNode(Node):
         cross = np.cross(v1, v2)
         norm_len = np.linalg.norm(cross)
         if norm_len < 1e-6:
-            return None, None
+            return None, None, None
         # MediaPipe는 비미러 카메라 기준 — 사용자 오른손 = 카메라 "Left"
         # 카메라 "Left"(=사용자 오른손)는 flip 불필요, "Right"(=사용자 왼손)만 flip
         flip = 1.0 if hand_label.lower() == "left" else -1.0
         palm_normal_cam = cross / norm_len * flip
 
+        # 손가락 방향: 손목 → 중지MCP (카메라 좌표계)
+        finger_vec_cam = pts_3d["middle_mcp"] - p0
+        finger_len = np.linalg.norm(finger_vec_cam)
+        if finger_len < 1e-6:
+            return None, None, None
+        finger_dir_cam = finger_vec_cam / finger_len
+
         # 손바닥 중심 = 4점 평균 (카메라 좌표계)
         palm_center_cam = np.mean(list(pts_3d.values()), axis=0)
 
         # base_link 변환
-        R = self._T[:3, :3]
-        palm_normal_base = R @ palm_normal_cam
-        palm_pos_base = camera_to_base(palm_center_cam, self._T)
+        Rot = self._T[:3, :3]
+        palm_normal_base = Rot @ palm_normal_cam
+        palm_pos_base    = camera_to_base(palm_center_cam, self._T)
+        finger_dir_base  = Rot @ finger_dir_cam
 
-        return palm_normal_base, palm_pos_base
+        return palm_normal_base, palm_pos_base, finger_dir_base
 
     def _is_hand_open(self, world: np.ndarray) -> bool:
         """손 펼침 여부: TIP-wrist 거리 > MCP-wrist 거리 × ratio."""
