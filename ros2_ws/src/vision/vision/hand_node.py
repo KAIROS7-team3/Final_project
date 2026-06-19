@@ -29,9 +29,8 @@ import rclpy
 import yaml
 from geometry_msgs.msg import PoseStamped
 from vision.cv_bridge_compat import CvBridge
-from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, qos_profile_sensor_data
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, String
@@ -49,6 +48,12 @@ _QOS_RELIABLE_10 = QoSProfile(depth=10)
 _QOS_BEST_EFFORT_10 = QoSProfile(
     depth=10,
     reliability=QoSReliabilityPolicy.BEST_EFFORT,
+)
+# RealSense aligned_depth: RELIABLE + TRANSIENT_LOCAL 발행 → 구독도 동일하게
+_QOS_DEPTH = QoSProfile(
+    depth=5,
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
 )
 
 # MediaPipe 랜드마크 인덱스
@@ -191,19 +196,19 @@ class HandNode(Node):
         self._locked_quat: np.ndarray | None = None  # (4,) (x,y,z,w)
         self._no_detect_start: float | None = None   # 소실 시작 시각 (time.monotonic)
 
-        # ApproximateTimeSynchronizer: 손 감지 + depth 동기화
-        hand_sub = Subscriber(
-            self, Hands, "/hands/detections",
-            qos_profile=_QOS_BEST_EFFORT_10,
+        # 최신 depth 캐시 (ApproximateTimeSynchronizer 대체)
+        self._latest_depth: np.ndarray | None = None
+        self._depth_count: int = 0
+        self._hand_count: int = 0
+
+        self.create_subscription(
+            Image, "/d455f/d455f/aligned_depth_to_color/image_raw",
+            self._on_depth, _QOS_DEPTH,
         )
-        depth_sub = Subscriber(
-            self, Image, "/d455f/d455f/aligned_depth_to_color/image_raw",
-            qos_profile=_QOS_SENSOR,
+        self.create_subscription(
+            Hands, "/hands/detections",
+            self._on_hands_msg, _QOS_BEST_EFFORT_10,
         )
-        self._sync = ApproximateTimeSynchronizer(
-            [hand_sub, depth_sub], queue_size=10, slop=0.05,
-        )
-        self._sync.registerCallback(self._on_hand_depth)
 
         self._pose_pub = self.create_publisher(PoseStamped, "/hand/pose", _QOS_BEST_EFFORT_10)
         self._ready_pub = self.create_publisher(Bool, "/hand/ready", _QOS_BEST_EFFORT_10)
@@ -214,11 +219,32 @@ class HandNode(Node):
 
         self.get_logger().info("[hand_node] 시작 — /hand/pose, /hand/ready 발행 대기")
 
-    # ─── 메인 콜백 ────────────────────────────────────────────────────────────
+    # ─── 개별 콜백 ───────────────────────────────────────────────────────────
 
-    def _on_hand_depth(self, hands_msg: Hands, depth_msg: Image) -> None:
+    def _on_depth(self, depth_msg: Image) -> None:
+        """depth 이미지 캐시 업데이트."""
         with self._mutex:
-            depth_img = self._bridge.imgmsg_to_cv2(depth_msg, desired_encoding="passthrough")
+            self._latest_depth = self._bridge.imgmsg_to_cv2(
+                depth_msg, desired_encoding="passthrough"
+            )
+            self._depth_count += 1
+
+    def _on_hands_msg(self, hands_msg: Hands) -> None:
+        """hands 감지 메시지 수신 → 최신 depth와 결합해 처리."""
+        self._hand_count += 1
+        with self._mutex:
+            depth_img = self._latest_depth
+        if depth_img is None:
+            self._publish_debug(
+                f"hand_rx={self._hand_count} depth_rx={self._depth_count} [NO_DEPTH]"
+            )
+            return
+        self._on_hand_depth(hands_msg, depth_img)
+
+    # ─── 메인 처리 ────────────────────────────────────────────────────────────
+
+    def _on_hand_depth(self, hands_msg: Hands, depth_img: np.ndarray) -> None:
+        with self._mutex:
 
             # ── Phase 1: 손 감지 여부 / 신뢰도 검사 ──────────────────────
             if not hands_msg.hands:
@@ -517,6 +543,7 @@ class HandNode(Node):
         else:
             self.get_logger().info(
                 f"[STATUS] WAITING  stable={len(self._pose_history)}/{self._stable_frames}"
+                f"  depth_rx={self._depth_count}  hand_rx={self._hand_count}"
             )
 
 
