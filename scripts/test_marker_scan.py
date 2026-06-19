@@ -80,7 +80,7 @@ GRASP_OFFSET: dict[str, dict] = {
 # 핸드아이 캘리브레이션이 DART TCP 기준으로 수집됐으므로 TF link_6과 기준 맞춤
 TCP_OFFSET_M = np.array(_pose_cfg["tcp"]["offset_mm"][:3]) / 1000.0
 
-LAYER_LABEL = {0: "layer_0(bottom)", 1: "layer_1(top)"}
+LAYER_LABEL = {0: "layer_0(bottom)", 1: "layer_1(top)", 3: "floor(바닥)"}
 COLORS = [(0,255,0),(0,128,255),(255,0,128),(255,255,0),(0,255,255),(255,0,255)]
 
 

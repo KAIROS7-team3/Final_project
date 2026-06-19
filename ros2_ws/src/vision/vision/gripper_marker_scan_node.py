@@ -57,7 +57,7 @@ _ARUCO_DICT   = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 _ARUCO_PARAMS = cv2.aruco.DetectorParameters()
 _DETECTOR     = cv2.aruco.ArucoDetector(_ARUCO_DICT, _ARUCO_PARAMS)
 
-_MARKER_ID_TO_LAYER: dict[int, str] = {0: "layer_0(아랫층)", 1: "layer_1(윗층)"}
+_MARKER_ID_TO_LAYER: dict[int, str] = {0: "layer_0(아랫층)", 1: "layer_1(윗층)", 3: "floor(바닥)"}
 
 _QOS_BE10 = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.BEST_EFFORT)
 
