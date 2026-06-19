@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
+import yaml
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSProfile
@@ -28,11 +30,31 @@ from dsr_msgs2.srv import MoveLine, MoveJoint
 
 from scipy.spatial.transform import Rotation
 
+_HANDOVER_CFG = next(
+    p for p in Path(__file__).resolve().parents if (p / "config" / "handover.yaml").exists()
+) / "config" / "handover.yaml"
+
+
+def _load_rz_cal() -> tuple[float, float, float]:
+    """(rz_cal_hand_yaw, rz_cal_robot_rz, rz_sign) 로드. 파일 없으면 기본값."""
+    try:
+        cfg = yaml.safe_load(_HANDOVER_CFG.read_text())["handover"]
+        return (
+            float(cfg.get("rz_cal_hand_yaw", 0.0)),
+            float(cfg.get("rz_cal_robot_rz", 0.0)),
+            float(cfg.get("rz_sign", 1.0)),
+        )
+    except Exception:
+        return 0.0, 0.0, 1.0
+
+
+_RZ_CAL_HAND_YAW, _RZ_CAL_ROBOT_RZ, _RZ_SIGN = _load_rz_cal()
+
 
 # ── 고정 테스트 위치 (홈 근처 안전 지점) ─────────────────────────────────────
 # [x, y, z, rx, ry, rz]  mm / deg — rz는 손 방향으로 덮어씀
 TEST_POSE_XYZ = [373.0, 0.0, 245.0]   # mm, base_link 기준
-TEST_RX = 3.13                          # deg — 홈 자세 기준 rx
+TEST_RX = 8.39                          # deg — 홈 자세 기준 rx (실측)
 TEST_RY = -180.0                        # deg — 홈 자세 기준 ry (gripper down)
 
 HOME_J_DEG   = [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]
@@ -42,8 +64,13 @@ ROBOT_NS     = "dsr01"
 
 
 def _quat_to_rz(qx: float, qy: float, qz: float, qw: float) -> float:
-    """쿼터니언 → Doosan rz (deg). as_euler('xyz')[2] = yaw."""
-    return float(Rotation.from_quat([qx, qy, qz, qw]).as_euler("xyz", degrees=True)[2])
+    """쿼터니언 → Doosan rz (deg).
+
+    rz = (hand_yaw - rz_cal_hand_yaw) * rz_sign + rz_cal_robot_rz
+    캘리브레이션 값은 config/handover.yaml 의 rz_cal_* 키로 조정.
+    """
+    raw_yaw = float(Rotation.from_quat([qx, qy, qz, qw]).as_euler("xyz", degrees=True)[2])
+    return (raw_yaw - _RZ_CAL_HAND_YAW) * _RZ_SIGN + _RZ_CAL_ROBOT_RZ
 
 
 class HandOrientationTestNode(Node):
@@ -60,7 +87,7 @@ class HandOrientationTestNode(Node):
         self._lock = threading.Lock()
 
         self.create_subscription(PoseStamped, "/hand/pose",  self._on_pose,  qos_profile_sensor_data)
-        self.create_subscription(Bool,        "/hand/ready", self._on_ready, QoSProfile(depth=10))
+        self.create_subscription(Bool,        "/hand/ready", self._on_ready, qos_profile_sensor_data)
 
         self._movel_cli = self.create_client(MoveLine,  f"{p}/motion/move_line")
         self._movej_cli = self.create_client(MoveJoint, f"{p}/motion/move_joint")
@@ -99,10 +126,12 @@ class HandOrientationTestNode(Node):
             self.get_logger().info("[OrientTest] 손 감지 없음")
             return
         o  = pose.pose.orientation
+        raw_yaw = float(Rotation.from_quat([o.x, o.y, o.z, o.w]).as_euler("xyz", degrees=True)[2])
         rz = _quat_to_rz(o.x, o.y, o.z, o.w)
         self.get_logger().info(
-            f"[OrientTest] ready={ready}  rz={rz:+.1f} deg  "
-            f"(손 yaw — g 누르면 로봇 rz={rz:+.1f}으로 이동)"
+            f"[OrientTest] ready={ready}  "
+            f"raw_yaw={raw_yaw:+.1f}  rz={rz:+.1f} deg  "
+            f"(cal: hand_yaw={_RZ_CAL_HAND_YAW} sign={_RZ_SIGN:+.0f} robot_rz={_RZ_CAL_ROBOT_RZ})"
         )
 
     def _keyboard_loop(self) -> None:

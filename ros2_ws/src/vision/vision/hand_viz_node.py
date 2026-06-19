@@ -139,6 +139,7 @@ class HandVizNode(Node):
         super().__init__("hand_viz_node")
 
         self._pose: PoseStamped | None = None
+        self._locked_pose: PoseStamped | None = None
         self._ready: bool = False
         loaded_enabled, loaded_roi = _load_roi()
         self._roi_enabled: bool = loaded_enabled
@@ -171,6 +172,10 @@ class HandVizNode(Node):
         self._pose = msg
 
     def _on_ready(self, msg: Bool) -> None:
+        if msg.data and not self._ready:
+            self._locked_pose = self._pose
+        elif not msg.data:
+            self._locked_pose = None
         self._ready = msg.data
 
     def _on_debug(self, msg: String) -> None:
@@ -231,18 +236,19 @@ class HandVizNode(Node):
         # ── 상태 + XYZ + Yaw 오버레이 (상단 바) ─────────────────────────
         color = (0, 255, 0) if self._ready else (0, 165, 255)
         cv2.rectangle(img, (0, 0), (img.shape[1], 60), (20, 20, 20), -1)
-        if self._pose is not None:
-            p = self._pose.pose.position
-            o = self._pose.pose.orientation
+        display_pose = self._locked_pose if self._ready and self._locked_pose is not None else self._pose
+        if display_pose is not None:
+            p = display_pose.pose.position
+            o = display_pose.pose.orientation
             yaw_deg = float(
                 Rotation.from_quat([o.x, o.y, o.z, o.w]).as_euler("xyz", degrees=True)[2]
             )
             cv2.putText(img,
-                        f"{'READY' if self._ready else 'WAITING'}  "
+                        f"{'READY [LOCKED]' if self._ready else 'WAITING'}  "
                         f"X:{p.x:+.3f}  Y:{p.y:+.3f}  Z:{p.z:+.3f} m",
                         (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
             cv2.putText(img,
-                        f"Yaw:{yaw_deg:+.1f}deg  (finger dir)",
+                        f"Yaw:{yaw_deg:+.1f}deg {'[LOCKED]' if self._ready else '(finger dir)'}",
                         (10, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
         else:
             cv2.putText(img, "WAITING  (no pose)", (10, 38),

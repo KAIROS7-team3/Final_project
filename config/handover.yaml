@@ -54,3 +54,11 @@ handover:
   roi_x_max: 588
   roi_y_min: 253
   roi_y_max: 452
+
+  # ── rz 캘리브레이션 ──────────────────────────────────────────────────────────
+  # 손을 홈자세 그리퍼 방향과 동일하게 향했을 때 hand_viz에서 읽은 Yaw값 기록
+  # rz_robot = (hand_yaw - rz_cal_hand_yaw) * rz_sign + rz_cal_robot_rz
+  # ⚠️ 실측 후 갱신 필요
+  rz_cal_hand_yaw: 77.0      # 홈자세 방향 손일 때 Yaw 측정값 (deg)
+  rz_cal_robot_rz: 8.39      # 홈자세 Doosan rz (deg)
+  rz_sign: -1.0              # 1.0 = 정방향, -1.0 = 부호 반전 (CCW/CW 불일치 시)
