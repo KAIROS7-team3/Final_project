@@ -30,7 +30,7 @@ import yaml
 from geometry_msgs.msg import PoseStamped
 from vision.cv_bridge_compat import CvBridge
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, qos_profile_sensor_data
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, String
@@ -49,12 +49,8 @@ _QOS_BEST_EFFORT_10 = QoSProfile(
     depth=10,
     reliability=QoSReliabilityPolicy.BEST_EFFORT,
 )
-# RealSense aligned_depth: RELIABLE + TRANSIENT_LOCAL 발행 → 구독도 동일하게
-_QOS_DEPTH = QoSProfile(
-    depth=5,
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-)
+# RealSense 이미지 토픽은 BEST_EFFORT(sensor_data) QoS로 발행
+_QOS_DEPTH = qos_profile_sensor_data
 
 # MediaPipe 랜드마크 인덱스
 _WRIST = 0

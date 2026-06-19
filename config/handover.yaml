@@ -46,7 +46,7 @@ handover:
   min_valid_depth_px: 5            # 유효 depth 픽셀 최소 개수
 
   # ── ROI (손 감지 유효 영역) ──────────────────────────────────────────────
-  # 카메라 해상도 1280×720 기준 픽셀 좌표
+  # color 1280×720 기준 픽셀 좌표 (realsense_bringup: rgb 1280×720, aligned_depth 동일)
   # 손목(WRIST) 랜드마크가 ROI 밖이면 즉시 skip → CPU 절감
   # ⚠️ 실제 작업 위치 확인 후 조정 필요
   roi_enabled: true
