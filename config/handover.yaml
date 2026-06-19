@@ -1,0 +1,56 @@
+---
+# 핸드오버 파라미터 (hand_node.py + place_on_hand.py)
+#
+# 참조: docs/hand_delivery.md, .claude/rules/safety.md S-6
+# 단위: m / s / Nm (E-1 규칙)
+# 실측 후 갱신 필요 항목: ⚠️ 표시
+
+handover:
+  # ── Phase 1: 탐색 ───────────────────────────────────────────────────────
+  detection_timeout_s: 5.0         # 이 시간 내 손 미감지 → Staging fallback
+
+  # ── Phase 2: 손 자세 검증 ───────────────────────────────────────────────
+  min_detection_score: 0.8         # MediaPipe 신뢰도 임계값 (0.0~1.0)
+  palm_up_threshold: 0.5           # 손바닥 법선 Z성분 (base_link) 임계값
+                                   # 1.0=완전히 위, 0.7≈약 45° 이내
+
+  # 손 펼침 판단 (주먹 감지)
+  finger_extend_ratio: 1.1         # TIP-wrist 거리 > MCP-wrist 거리 × ratio
+  min_fingers_open: 3              # 4개 손가락(검지~새끼) 중 최소 N개 펼침
+
+  # ── Phase 3: 안정성 확인 ────────────────────────────────────────────────
+  stable_frames: 10                # 연속 안정 프레임 수 (@30fps ≈ 0.33s)
+  stable_threshold_m: 0.02         # 위치 변화 허용 범위 (2cm)
+
+  # lock 후 감지 소실 허용 프레임 (occlusion 대응)
+  # 로봇이 손을 가려도 이 프레임 동안 locked pose 유지
+  lock_keep_s: 5.0                 # 손 소실 후 lock 유지 시간 (초)
+
+  # lock 후 손 이동 처리
+  lock_update_distance_m: 0.03    # 3cm 이상 → lock 위치 업데이트 + 재안정화 (로봇 정지)
+  lock_break_distance_m: 0.15     # 15cm 이상 → full reset (작업 정지)
+  lock_break_z_m: 0.08            # Z축 8cm 이상 단독 변화 → full reset
+
+  # ── Phase 5: 접근 ───────────────────────────────────────────────────────
+  approach_action_scale: 0.2       # DSR velocity scale (0~1.0)
+  approach_height_m: 0.10          # 손바닥 위 대기 높이 (10cm)
+
+  # ── Phase 5: 토크 감지 ──────────────────────────────────────────────────
+  force_torque_abort_nm: 5.0       # ⚠️ 실측 후 조정 — 접촉 감지 joint torque 임계값
+
+  # ── Phase 7: 복귀 ───────────────────────────────────────────────────────
+  lift_height_m: 0.10              # 전달 후 수직 상승 높이
+
+  # ── 깊이 샘플링 ─────────────────────────────────────────────────────────
+  depth_sample_radius_px: 5        # 랜드마크 주변 median depth 샘플링 반경 (픽셀)
+  min_valid_depth_px: 5            # 유효 depth 픽셀 최소 개수
+
+  # ── ROI (손 감지 유효 영역) ──────────────────────────────────────────────
+  # 카메라 해상도 1280×720 기준 픽셀 좌표
+  # 손목(WRIST) 랜드마크가 ROI 밖이면 즉시 skip → CPU 절감
+  # ⚠️ 실제 작업 위치 확인 후 조정 필요
+  roi_enabled: true
+  roi_x_min: 441
+  roi_x_max: 585
+  roi_y_min: 248
+  roi_y_max: 449
