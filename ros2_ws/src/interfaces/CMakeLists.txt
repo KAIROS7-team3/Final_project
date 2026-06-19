@@ -26,6 +26,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/PlaceAtStaging.action"
   "action/PickFromStaging.action"
   "action/ReturnToSlot.action"
+  "action/PlaceOnHand.action"
   DEPENDENCIES builtin_interfaces geometry_msgs std_msgs
 )
 

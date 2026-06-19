@@ -29,7 +29,7 @@ handover:
   # lock 후 손 이동 처리
   lock_update_distance_m: 0.03    # 3cm 이상 → lock 위치 업데이트 + 재안정화 (로봇 정지)
   lock_break_distance_m: 0.15     # 15cm 이상 → full reset (작업 정지)
-  lock_break_z_m: 0.08            # Z축 8cm 이상 단독 변화 → full reset
+  lock_break_z_m: 0.05            # Z축 5cm 이상 단독 변화 → full reset
 
   # ── Phase 5: 접근 ───────────────────────────────────────────────────────
   approach_action_scale: 0.2       # DSR velocity scale (0~1.0)

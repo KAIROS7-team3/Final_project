@@ -108,6 +108,7 @@ tools:
     dimensions: {length: 0.180, diameter: 0.011}
     mass_kg: 0.080
     grasp_approach: top
+    handover_type: handle_first   # 날 쪽 파지 → 손잡이를 사람 손 방향으로
     grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
       x: 0.39242
       y: 0.26422
@@ -124,6 +125,7 @@ tools:
     dimensions: {length: 0.160, width: 0.030, height: 0.023}
     mass_kg: 0.070
     grasp_approach: top
+    handover_type: handle_first   # 날 쪽 파지 → 손잡이를 사람 손 방향으로
     grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
       x: 0.44547
       y: 0.34787
@@ -140,6 +142,7 @@ tools:
     dimensions: {length: 0.200, width: 0.040, height: 0.041}
     mass_kg: 0.250
     grasp_approach: top
+    handover_type: handle_first   # 헤드 쪽 파지 → 손잡이를 사람 손 방향으로
     grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
       x: 0.39761
       y: 0.25850
@@ -156,6 +159,7 @@ tools:
     dimensions: {length: 0.110, width: 0.035, height: 0.034}
     mass_kg: 0.180
     grasp_approach: top
+    handover_type: direct         # 방향 무관 — 손바닥 위에 올려놓기
     grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
       x: 0.26128
       y: 0.33282
@@ -173,6 +177,7 @@ tools:
     dimensions: {length: 0.180, width: 0.040, height: 0.012}
     mass_kg: 0.120
     grasp_approach: top
+    handover_type: direct         # 양쪽 다 사용부 — 손바닥 위에 올려놓기
     grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
       x: 0.43720
       y: 0.34831
@@ -198,6 +203,7 @@ tools:
     dimensions: {length: 0.040, diameter: 0.055}
     mass_kg: 0.090
     grasp_approach: top
+    handover_type: direct         # 원통형, 방향 무관 — 손바닥 위에 올려놓기
     grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
       x: 0.25303
       y: 0.34305
