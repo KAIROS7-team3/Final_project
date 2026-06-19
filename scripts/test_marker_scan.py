@@ -419,7 +419,7 @@ def main() -> None:
         if ids is not None:
             cv2.aruco.drawDetectedMarkers(vis, corners_list, ids)
             for ci, mid in enumerate(ids.flatten()):
-                if mid not in (0, 1):
+                if mid not in LAYER_LABEL:
                     continue
                 img_pts = corners_list[ci][0].astype(np.float64)
                 ok, rvec, tvec = cv2.solvePnP(OBJ_PTS, img_pts, CAM_K, DIST)
