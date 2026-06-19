@@ -58,12 +58,11 @@ def _print_roi(roi: tuple[int, int, int, int]) -> None:
     print(f"[ROI 좌표]  x1={x1}  y1={y1}  x2={x2}  y2={y2}")
     print(f"[크기]      w={w}  h={h}")
     print()
-    print("── config/vision.yaml 붙여넣기용 ──")
-    print(f"  roi:")
-    print(f"    x1: {x1}")
-    print(f"    y1: {y1}")
-    print(f"    x2: {x2}")
-    print(f"    y2: {y2}")
+    print("── config/handover.yaml 붙여넣기용 ──")
+    print(f"  roi_x_min: {x1}")
+    print(f"  roi_x_max: {x2}")
+    print(f"  roi_y_min: {y1}")
+    print(f"  roi_y_max: {y2}")
     print("=" * 50 + "\n")
 
 
@@ -72,7 +71,7 @@ def main() -> None:
 
     pipeline = rs.pipeline()
     cfg = rs.config()
-    cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    cfg.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
     logger.info("D455f 스트림 시작...")
     pipeline.start(cfg)
     logger.info("스트림 시작 완료")
