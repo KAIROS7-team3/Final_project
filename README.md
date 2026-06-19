@@ -349,8 +349,20 @@ ros2 topic echo /hand/debug
 
 #### 미해결 — 이어서 할 작업
 
-`depth_rx=0` 지속 중. 위 "현재 미해결 이슈" 섹션의 진단 명령어 3개 실행 후 원인 특정 필요.
-depth 해결 후 `config/handover.yaml` ROI 좌표 실측 조정 필요.
+~~`depth_rx=0` 지속 중.~~ **해결됨** (QoS BEST_EFFORT 수정 + mediapipe==0.10.21 고정)
+~~ROI 좌표 placeholder~~ **해결됨** (1280×720 실측 적용 — roi_x:442~588, roi_y:253~452)
+rz 방향 캘리브레이션 **진행 중** (rz_sign=-1.0 적용, rz_cal_hand_yaw 정밀 실측 필요)
+
+**남은 작업 (TODO):**
+
+1. **place_on_hand 실제 전달 동작 연결** — `hand_orientation_test`에서 rz 검증 완료 후
+   `unit_actions/place_on_hand.py` BT 노드와 연결, 실제 공구 전달 시퀀스 통합 테스트 필요
+
+2. **왼손·오른손 동시 감지 시 오작동 수정** — 두 손이 동시에 카메라에 잡히면
+   `hand_node`가 score 기준으로 하나를 선택하지만, 반대 손(왼손/오른손) label 오판으로
+   `finger_dir_base` 180° flip 발생 가능 → 명시적으로 오른손만 허용하거나
+   두 손 동시 감지 시 WAITING 상태로 강제 전환하는 로직 추가 필요
+   (`hand_node.py` `_on_hand_depth()` 상단 multi-hand 처리 부분)
 
 ---
 
