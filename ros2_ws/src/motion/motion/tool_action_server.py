@@ -18,24 +18,29 @@ E-stop: move_stop + 래치 (servo-off 미적용, S-3).
 
 from __future__ import annotations
 
+import math
 import os
+import pathlib
 import sys
 import threading
 import time
-from typing import Any
+from typing import Any, Optional
 
+import yaml
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
+from scipy.spatial.transform import Rotation
 
 from dsr_msgs2.srv import ConfigCreateTcp, MoveLine, MoveJoint, MoveStop, SetCurrentTcp
-from interfaces.action import PlaceAtStaging, ReturnToSlot
+from geometry_msgs.msg import PoseStamped
+from interfaces.action import PlaceAtStaging, PlaceOnHand, ReturnToSlot
 from interfaces.msg import RobotStatus
 from interfaces.srv import GripperSetPosition, LogEvent
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
 
@@ -76,6 +81,8 @@ from unit_actions.toolbox_motion import (  # noqa: E402
     drawer_open_seq,
     full_socket_fetch_seq,
     full_socket_return_seq,
+    handover_fetch_seq,
+    handover_fetch_handle_first_seq,
     home_seq,
 )
 
@@ -92,6 +99,26 @@ _TCP_POS = [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]
 
 # socket_19mm 보관 서랍 (full_socket_fetch_seq/full_socket_return_seq 와 동일 layer)
 _TOOLBOX_LAYER = 1
+
+# 핸드오버 속도 (S-6: approach_action_scale=0.2 기준)
+_HANDOVER_VEL_L: float = 10.0   # mm/s  (VEL_L 50 × 0.2)
+_HANDOVER_ACC_L: float = 40.0
+_HANDOVER_VEL_R: float = 5.0    # deg/s
+_HANDOVER_ACC_R: float = 20.0
+
+# 핸드오버 고정 rx/ry (hand_orientation_test.py 실측 — gripper down, 홈 기준)
+_HANDOVER_RX: float = 8.39
+_HANDOVER_RY: float = -180.0
+
+
+def _load_yaml_cfg(filename: str) -> dict:
+    """레포 루트에서 config/<filename> 을 찾아 로드한다."""
+    here = pathlib.Path(__file__).resolve()
+    for p in here.parents:
+        cfg = p / "config" / filename
+        if cfg.exists():
+            return yaml.safe_load(cfg.read_text())
+    return {}
 
 
 class ToolActionServer(Node):
@@ -153,6 +180,24 @@ class ToolActionServer(Node):
         self._estop_latch = threading.Event()  # E-stop 래치 (set 후 reset 전까지 모든 동작 거부)
         self._action_lock = threading.Lock()  # 동시 액션 방지
 
+        # ── 핸드오버 config ───────────────────────────────────────────────
+        self._h_cfg: dict = _load_yaml_cfg("handover.yaml").get("handover", {})
+        self._toolbox_cfg: dict = _load_yaml_cfg("toolbox.yaml")
+
+        # ── 핸드오버 손 상태 ──────────────────────────────────────────────
+        self._hand_lock = threading.Lock()
+        self._hand_pose: Optional[PoseStamped] = None
+        self._hand_ready: bool = False
+        self._current_tool_id: str = ""
+        self._hand_approach_pos: Optional[list] = None  # approach 단계에서 저장, place에서 재사용
+
+        self.create_subscription(
+            PoseStamped, "/hand/pose", self._on_hand_pose, qos_profile_sensor_data
+        )
+        self.create_subscription(
+            Bool, "/hand/ready", self._on_hand_ready, qos_profile_sensor_data
+        )
+
         # ── 액션 서버 ─────────────────────────────────────────────────────
         self._place_server = ActionServer(
             self,
@@ -168,6 +213,15 @@ class ToolActionServer(Node):
             ReturnToSlot,
             "return_to_slot",
             execute_callback=self._on_return_to_slot,
+            goal_callback=self._goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self._normal_cbg,
+        )
+        self._handover_server = ActionServer(
+            self,
+            PlaceOnHand,
+            "place_on_hand",
+            execute_callback=self._on_place_on_hand,
             goal_callback=self._goal_callback,
             cancel_callback=self._cancel_callback,
             callback_group=self._normal_cbg,
@@ -344,6 +398,197 @@ class ToolActionServer(Node):
             self._action_lock.release()
 
         return result
+
+    # ── 핸드오버 콜백 ───────────────────────────────────────────────────────
+
+    def _on_hand_pose(self, msg: PoseStamped) -> None:
+        with self._hand_lock:
+            self._hand_pose = msg
+
+    def _on_hand_ready(self, msg: Bool) -> None:
+        with self._hand_lock:
+            self._hand_ready = msg.data
+
+    def _get_hand_state(self) -> tuple[Optional[PoseStamped], bool]:
+        with self._hand_lock:
+            return self._hand_pose, self._hand_ready
+
+    # ── 핸드오버 액션 핸들러 ────────────────────────────────────────────────
+
+    def _on_place_on_hand(self, goal_handle) -> PlaceOnHand.Result:
+        result = PlaceOnHand.Result()
+        tool_id = goal_handle.request.tool_id
+
+        if not self._action_lock.acquire(blocking=False):
+            goal_handle.abort()
+            result.success = False
+            result.message = "다른 동작 진행 중"
+            return result
+
+        try:
+            self.get_logger().info(f"[TAS] place_on_hand 시작: tool_id={tool_id}")
+            self._set_tcp()
+            self._publish_status(is_moving=True)
+            self._set_plc("moving")
+            self._current_tool_id = tool_id
+            self._hand_approach_pos = None
+
+            handover_type = self._get_handover_type(tool_id)
+            steps = (
+                handover_fetch_handle_first_seq()
+                if handover_type == "handle_first"
+                else handover_fetch_seq()
+            )
+            self.get_logger().info(f"[TAS] handover_type={handover_type} seq={len(steps)}단계")
+
+            ok = self._run_sequence(steps, goal_handle, action_class=PlaceOnHand)
+
+            if ok and not goal_handle.is_cancel_requested:
+                goal_handle.succeed()
+                result.success = True
+                result.message = f"place_on_hand 완료: {tool_id}"
+                self._set_plc("idle")
+                self.get_logger().info(f"[TAS] place_on_hand 완료: tool_id={tool_id}")
+            elif goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+                result.success = False
+                result.message = "취소됨"
+            else:
+                goal_handle.abort()
+                result.success = False
+                result.message = f"place_on_hand 실패: {tool_id}"
+                self._set_plc("error")
+        except Exception as exc:
+            self.get_logger().error(f"[TAS] place_on_hand 예외: {exc}")
+            goal_handle.abort()
+            result.success = False
+            result.message = str(exc)
+            self._set_plc("error")
+        finally:
+            self._current_tool_id = ""
+            self._hand_approach_pos = None
+            self._publish_status(is_moving=False)
+            self._action_lock.release()
+
+        return result
+
+    # ── 핸드오버 헬퍼 ───────────────────────────────────────────────────────
+
+    def _get_handover_type(self, tool_id: str) -> str:
+        for tool in self._toolbox_cfg.get("tools", []):
+            if tool.get("tool_id") == tool_id:
+                return tool.get("handover_type", "direct")
+        return "direct"
+
+    def _get_tool_length_mm(self, tool_id: str) -> float:
+        for tool in self._toolbox_cfg.get("tools", []):
+            if tool.get("tool_id") == tool_id:
+                return tool.get("dimensions", {}).get("length", 0.15) * 1000.0
+        return 150.0
+
+    def _quat_to_robot_rz(self, qx: float, qy: float, qz: float, qw: float) -> float:
+        """손 쿼터니언 → Doosan rz (deg). handover.yaml 캘리브레이션 적용."""
+        raw_yaw = float(Rotation.from_quat([qx, qy, qz, qw]).as_euler("xyz", degrees=True)[2])
+        return (
+            (raw_yaw - self._h_cfg.get("rz_cal_hand_yaw", 77.0))
+            * self._h_cfg.get("rz_sign", -1.0)
+            + self._h_cfg.get("rz_cal_robot_rz", 8.39)
+        )
+
+    # ── 핸드오버 스텝 실행 ──────────────────────────────────────────────────
+
+    def _wait_hand_pose(self) -> bool:
+        """WAIT_HAND_POSE: /hand/ready=True 될 때까지 대기. 타임아웃 시 False (staging fallback)."""
+        timeout = self._h_cfg.get("detection_timeout_s", 5.0)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._estop_latch.is_set():
+                return False
+            pose, ready = self._get_hand_state()
+            if pose is not None and ready:
+                return True
+            time.sleep(0.1)
+        self.get_logger().warn("[TAS] WAIT_HAND_POSE 타임아웃 — staging fallback")
+        return False
+
+    def _move_hand_rz_approach(self, handle_first: bool) -> bool:
+        """MOVE_L_HAND_RZ_APPROACH(_HANDLE): rz 적용 후 손바닥 위 approach_height 위치로 이동."""
+        pose, ready = self._get_hand_state()
+        if pose is None or not ready:
+            self.get_logger().warn("[TAS] 손 감지 없음 — abort")
+            return False
+
+        o = pose.pose.orientation
+        rz = self._quat_to_robot_rz(o.x, o.y, o.z, o.w)
+
+        # hand_node는 m 단위 → DSR은 mm
+        x_mm = pose.pose.position.x * 1000.0
+        y_mm = pose.pose.position.y * 1000.0
+        z_mm = pose.pose.position.z * 1000.0
+        approach_h_mm = self._h_cfg.get("approach_height_m", 0.10) * 1000.0
+
+        if handle_first:
+            # finger_dir 방향(rz 각도)으로 tool_length/4 오프셋
+            offset_mm = self._get_tool_length_mm(self._current_tool_id) / 4.0
+            rz_rad = math.radians(rz)
+            x_mm += math.cos(rz_rad) * offset_mm
+            y_mm += math.sin(rz_rad) * offset_mm
+
+        # place 단계에서 재사용할 위치 저장 (approach_height 제외)
+        self._hand_approach_pos = [x_mm, y_mm, z_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
+
+        dsr_pos = [x_mm, y_mm, z_mm + approach_h_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
+        self.get_logger().info(
+            f"[TAS] hand_approach ({'handle' if handle_first else 'direct'}) "
+            f"pos={[round(v, 1) for v in dsr_pos]}"
+        )
+
+        req = MoveLine.Request()
+        req.pos = [float(v) for v in dsr_pos]
+        req.vel = [_HANDOVER_VEL_L, _HANDOVER_VEL_R]
+        req.acc = [_HANDOVER_ACC_L, _HANDOVER_ACC_R]
+        req.time = 0.0
+        req.radius = 0.0
+        req.ref = DR_BASE
+        req.mode = DR_MV_MOD_ABS
+        req.blend_type = 0
+        req.sync_type = 0
+        fut = self._movel_cli.call_async(req)
+        if not self._wait_future(fut, timeout=30.0):
+            self.get_logger().error("[TAS] hand_approach 타임아웃")
+            return False
+        res = fut.result()
+        time.sleep(0.2)
+        return bool(res and res.success)
+
+    def _move_hand_place(self) -> bool:
+        """MOVE_L_HAND_PLACE(_HANDLE): approach 단계에서 저장한 손바닥 높이로 Z 수직 하강."""
+        if self._hand_approach_pos is None:
+            self.get_logger().error("[TAS] _hand_approach_pos 없음 — approach 먼저 실행 필요")
+            return False
+
+        dsr_pos = self._hand_approach_pos
+        self.get_logger().info(
+            f"[TAS] hand_place pos={[round(v, 1) for v in dsr_pos]}"
+        )
+
+        req = MoveLine.Request()
+        req.pos = [float(v) for v in dsr_pos]
+        req.vel = [_HANDOVER_VEL_L, _HANDOVER_VEL_R]
+        req.acc = [_HANDOVER_ACC_L, _HANDOVER_ACC_R]
+        req.time = 0.0
+        req.radius = 0.0
+        req.ref = DR_BASE
+        req.mode = DR_MV_MOD_ABS
+        req.blend_type = 0
+        req.sync_type = 0
+        fut = self._movel_cli.call_async(req)
+        if not self._wait_future(fut, timeout=30.0):
+            self.get_logger().error("[TAS] hand_place 타임아웃")
+            return False
+        res = fut.result()
+        time.sleep(0.2)
+        return bool(res and res.success)
 
     # ── 서비스 핸들러 ───────────────────────────────────────────────────────
 
@@ -523,6 +768,16 @@ class ToolActionServer(Node):
         elif step.kind == StepKind.WAIT:
             time.sleep(step.sec or 0.5)
             return True
+        elif step.kind == StepKind.WAIT_HAND_POSE:
+            return self._wait_hand_pose()
+        elif step.kind == StepKind.MOVE_L_HAND_RZ_APPROACH:
+            return self._move_hand_rz_approach(handle_first=False)
+        elif step.kind == StepKind.MOVE_L_HAND_PLACE:
+            return self._move_hand_place()
+        elif step.kind == StepKind.MOVE_L_HAND_RZ_APPROACH_HANDLE:
+            return self._move_hand_rz_approach(handle_first=True)
+        elif step.kind == StepKind.MOVE_L_HAND_PLACE_HANDLE:
+            return self._move_hand_place()
         self.get_logger().warn(f"  알 수 없는 StepKind: {step.kind}")
         return False
 
