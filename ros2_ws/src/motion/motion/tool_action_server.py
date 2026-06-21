@@ -211,6 +211,8 @@ class ToolActionServer(Node):
         self._vis_x_max = float((lim.get("x") or [50.0, 800.0])[1])
         self._vis_y_min = float((lim.get("y") or [-600.0, 600.0])[0])
         self._vis_y_max = float((lim.get("y") or [-600.0, 600.0])[1])
+        self._vis_z_min = float((lim.get("z") or [-31.0, 700.0])[0])
+        self._vis_z_max = float((lim.get("z") or [-31.0, 700.0])[1])
         self._grasp_z_map: dict[str, float] = {
             t["tool_id"]: float(t["grasp_z_mm"])
             for t in self._toolbox_cfg.get("tools", [])
@@ -467,7 +469,7 @@ class ToolActionServer(Node):
             )
             self.get_logger().info(f"[TAS] handover_type={handover_type} seq={len(steps)}단계")
 
-            ok = self._run_sequence(steps, goal_handle, action_class=PlaceOnHand)
+            ok = self._run_sequence_handover(steps, goal_handle)
 
             if ok and not goal_handle.is_cancel_requested:
                 goal_handle.succeed()
@@ -557,7 +559,7 @@ class ToolActionServer(Node):
         for val, lo, hi, axis in [
             (x, self._vis_x_min, self._vis_x_max, "x"),
             (y, self._vis_y_min, self._vis_y_max, "y"),
-            (z, 0.0, 700.0, "z"),
+            (z, self._vis_z_min, self._vis_z_max, "z"),
         ]:
             if not (lo <= val <= hi):
                 self.get_logger().error(
@@ -856,8 +858,12 @@ class ToolActionServer(Node):
     def _on_estop_reset(self, _req, response: Trigger.Response) -> Trigger.Response:
         """E-stop 래치 해제 — 운영자 명시적 확인 후만 허용."""
         self.get_logger().warn("[TAS] E-stop 래치 해제")
+        if self._grip_taken:
+            self.get_logger().warn("[TAS] estop_reset: grip_taken 플래그 잔존 — 공구 상태 확인 필요")
         self._estop_latch.clear()
+        self._grip_taken = False
         self._set_plc("idle")
+        self._publish_status(is_moving=False)  # STT 차단 해제
         self._log_event_async("e_stop_reset", "운영자 E-stop 래치 해제")
         response.success = True
         response.message = "E-stop 래치 해제 완료"
@@ -899,6 +905,43 @@ class ToolActionServer(Node):
                 goal_handle.publish_feedback(fb)
         return True
 
+    def _run_sequence_handover(self, steps: list, goal_handle) -> bool:
+        """PlaceOnHand 전용 시퀀스 실행 — GRIP_TOOL/릴리즈 시점에 _grip_taken 추적."""
+        total = len(steps)
+        for i, step in enumerate(steps):
+            if self._estop_latch.is_set():
+                self.get_logger().warn(f"[TAS] E-stop 래치 — step {i+1} 중단")
+                return False
+            if goal_handle.is_cancel_requested:
+                return False
+
+            self.get_logger().info(f"  step {i+1}/{total}: {step.kind.name}")
+
+            fb = PlaceOnHand.Feedback()
+            fb.phase = step.kind.name
+            fb.progress = float(i) / float(total)
+            goal_handle.publish_feedback(fb)
+
+            ok = self._exec_step(step)
+
+            # GRIP 스텝 결과로 _grip_taken 갱신 (PlaceOnHand 전용)
+            if step.kind == StepKind.GRIP and ok and step.pulse is not None:
+                if step.pulse >= 600:
+                    self._grip_taken = True   # 공구 파지 성공
+                else:
+                    self._grip_taken = False  # 그리퍼 열기 성공 (릴리즈)
+
+            if not ok:
+                self.get_logger().error(f"  step {i+1} 실패 — 중단")
+                return False
+
+            if step.marker:
+                fb = PlaceOnHand.Feedback()
+                fb.phase = step.marker
+                fb.progress = float(i + 1) / float(total)
+                goal_handle.publish_feedback(fb)
+        return True
+
     def _exec_step(self, step) -> bool:
         if step.kind == StepKind.MOVE_L_ABS:
             return self._movel(step, DR_MV_MOD_ABS)
@@ -907,13 +950,7 @@ class ToolActionServer(Node):
         elif step.kind in (StepKind.MOVE_J_ABS, StepKind.MOVE_J_REL):
             return self._movej(step)
         elif step.kind == StepKind.GRIP:
-            ok = self._grip(step)
-            if ok and step.pulse is not None:
-                if step.pulse >= 600:
-                    self._grip_taken = True   # 공구 파지 성공
-                else:
-                    self._grip_taken = False  # 그리퍼 열기 성공 (릴리즈)
-            return ok
+            return self._grip(step)
         elif step.kind == StepKind.WAIT:
             time.sleep(step.sec or 0.5)
             return True
