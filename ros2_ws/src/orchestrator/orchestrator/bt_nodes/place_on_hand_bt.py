@@ -63,7 +63,7 @@ def build_handover_subtree(
     def _on_handover_feedback(phase: str) -> None:
         if phase == "pick" and on_pick:
             on_pick()
-        elif phase == "deliver" and on_deliver:
+        elif phase == "place" and on_deliver:
             on_deliver()
 
     def _on_staging_feedback(phase: str) -> None:

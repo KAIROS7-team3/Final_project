@@ -85,6 +85,7 @@ from unit_actions.toolbox_motion import (  # noqa: E402
     handover_fetch_handle_first_seq,
     home_seq,
 )
+from unit_actions.visual_servoing import ToolPose  # noqa: E402
 
 # 그리퍼 파지력 (TaskWriter SubRoutine 실측) — pulse > PULSE_RELEASE 일 때만 인가
 _GRIP_CURRENT: int = 400
@@ -196,6 +197,30 @@ class ToolActionServer(Node):
         )
         self.create_subscription(
             Bool, "/hand/ready", self._on_hand_ready, qos_profile_sensor_data
+        )
+
+        # ── 비전 그리퍼 캠 상태 (handover fetch 공통) ────────────────────────
+        self._tool_gripper_lock = threading.Lock()
+        self._latest_tool_gripper: ToolPose = ToolPose()
+        self._grip_taken: bool = False
+        vm = self._toolbox_cfg.get("vision_motion", {})
+        self._tool_approach_z_mm: float = float(vm.get("tool_approach_z_mm", 234.0))
+        self._tool_approach_ori: list = list(vm.get("tool_approach_ori", [180.0, 180.0, 90.0]))
+        lim = vm.get("workspace_limits", {})
+        self._vis_x_min = float((lim.get("x") or [50.0, 800.0])[0])
+        self._vis_x_max = float((lim.get("x") or [50.0, 800.0])[1])
+        self._vis_y_min = float((lim.get("y") or [-600.0, 600.0])[0])
+        self._vis_y_max = float((lim.get("y") or [-600.0, 600.0])[1])
+        self._grasp_z_map: dict[str, float] = {
+            t["tool_id"]: float(t["grasp_z_mm"])
+            for t in self._toolbox_cfg.get("tools", [])
+            if "grasp_z_mm" in t
+        }
+        self.create_subscription(
+            PoseStamped,
+            "/vision/tool_gripper_pose",
+            self._on_tool_gripper_pose,
+            qos_profile_sensor_data,
         )
 
         # ── 액션 서버 ─────────────────────────────────────────────────────
@@ -432,6 +457,7 @@ class ToolActionServer(Node):
             self._set_plc("moving")
             self._current_tool_id = tool_id
             self._hand_approach_pos = None
+            self._grip_taken = False
 
             handover_type = self._get_handover_type(tool_id)
             steps = (
@@ -467,7 +493,16 @@ class ToolActionServer(Node):
         finally:
             self._current_tool_id = ""
             self._hand_approach_pos = None
-            self._publish_status(is_moving=False)
+            if self._grip_taken:
+                # 공구 파지 후 abort — 추가 모션 금지, 운영자 수동 확인 필요
+                self.get_logger().error(
+                    "[TAS] 공구 파지 후 abort — 모션 정지, 운영자 확인 필요"
+                )
+                self._set_plc("error")
+                # is_moving=False 미발행 → STT 차단 유지 (운영자 리셋 전까지)
+            else:
+                self._publish_status(is_moving=False)
+            self._grip_taken = False
             self._action_lock.release()
 
         return result
@@ -494,6 +529,114 @@ class ToolActionServer(Node):
             * self._h_cfg.get("rz_sign", -1.0)
             + self._h_cfg.get("rz_cal_robot_rz", 8.39)
         )
+
+    # ── 비전 그리퍼 캠 콜백 ─────────────────────────────────────────────────
+
+    def _on_tool_gripper_pose(self, msg: PoseStamped) -> None:
+        """handover fetch ⑤: /vision/tool_gripper_pose 수신 — toolbox_seq_runner 동일 패턴."""
+        q = msg.pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        pca_theta = math.degrees(math.atan2(siny_cosp, cosy_cosp))
+        rz = pca_theta - 90.0
+        if rz < -180.0:
+            rz += 360.0
+        with self._tool_gripper_lock:
+            self._latest_tool_gripper = ToolPose(
+                x=msg.pose.position.x * 1000.0,
+                y=msg.pose.position.y * 1000.0,
+                z=msg.pose.position.z * 1000.0,
+                rz=rz,
+                valid=True,
+            )
+
+    def _check_vision_coords(self, label: str, x: float, y: float, z: float) -> bool:
+        if x == 0.0 and y == 0.0 and z == 0.0:
+            self.get_logger().error(f"[TAS] {label} 좌표 미설정 (0,0,0) — 실행 거부")
+            return False
+        for val, lo, hi, axis in [
+            (x, self._vis_x_min, self._vis_x_max, "x"),
+            (y, self._vis_y_min, self._vis_y_max, "y"),
+            (z, 0.0, 700.0, "z"),
+        ]:
+            if not (lo <= val <= hi):
+                self.get_logger().error(
+                    f"[TAS] {label} {axis}={val:.1f}mm 범위 초과 [{lo}, {hi}] — 실행 거부"
+                )
+                return False
+        return True
+
+    def _exec_wait_vision_gripper_xy(self, timeout_sec: float = 5.0) -> bool:
+        """WAIT_VISION_TOP_XY: 캐시 초기화 후 신규 /vision/tool_gripper_pose 수신 대기."""
+        with self._tool_gripper_lock:
+            self._latest_tool_gripper = ToolPose(valid=False)
+        self.get_logger().info("  [WAIT_VISION] 그리퍼 캠 좌표 대기 중...")
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if self._estop_latch.is_set():
+                return False
+            with self._tool_gripper_lock:
+                if self._latest_tool_gripper.valid:
+                    p = self._latest_tool_gripper
+                    self.get_logger().info(
+                        f"  [WAIT_VISION] 수신 완료 → ({p.x:.1f}, {p.y:.1f}) rz={p.rz:.1f}°"
+                    )
+                    return True
+            time.sleep(0.05)
+        self.get_logger().error("  [WAIT_VISION] 타임아웃 — /vision/tool_gripper_pose 확인 필요")
+        return False
+
+    def _exec_move_l_top_xy(self) -> bool:
+        """MOVE_L_TOP_XY: 그리퍼 캠 XY + rz + approach_z 로 이동 (fetch ⑥⑨)."""
+        with self._tool_gripper_lock:
+            pose = ToolPose(**vars(self._latest_tool_gripper))
+        if not pose.valid:
+            self.get_logger().error("  [TOP_XY] 그리퍼 캠 좌표 미수신")
+            return False
+        if not math.isfinite(pose.rz) or not (-185.0 <= pose.rz <= 185.0):
+            self.get_logger().error(f"  [TOP_XY] rz 비정상값 거부: {pose.rz!r}°")
+            return False
+        if not self._check_vision_coords("TOP_XY", pose.x, pose.y, self._tool_approach_z_mm):
+            return False
+        ori = list(self._tool_approach_ori)
+        ori[2] = pose.rz
+        pos = [pose.x, pose.y, self._tool_approach_z_mm] + ori
+        from unit_actions.toolbox_motion import Step as _Step  # 로컬 import (순환 방지)
+        step = _Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=VEL_L, acc=ACC_L)
+        self.get_logger().info(
+            f"  [TOP_XY] → ({pose.x:.1f}, {pose.y:.1f}, {self._tool_approach_z_mm:.1f}) rz={pose.rz:.1f}°"
+        )
+        return self._movel(step, DR_MV_MOD_ABS)
+
+    def _exec_move_l_tool_xyz(self) -> bool:
+        """MOVE_L_TOOL_XYZ: 그리퍼 캠 XY + rz + grasp_z 로 공구 위치 하강 (fetch ⑦)."""
+        with self._tool_gripper_lock:
+            pose = ToolPose(**vars(self._latest_tool_gripper))
+        if not pose.valid:
+            self.get_logger().error("  [TOOL_XYZ] 그리퍼 캠 좌표 미수신")
+            return False
+        grasp_z = self._grasp_z_map.get(self._current_tool_id)
+        if grasp_z is not None:
+            z = grasp_z
+            self.get_logger().info(
+                f"  [TOOL_XYZ] Z={z:.2f}mm (toolbox.yaml, tool_id={self._current_tool_id})"
+            )
+        else:
+            z = pose.z
+            self.get_logger().warn(
+                f"  [TOOL_XYZ] tool_id={self._current_tool_id!r} grasp_z_mm 미등록 — 그리퍼 캠 Z 사용: {z:.2f}mm"
+            )
+        if not self._check_vision_coords("TOOL_XYZ", pose.x, pose.y, z):
+            return False
+        ori = list(self._tool_approach_ori)
+        ori[2] = pose.rz
+        pos = [pose.x, pose.y, z] + ori
+        from unit_actions.toolbox_motion import Step as _Step
+        step = _Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=VEL_L, acc=ACC_L)
+        self.get_logger().info(
+            f"  [TOOL_XYZ] → ({pose.x:.1f}, {pose.y:.1f}, {z:.2f}) rz={pose.rz:.1f}°"
+        )
+        return self._movel(step, DR_MV_MOD_ABS)
 
     # ── 핸드오버 스텝 실행 ──────────────────────────────────────────────────
 
@@ -764,10 +907,22 @@ class ToolActionServer(Node):
         elif step.kind in (StepKind.MOVE_J_ABS, StepKind.MOVE_J_REL):
             return self._movej(step)
         elif step.kind == StepKind.GRIP:
-            return self._grip(step)
+            ok = self._grip(step)
+            if ok and step.pulse is not None:
+                if step.pulse >= 600:
+                    self._grip_taken = True   # 공구 파지 성공
+                else:
+                    self._grip_taken = False  # 그리퍼 열기 성공 (릴리즈)
+            return ok
         elif step.kind == StepKind.WAIT:
             time.sleep(step.sec or 0.5)
             return True
+        elif step.kind == StepKind.WAIT_VISION_TOP_XY:
+            return self._exec_wait_vision_gripper_xy()
+        elif step.kind == StepKind.MOVE_L_TOP_XY:
+            return self._exec_move_l_top_xy()
+        elif step.kind == StepKind.MOVE_L_TOOL_XYZ:
+            return self._exec_move_l_tool_xyz()
         elif step.kind == StepKind.WAIT_HAND_POSE:
             return self._wait_hand_pose()
         elif step.kind == StepKind.MOVE_L_HAND_RZ_APPROACH:

@@ -8,6 +8,10 @@ interfaces/ 패키지의 msg/srv/action 변경 이력.
 ## [Unreleased]
 
 ### Added
+- `action/PlaceOnHand.action` — 핸드오버 직접 전달 액션 (feat/handover)
+  - goal: `tool_id` (string) / feedback: `phase` (pick·place), `progress` (0.0–1.0) / result: `success`, `message`
+  - `tool_action_server`가 `place_on_hand`로 호스팅, BT HandoverSelector에서 PlaceAtStaging fallback과 함께 사용
+  - S-6 속도 제한(_HANDOVER_VEL_L=10mm/s) 및 손 안정성 확인(_wait_hand_pose) 내장
 - `srv/GripperSetPosition.srv` — RH-P12-RN 그리퍼 위치 제어 서비스 (Track B Phase 1, PR #35)
   - request: `position` (pulse), `current` (mA), `timeout_sec` / response: `success`, `message`, `final_position`, `final_current`
   - `gripper_node`가 `/gripper/set_position`으로 호스팅, Doosan 컨트롤러 TCP(port 9105) 경유 Modbus RTU 전송
