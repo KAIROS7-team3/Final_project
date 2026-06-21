@@ -191,6 +191,7 @@ class ToolActionServer(Node):
         self._hand_ready: bool = False
         self._current_tool_id: str = ""
         self._hand_approach_pos: Optional[list] = None  # approach 단계에서 저장, place에서 재사용
+        self._current_goal_handle = None                # 진행 중인 goal (cancel 체크용)
 
         self.create_subscription(
             PoseStamped, "/hand/pose", self._on_hand_pose, qos_profile_sensor_data
@@ -577,6 +578,8 @@ class ToolActionServer(Node):
         while time.monotonic() < deadline:
             if self._estop_latch.is_set():
                 return False
+            if self._current_goal_handle is not None and self._current_goal_handle.is_cancel_requested:
+                return False
             with self._tool_gripper_lock:
                 if self._latest_tool_gripper.valid:
                     p = self._latest_tool_gripper
@@ -643,14 +646,30 @@ class ToolActionServer(Node):
     # ── 핸드오버 스텝 실행 ──────────────────────────────────────────────────
 
     def _wait_hand_pose(self) -> bool:
-        """WAIT_HAND_POSE: /hand/ready=True 될 때까지 대기. 타임아웃 시 False (staging fallback)."""
+        """WAIT_HAND_POSE: /hand/ready=True 될 때까지 대기. 타임아웃 시 False (staging fallback).
+
+        _hand_approach_pos가 설정된 상태(⑪ 접근 직전 재확인)에서는 손 이동 거리도 검사.
+        lock_update_distance_m 초과 시 즉시 abort (S-6 손 안정성 확인).
+        """
         timeout = self._h_cfg.get("detection_timeout_s", 5.0)
+        threshold_mm = self._h_cfg.get("lock_update_distance_m", 0.03) * 1000.0
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if self._estop_latch.is_set():
                 return False
             pose, ready = self._get_hand_state()
             if pose is not None and ready:
+                # ⑪ 재확인 단계: approach 위치 대비 손 이동 거리 검사
+                if self._hand_approach_pos is not None:
+                    dx = pose.pose.position.x * 1000.0 - self._hand_approach_pos[0]
+                    dy = pose.pose.position.y * 1000.0 - self._hand_approach_pos[1]
+                    dz = pose.pose.position.z * 1000.0 - self._hand_approach_pos[2]
+                    dist_mm = math.sqrt(dx * dx + dy * dy + dz * dz)
+                    if dist_mm > threshold_mm:
+                        self.get_logger().warn(
+                            f"[TAS] 손 이동 {dist_mm:.1f}mm > {threshold_mm:.0f}mm — abort (S-6)"
+                        )
+                        return False
                 return True
             time.sleep(0.1)
         self.get_logger().warn("[TAS] WAIT_HAND_POSE 타임아웃 — staging fallback")
@@ -907,6 +926,7 @@ class ToolActionServer(Node):
 
     def _run_sequence_handover(self, steps: list, goal_handle) -> bool:
         """PlaceOnHand 전용 시퀀스 실행 — GRIP_TOOL/릴리즈 시점에 _grip_taken 추적."""
+        self._current_goal_handle = goal_handle
         total = len(steps)
         for i, step in enumerate(steps):
             if self._estop_latch.is_set():
