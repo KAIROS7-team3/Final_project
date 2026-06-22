@@ -35,7 +35,10 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from scipy.spatial.transform import Rotation
 
-from dsr_msgs2.srv import ConfigCreateTcp, MoveLine, MoveJoint, MoveStop, SetCurrentTcp
+from dsr_msgs2.srv import (
+    ConfigCreateTcp, MoveLine, MoveJoint, MoveStop, SetCurrentTcp,
+    TaskComplianceCtrl, ReleaseComplianceCtrl,
+)
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from interfaces.action import PlaceAtStaging, PlaceOnHand, ReturnToSlot
@@ -163,6 +166,14 @@ class ToolActionServer(Node):
         )
         self._log_event_cli = self.create_client(
             LogEvent, "/db/LogEvent", callback_group=self._normal_cbg
+        )
+        self._task_compliance_cli = self.create_client(
+            TaskComplianceCtrl, f"{p}/force/task_compliance_ctrl",
+            callback_group=self._normal_cbg,
+        )
+        self._release_compliance_cli = self.create_client(
+            ReleaseComplianceCtrl, f"{p}/force/release_compliance_ctrl",
+            callback_group=self._normal_cbg,
         )
 
         # ── 필수 서비스 대기 (시작 시 연결 확인) ──────────────────────────
@@ -908,6 +919,12 @@ class ToolActionServer(Node):
         self._wait_motion_complete(timeout=60.0, moving_thresh=0.01, still_thresh=0.005)
         return True
 
+    def _release_compliance(self) -> None:
+        """task_compliance_ctrl 해제. 실패해도 경고만 출력."""
+        r_fut = self._release_compliance_cli.call_async(ReleaseComplianceCtrl.Request())
+        self._wait_future(r_fut, timeout=5.0)
+        self.get_logger().info("[TAS] task_compliance OFF")
+
     def _move_hand_place(self, handle_first: bool = False) -> bool:
         """MOVE_L_HAND_PLACE(_HANDLE): approach 단계에서 저장한 손바닥 높이로 Z 수직 하강."""
         if self._hand_approach_pos is None:
@@ -925,6 +942,18 @@ class ToolActionServer(Node):
             f"[TAS] hand_place pos={[round(v, 1) for v in dsr_pos]}"
         )
 
+        # 컴플라이언스 모드 ON (place 하강 직전)
+        stx = self._h_cfg.get(
+            "place_compliance_stiffness", [500.0, 500.0, 500.0, 100.0, 100.0, 100.0]
+        )
+        c_req = TaskComplianceCtrl.Request()
+        c_req.stx = [float(v) for v in stx]
+        c_req.ref = DR_BASE
+        c_req.time = 0.5
+        c_fut = self._task_compliance_cli.call_async(c_req)
+        self._wait_future(c_fut, timeout=5.0)
+        self.get_logger().info(f"[TAS] task_compliance ON stx={stx}")
+
         req = MoveLine.Request()
         req.pos = [float(v) for v in dsr_pos]
         req.vel = [_HANDOVER_VEL_L, _HANDOVER_VEL_R]
@@ -938,13 +967,15 @@ class ToolActionServer(Node):
         fut = self._movel_cli.call_async(req)
         if not self._wait_future(fut, timeout=60.0):
             self.get_logger().error("[TAS] hand_place 타임아웃")
+            self._release_compliance()
             return False
         res = fut.result()
-        if not (res and res.success):
-            return False
         # 10mm/s 저속 모션 — 낮은 임계값으로 감지
         self._wait_motion_complete(timeout=60.0, moving_thresh=0.01, still_thresh=0.005)
         time.sleep(0.3)
+
+        # 컴플라이언스 모드 OFF
+        self._release_compliance()
         return bool(res and res.success)
 
     # ── 서비스 핸들러 ───────────────────────────────────────────────────────
