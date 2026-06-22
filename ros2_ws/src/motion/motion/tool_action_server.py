@@ -634,6 +634,7 @@ class ToolActionServer(Node):
             result.message = str(exc)
             self._set_plc("error")
         finally:
+            self._release_compliance()  # 실패·성공 무관 항상 해제
             self._current_tool_id = ""
             self._hand_approach_pos = None
             if self._grip_taken:
