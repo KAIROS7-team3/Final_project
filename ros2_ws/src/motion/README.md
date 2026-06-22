@@ -343,6 +343,7 @@ ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_i
 - [ ] **spanner_16mm 전체 Z 실측**: grasp_z_mm / staging_pickup_z_mm / return_z_mm 모두 임의값
 - [x] **config/toolbox.yaml workspace_limits z_min**: -31.0mm (2026-06-18 실측 기준 갱신 완료)
 - [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place)
+- [ ] **[safety HIGH] 핸드오버 pre_approach 후 손 재확인**: pre_approach 완료 후 본 approach(Z 하강) 전에 `/hand/ready` 재확인 없음 — 이동 중 손이 치워져도 그대로 하강함. `_move_hand_rz_approach()` 내 pre_approach `_wait_motion_complete` 직후 `_get_hand_state()` 재호출 + False 시 abort 추가 필요 (safety-reviewer Finding 2)
 - [ ] **핸드오버 그리퍼 열기 후 대기**: grip(450) 실행 후 다음 동작(홈 복귀 등) 전 **최소 10초 대기** 필요
   - 공구를 손에서 실제로 떼어내는 데 시간이 필요 (너무 빠르면 공구 낙하 위험)
   - `handover_place_only_seq` / `handover_fetch_handle_first_seq` 의 GRIP(450) 직후 `Step(kind=StepKind.WAIT, sec=10.0)` 추가 예정

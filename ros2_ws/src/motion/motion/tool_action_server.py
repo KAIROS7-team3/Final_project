@@ -108,6 +108,10 @@ _HANDOVER_VEL_L: float = 5.0    # mm/s  (10.0 × 0.5)
 _HANDOVER_ACC_L: float = 20.0
 _HANDOVER_VEL_R: float = 2.5    # deg/s
 _HANDOVER_ACC_R: float = 10.0
+_HANDOVER_PRE_VEL_L: float = VEL_L / 3.0   # pre_approach: 일반 속도 1/3 (30mm 여유 충돌 방지)
+_HANDOVER_PRE_ACC_L: float = ACC_L / 3.0
+_HANDOVER_PRE_VEL_R: float = VEL_R / 3.0
+_HANDOVER_PRE_ACC_R: float = ACC_R / 3.0
 
 # 핸드오버 rx/ry — fetch/place와 동일한 tool_approach_ori 기준 (RX=180, RY=180)
 _HANDOVER_RX: float = 180.0
@@ -620,8 +624,15 @@ class ToolActionServer(Node):
         finally:
             self._current_tool_id = ""
             self._hand_approach_pos = None
+            if self._grip_taken:
+                self.get_logger().error(
+                    "[TAS] place_on_hand_test: 공구 파지 후 abort — 모션 정지, 운영자 확인 필요"
+                )
+                self._set_plc("error")
+                # is_moving=False 미발행 → STT 차단 유지
+            else:
+                self._publish_status(is_moving=False)
             self._grip_taken = False
-            self._publish_status(is_moving=False)
             self._action_lock.release()
 
         return result
@@ -816,6 +827,15 @@ class ToolActionServer(Node):
         x_mm = pose.pose.position.x * 1000.0
         y_mm = pose.pose.position.y * 1000.0
         z_mm = pose.pose.position.z * 1000.0
+
+        # S-6: 손 Z 상한 검사 — 초과 시 DSR 알람/연결 끊김 방지
+        hand_z_max_mm = self._h_cfg.get("hand_z_max_m", 0.17) * 1000.0
+        if z_mm > hand_z_max_mm:
+            self.get_logger().error(
+                f"[TAS] 손 Z {z_mm:.1f}mm > 상한 {hand_z_max_mm:.1f}mm — abort (S-6)"
+            )
+            return False
+
         approach_h_mm = self._h_cfg.get("approach_height_m", 0.05) * 1000.0
         x_mm += self._h_cfg.get("approach_x_offset_m", 0.0) * 1000.0
         y_mm += self._h_cfg.get("approach_y_offset_m", 0.0) * 1000.0
@@ -842,8 +862,8 @@ class ToolActionServer(Node):
         )
         req = MoveLine.Request()
         req.pos = [float(v) for v in pre_pos]
-        req.vel = [VEL_L, VEL_R]   # pre_approach는 느릴 필요 없음 — 일반 속도
-        req.acc = [ACC_L, ACC_R]
+        req.vel = [_HANDOVER_PRE_VEL_L, _HANDOVER_PRE_VEL_R]  # 일반 속도 1/3
+        req.acc = [_HANDOVER_PRE_ACC_L, _HANDOVER_PRE_ACC_R]
         req.time = 0.0
         req.radius = 0.0
         req.ref = DR_BASE
@@ -1050,12 +1070,17 @@ class ToolActionServer(Node):
     def _on_estop_reset(self, _req, response: Trigger.Response) -> Trigger.Response:
         """E-stop 래치 해제 — 운영자 명시적 확인 후만 허용."""
         self.get_logger().warn("[TAS] E-stop 래치 해제")
-        if self._grip_taken:
-            self.get_logger().warn("[TAS] estop_reset: grip_taken 플래그 잔존 — 공구 상태 확인 필요")
+        grip_was_taken = self._grip_taken
+        if grip_was_taken:
+            self.get_logger().warn("[TAS] estop_reset: grip_taken 잔존 — 공구 수동 확인 후 재호출 필요")
         self._estop_latch.clear()
         self._grip_taken = False
-        self._set_plc("idle")
-        self._publish_status(is_moving=False)  # STT 차단 해제
+        if grip_was_taken:
+            # 공구 쥔 채 estop_reset → PLC error 유지, STT 차단 유지
+            self._set_plc("error")
+        else:
+            self._set_plc("idle")
+            self._publish_status(is_moving=False)  # STT 차단 해제
         self._log_event_async("e_stop_reset", "운영자 E-stop 래치 해제")
         response.success = True
         response.message = "E-stop 래치 해제 완료"
