@@ -842,8 +842,8 @@ class ToolActionServer(Node):
         )
         req = MoveLine.Request()
         req.pos = [float(v) for v in pre_pos]
-        req.vel = [_HANDOVER_VEL_L, _HANDOVER_VEL_R]
-        req.acc = [_HANDOVER_ACC_L, _HANDOVER_ACC_R]
+        req.vel = [VEL_L, VEL_R]   # pre_approach는 느릴 필요 없음 — 일반 속도
+        req.acc = [ACC_L, ACC_R]
         req.time = 0.0
         req.radius = 0.0
         req.ref = DR_BASE
@@ -884,7 +884,8 @@ class ToolActionServer(Node):
         res = fut.result()
         if not (res and res.success):
             return False
-        self._wait_motion_complete(timeout=60.0)  # 실제 모션 완료 대기
+        # 10mm/s 저속 모션 — 낮은 임계값으로 감지
+        self._wait_motion_complete(timeout=60.0, moving_thresh=0.01, still_thresh=0.005)
         return True
 
     def _move_hand_place(self) -> bool:
@@ -917,7 +918,8 @@ class ToolActionServer(Node):
         res = fut.result()
         if not (res and res.success):
             return False
-        self._wait_motion_complete(timeout=60.0)  # GRIP 전 실제 모션 완료 보장
+        # 10mm/s 저속 모션 — 낮은 임계값으로 감지
+        self._wait_motion_complete(timeout=60.0, moving_thresh=0.01, still_thresh=0.005)
         time.sleep(0.3)
         return bool(res and res.success)
 
