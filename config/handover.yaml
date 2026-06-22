@@ -33,7 +33,7 @@ handover:
 
   # ── Phase 5: 접근 ───────────────────────────────────────────────────────
   approach_action_scale: 0.2       # DSR velocity scale (0~1.0)
-  approach_height_m: 0.10          # 손바닥 위 대기 높이 (10cm)
+  approach_height_m: 0.01          # 손바닥 위 대기 높이 (1cm)
 
   # ── Phase 5: 토크 감지 ──────────────────────────────────────────────────
   force_torque_abort_nm: 5.0       # ⚠️ 실측 후 조정 — 접촉 감지 joint torque 임계값

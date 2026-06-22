@@ -83,6 +83,7 @@ from unit_actions.toolbox_motion import (  # noqa: E402
     full_socket_return_seq,
     handover_fetch_seq,
     handover_fetch_handle_first_seq,
+    handover_place_only_seq,
     home_seq,
 )
 from unit_actions.visual_servoing import ToolPose  # noqa: E402
@@ -250,6 +251,15 @@ class ToolActionServer(Node):
             PlaceOnHand,
             "place_on_hand",
             execute_callback=self._on_place_on_hand,
+            goal_callback=self._goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self._normal_cbg,
+        )
+        self._handover_test_server = ActionServer(
+            self,
+            PlaceOnHand,
+            "place_on_hand_test",
+            execute_callback=self._on_place_on_hand_test,
             goal_callback=self._goal_callback,
             cancel_callback=self._cancel_callback,
             callback_group=self._normal_cbg,
@@ -510,6 +520,64 @@ class ToolActionServer(Node):
 
         return result
 
+    def _on_place_on_hand_test(self, goal_handle) -> PlaceOnHand.Result:
+        """테스트용 — 공구를 이미 쥔 상태에서 손 전달만 실행 (①~⑨ 스킵)."""
+        result = PlaceOnHand.Result()
+        tool_id = goal_handle.request.tool_id
+
+        if not self._action_lock.acquire(blocking=False):
+            goal_handle.abort()
+            result.success = False
+            result.message = "다른 동작 진행 중"
+            return result
+
+        try:
+            self.get_logger().info(f"[TAS] place_on_hand_test 시작: tool_id={tool_id}")
+            self._set_tcp()
+            self._publish_status(is_moving=True)
+            self._set_plc("moving")
+            self._current_tool_id = tool_id
+            self._hand_approach_pos = None
+            self._grip_taken = True  # 이미 공구 파지 상태로 간주
+
+            handle_first = self._get_handover_type(tool_id) == "handle_first"
+            steps = handover_place_only_seq(handle_first=handle_first)
+            self.get_logger().info(
+                f"[TAS] handover_type={'handle_first' if handle_first else 'direct'} "
+                f"place-only seq={len(steps)}단계"
+            )
+
+            ok = self._run_sequence_handover(steps, goal_handle)
+
+            if ok and not goal_handle.is_cancel_requested:
+                goal_handle.succeed()
+                result.success = True
+                result.message = f"place_on_hand_test 완료: {tool_id}"
+                self._set_plc("idle")
+            elif goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+                result.success = False
+                result.message = "취소됨"
+            else:
+                goal_handle.abort()
+                result.success = False
+                result.message = f"place_on_hand_test 실패: {tool_id}"
+                self._set_plc("error")
+        except Exception as exc:
+            self.get_logger().error(f"[TAS] place_on_hand_test 예외: {exc}")
+            goal_handle.abort()
+            result.success = False
+            result.message = str(exc)
+            self._set_plc("error")
+        finally:
+            self._current_tool_id = ""
+            self._hand_approach_pos = None
+            self._grip_taken = False
+            self._publish_status(is_moving=False)
+            self._action_lock.release()
+
+        return result
+
     # ── 핸드오버 헬퍼 ───────────────────────────────────────────────────────
 
     def _get_handover_type(self, tool_id: str) -> str:
@@ -692,8 +760,8 @@ class ToolActionServer(Node):
         approach_h_mm = self._h_cfg.get("approach_height_m", 0.10) * 1000.0
 
         if handle_first:
-            # finger_dir 방향(rz 각도)으로 tool_length/4 오프셋
-            offset_mm = self._get_tool_length_mm(self._current_tool_id) / 4.0
+            # finger_dir 방향(rz 각도)으로 tool_length/2 오프셋
+            offset_mm = self._get_tool_length_mm(self._current_tool_id) / 2.0
             rz_rad = math.radians(rz)
             x_mm += math.cos(rz_rad) * offset_mm
             y_mm += math.sin(rz_rad) * offset_mm
