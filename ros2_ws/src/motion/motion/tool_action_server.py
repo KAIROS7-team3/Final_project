@@ -973,9 +973,7 @@ class ToolActionServer(Node):
         # 10mm/s 저속 모션 — 낮은 임계값으로 감지
         self._wait_motion_complete(timeout=60.0, moving_thresh=0.01, still_thresh=0.005)
         time.sleep(0.3)
-
-        # 컴플라이언스 모드 OFF
-        self._release_compliance()
+        # 컴플라이언스는 이후 grip(450) 완료 후 해제 (_run_sequence_handover)
         return bool(res and res.success)
 
     # ── 서비스 핸들러 ───────────────────────────────────────────────────────
@@ -1179,6 +1177,7 @@ class ToolActionServer(Node):
                     self._grip_taken = True   # 공구 파지 성공
                 else:
                     self._grip_taken = False  # 그리퍼 열기 성공 (릴리즈)
+                    self._release_compliance()  # place 후 grip(450) 완료 시점에 컴플라이언스 해제
 
             if not ok:
                 self.get_logger().error(f"  step {i+1} 실패 — 중단")
