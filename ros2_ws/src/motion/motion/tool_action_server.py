@@ -1217,7 +1217,7 @@ class ToolActionServer(Node):
 
     def _grip(self, step) -> bool:
         pulse = step.pulse if step.pulse is not None else 0
-        current = _GRIP_CURRENT if pulse > PULSE_RELEASE else 0
+        current = _GRIP_CURRENT if pulse >= PULSE_RELEASE else 0
         req = GripperSetPosition.Request()
         req.position = pulse
         req.current = current
