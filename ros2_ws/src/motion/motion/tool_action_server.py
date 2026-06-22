@@ -104,10 +104,10 @@ _TCP_POS = [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]
 _TOOLBOX_LAYER = 1
 
 # 핸드오버 속도 (S-6: approach_action_scale=0.2 기준)
-_HANDOVER_VEL_L: float = 10.0   # mm/s  (VEL_L 50 × 0.2)
-_HANDOVER_ACC_L: float = 40.0
-_HANDOVER_VEL_R: float = 5.0    # deg/s
-_HANDOVER_ACC_R: float = 20.0
+_HANDOVER_VEL_L: float = 5.0    # mm/s  (10.0 × 0.5)
+_HANDOVER_ACC_L: float = 20.0
+_HANDOVER_VEL_R: float = 2.5    # deg/s
+_HANDOVER_ACC_R: float = 10.0
 
 # 핸드오버 rx/ry — fetch/place와 동일한 tool_approach_ori 기준 (RX=180, RY=180)
 _HANDOVER_RX: float = 180.0
@@ -835,7 +835,7 @@ class ToolActionServer(Node):
         self._hand_approach_pos = [x_mm, y_mm, z_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
 
         # ── 사전 이동: approach XY로 이동하되 Z는 손 Z + approach_height + 50mm ──
-        pre_pos = [x_mm, y_mm, z_mm + approach_h_mm + 50.0, _HANDOVER_RX, _HANDOVER_RY, rz]
+        pre_pos = [x_mm, y_mm, z_mm + approach_h_mm + 30.0, _HANDOVER_RX, _HANDOVER_RY, rz]
         self.get_logger().info(
             f"[TAS] hand_pre_approach ({'handle' if handle_first else 'direct'}) "
             f"pos={[round(v, 1) for v in pre_pos]}"
@@ -888,13 +888,17 @@ class ToolActionServer(Node):
         self._wait_motion_complete(timeout=60.0, moving_thresh=0.01, still_thresh=0.005)
         return True
 
-    def _move_hand_place(self) -> bool:
+    def _move_hand_place(self, handle_first: bool = False) -> bool:
         """MOVE_L_HAND_PLACE(_HANDLE): approach 단계에서 저장한 손바닥 높이로 Z 수직 하강."""
         if self._hand_approach_pos is None:
             self.get_logger().error("[TAS] _hand_approach_pos 없음 — approach 먼저 실행 필요")
             return False
 
-        place_z_offset_mm = self._h_cfg.get("place_z_offset_m", 0.0) * 1000.0
+        if handle_first:
+            place_z_offset_mm = self._h_cfg.get("place_z_offset_handle_first_m",
+                                                  self._h_cfg.get("place_z_offset_m", 0.0)) * 1000.0
+        else:
+            place_z_offset_mm = self._h_cfg.get("place_z_offset_m", 0.0) * 1000.0
         dsr_pos = list(self._hand_approach_pos)
         dsr_pos[2] += place_z_offset_mm
         self.get_logger().info(
@@ -1154,11 +1158,11 @@ class ToolActionServer(Node):
         elif step.kind == StepKind.MOVE_L_HAND_RZ_APPROACH:
             return self._move_hand_rz_approach(handle_first=False)
         elif step.kind == StepKind.MOVE_L_HAND_PLACE:
-            return self._move_hand_place()
+            return self._move_hand_place(handle_first=False)
         elif step.kind == StepKind.MOVE_L_HAND_RZ_APPROACH_HANDLE:
             return self._move_hand_rz_approach(handle_first=True)
         elif step.kind == StepKind.MOVE_L_HAND_PLACE_HANDLE:
-            return self._move_hand_place()
+            return self._move_hand_place(handle_first=True)
         self.get_logger().warn(f"  알 수 없는 StepKind: {step.kind}")
         return False
 

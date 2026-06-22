@@ -288,6 +288,47 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_return -p tool
 
 ---
 
+## 핸드오버 테스트 (`place_on_hand_test`)
+
+공구함 픽업 앞부분을 건너뛰고 **이미 공구를 쥔 상태에서 손에 전달만** 테스트하는 시퀀스.
+(`handover_place_only_seq` — WAIT_HAND_POSE → APPROACH → PLACE → GRIP(450))
+
+### 실행 순서
+
+**터미널 2 — RealSense 카메라**
+```bash
+source ~/Final_project/ros2_ws/install/setup.bash
+ros2 launch vision realsense_bringup.launch.py
+```
+
+**터미널 3 — 핸드 감지 파이프라인**
+```bash
+source ~/Final_project/ros2_ws/install/setup.bash
+ros2 launch vision hand_detection.launch.py
+```
+
+**터미널 6 — tool_action_server**
+```bash
+source ~/Final_project/ros2_ws/install/setup.bash
+ros2 run motion tool_action_server
+```
+
+### 공구별 명령어
+
+```bash
+# handle_first (라쳇·드라이버·칼) — 손잡이 방향 전달
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'ratchet_wrench'}"
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'screwdriver'}"
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'utility_knife'}"
+
+# direct (소켓·스패너·멀티툴) — 손바닥 중심 전달
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'multi_tool'}"
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'spanner_16mm'}"
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'socket_19mm'}"
+```
+
+---
+
 ## TODO
 
 - [x] **virtual 모드 대응**: `mode` 파라미터로 virtual 감지 → DRL/flange 초기화 생략 (에뮬레이터 블로킹 버그 수정)

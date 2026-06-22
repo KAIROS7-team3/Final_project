@@ -38,7 +38,8 @@ handover:
   # ⚠️ 손 Z 허용 상한: 0.17m (17cm) 초과 시 DSR 작업공간/조인트 한계로 알람 발생
   # hand_z > 0.17m 이면 pre_approach Z가 너무 높아져 컨트롤러 연결 끊김 현상 확인됨
   hand_z_max_m: 0.17               # 손 Z 허용 최대값 (base_link 기준, m)
-  place_z_offset_m: -0.055        # place 시 hand_z 기준 오프셋 (-6.5cm = 6.5cm 더 내려감)
+  place_z_offset_m: -0.055              # place 시 hand_z 기준 오프셋 (direct: 소켓·스패너·멀티툴)
+  place_z_offset_handle_first_m: -0.065 # handle_first 전용 오프셋 (라쳇·드라이버·칼 — 1cm 더 하강)
 
   # ── Phase 5: 토크 감지 ──────────────────────────────────────────────────
   force_torque_abort_nm: 5.0       # ⚠️ 실측 후 조정 — 접촉 감지 joint torque 임계값
