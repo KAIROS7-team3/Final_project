@@ -303,20 +303,20 @@ class HandVizNode(Node):
         for lm in self._all_landmarks:
             _draw_landmarks(img, lm, self._ready)
 
-        # ── Lock 위치 픽셀 표시 (손바닥 중심 = 랜드마크 9번 MIDDLE_MCP) ──
-        if self._ready and self._all_landmarks:
-            pts = np.array(self._all_landmarks[0], dtype=np.float32).reshape(21, 3)
-            # 손바닥 중심: 0(wrist), 5, 9, 13, 17 평균
-            palm_idx = [0, 5, 9, 13, 17]
-            cx_f = float(np.mean(pts[palm_idx, 0]))
-            cy_f = float(np.mean(pts[palm_idx, 1]))
-            if self._lock_px is None:
-                self._lock_px = (int(cx_f), int(cy_f))
-            u, v = self._lock_px
-            cv2.circle(img, (u, v), 16, (0, 255, 0), 3)
-            cv2.drawMarker(img, (u, v), (0, 255, 0), cv2.MARKER_CROSS, 32, 2)
-            cv2.putText(img, "LOCK", (u + 18, v - 12),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        # ── Lock 위치 픽셀 표시 (locked_pose 3D → 역투영) ──────────────────
+        if self._ready and self._locked_pose is not None and self._K is not None and self._T is not None:
+            fx, fy, cx_k, cy_k = self._K
+            pos = self._locked_pose.pose.position
+            pos_base = np.array([pos.x, pos.y, pos.z])
+            px = _project_base_to_pixel(pos_base, self._T, fx, fy, cx_k, cy_k)
+            if px is not None:
+                self._lock_px = px
+            if self._lock_px is not None:
+                u, v = self._lock_px
+                cv2.circle(img, (u, v), 16, (0, 255, 0), 3)
+                cv2.drawMarker(img, (u, v), (0, 255, 0), cv2.MARKER_CROSS, 32, 2)
+                cv2.putText(img, "LOCK", (u + 18, v - 12),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         elif not self._ready:
             self._lock_px = None
 
