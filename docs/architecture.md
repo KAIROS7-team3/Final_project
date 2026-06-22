@@ -60,7 +60,7 @@
 ║  Gemma 4 + DB check               ║   → VLA 모델 추론             ║
 ║  Behavior Tree (py_trees)         ║   → joint + gripper commands  ║
 ║  unit_actions/ (구조화된 액션)     ║   → Safety Validator          ║
-║  unit_action_server (ROS2 래퍼)   ║   → Doosan Python SDK 실행    ║
+║  tool_action_server (ExecutePhase)║   → Doosan Python SDK 실행    ║
 ║  DB node (ROS2 서비스)             ║  db_core/ (직접 SQL)          ║
 ║  PLC node (ROS2 노드)             ║  plc_core/ (직접 Modbus)      ║
 ╚══════════════════════════════════╩═══════════════════════════════╝
@@ -88,7 +88,7 @@
     ├── interfaces/               커스텀 msg/srv/action (모든 ROS2 패키지가 의존)
     ├── voice/                    Whisper STT + Gemma 4 의도 분류
     ├── vision/                   YOLOv11s + 6D Pose + Tracker + Context Builder
-    ├── orchestrator/             Behavior Tree + unit_action_server (ROS2 래퍼, hal/+unit_actions/ 사용)
+    ├── orchestrator/             Behavior Tree (phase 오케스트레이션) + ExecutePhase 액션 클라이언트
     ├── db/                       db_core/를 ROS2 서비스로 노출
     ├── motion/                   DSR/RL 제어 + Grasp Planner
     └── plc/                      plc_core/를 ROS2 토픽으로 노출
@@ -130,14 +130,15 @@
 | `msg/HandoverEvent.msg` | v2.0+ (S-6 — v1.0 미구현) |
 | `srv/CheckToolFeasibility.srv` | intent+tool_id → feasible+reason |
 | `srv/UpdateToolStatus.srv` | DB 상태 갱신 |
+| `action/ExecutePhase.action` | phase(open_drawer\|fetch\|return\|close_drawer\|home) + tool_id + layer_id — Track A 단일 모션 인터페이스. `motion/tool_action_server` 호스팅, orchestrator BT가 phase마다 1개씩 호출 |
 | `action/MoveToPose.action` | target_pose 이동 |
 | `action/Grasp.action` | tool_id + approach_direction + force |
 | `action/Release.action` | 현재 잡고 있는 공구 놓기 |
-| `action/PlaceAtStaging.action` | tool_id → staging 좌표 거치 |
-| `action/PickFromStaging.action` | tool_id staging에서 픽업 |
-| `action/ReturnToSlot.action` | tool_id + slot_row/col 반납 |
+| ~~`action/PlaceAtStaging.action`~~ | _(deprecated — ExecutePhase로 대체)_ |
+| ~~`action/PickFromStaging.action`~~ | _(deprecated)_ |
+| ~~`action/ReturnToSlot.action`~~ | _(deprecated — ExecutePhase로 대체)_ |
 
-> 액션은 동작별로 분리되어 있다 (이전 단일 `UnitAction.action` 폐기). 모두 `orchestrator/unit_action_server.py`가 다중 액션 서버로 호스팅. 상세 → [`interfaces.md`](interfaces.md) §3.
+> Track A 단일 흐름: orchestrator BT → `ExecutePhase` 액션서버 → `SequenceEngine` → DSR 서비스. 상세 → [`interfaces.md`](interfaces.md) §3.
 
 ### voice/
 
@@ -160,11 +161,13 @@
 
 | 파일 | 역할 |
 |------|------|
-| `behavior_manager.py` | BT 틱 루프 |
-| `bt_nodes/fetch_tool.py` | FetchTool 서브트리 |
-| `bt_nodes/return_tool.py` | ReturnTool 서브트리 |
-| `bt_nodes/recovery.py` | 에러 복구 서브트리 |
-| `unit_action_server.py` | ROS2 action server → unit_actions/ 래핑 |
+| `orchestrator_node.py` | BT 틱 루프, intent 구독, `/robot/status` 발행 (is_moving 소유) |
+| `bt_nodes/fetch_tool.py` | FetchTool 서브트리 — CheckFeasibility → SetMoving → open_drawer → fetch(재시도) → close_drawer → SetMoving |
+| `bt_nodes/return_tool.py` | ReturnTool 서브트리 — 동일 구조, phase="return" |
+| `bt_nodes/set_moving.py` | is_moving 발행 + PLC 상태 갱신 BT 리프 |
+| `bt_nodes/fault_handler.py` | phase 실패 복구: close_drawer → home → DB 에러 로그, 항상 FAILURE |
+| `bt_nodes/check_feasibility.py` | /db/CheckToolFeasibility 서비스 호출 (S-2) |
+| `bt_nodes/run_action.py` | ExecutePhase goal 발송 + 완료 대기, max_attempts 재시도 |
 
 ### motion/
 
@@ -223,27 +226,31 @@ Track C는 unit_actions 미사용 — VLA 모델이 joint commands 직접 출력
 ## 7. Track A/B — Behavior Tree 구조
 
 ```
-→ Sequence: Root
-   ├── Condition: VoiceCommandReceived (feasible=true)
-   └── → Fallback: DispatchByIntent
-        ├── → Sequence: FetchTool
-        │    ├── Condition: IsFetchIntent
-        │    ├── Action: LocalizeTool       ← YOLOv11s + 6D Pose
-        │    ├── Action: PlanGrasp
-        │    ├── Action: MoveToPreGrasp
-        │    ├── Action: CloseGripper
-        │    ├── Action: PlaceAtStagingArea
-        │    ├── Action: OpenGripper
-        │    └── Action: MoveToHome
-        └── → Sequence: ReturnTool
-             ├── Condition: IsReturnIntent
-             ├── Action: PickFromStagingArea
-             ├── Action: MoveToToolSlot
-             ├── Action: OpenGripper
-             └── Action: MoveToHome
+intent 수신 → orchestrator_node._tick_bt()
+               └── tree.tick_once()
+
+FetchTool 서브트리:
+  Sequence("FetchTool_root")
+  ├── CheckFeasibility_fetch          ← /db/CheckToolFeasibility (S-2 DB Gate)
+  └── Selector("FetchTool_motion")
+      ├── Sequence("FetchTool_main")
+      │    ├── SetMoving(true)        ← /robot/status is_moving=True + PLC "moving"
+      │    ├── RunAction(open_drawer) ← ExecutePhase: 서랍 열기
+      │    ├── RunAction(fetch, ×3)   ← ExecutePhase: 고정좌표 파지+staging 거치 (최대 3회)
+      │    ├── RunAction(close_drawer)← ExecutePhase: 서랍 닫기
+      │    └── SetMoving(false)       ← /robot/status is_moving=False + PLC "idle"
+      └── FaultHandler               ← close_drawer+home 복구 + DB 에러 로그, 항상 FAILURE
+
+ReturnTool 서브트리: 동일 구조, RunAction(return, ×2) 사용.
 ```
 
-Blackboard 스키마: `{intent, active_tool_id, tool_pose, staging_state}`
+Blackboard 스키마: `{intent, active_tool_id, tool_pose, staging_state, is_moving, feasibility_reason}`
+
+DB 상태 전이 (orchestrator 소유):
+- fetch pick feedback → `in_slot → out`
+- fetch place feedback → `out → staged`
+- return pick feedback → `staged → out`
+- return place feedback → `out → in_slot`
 
 ---
 

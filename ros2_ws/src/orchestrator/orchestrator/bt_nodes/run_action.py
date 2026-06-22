@@ -1,4 +1,4 @@
-"""RunAction BT 노드 — PlaceAtStaging / ReturnToSlot 액션 클라이언트 리프.
+"""RunAction BT 노드 — ExecutePhase / PlaceAtStaging / ReturnToSlot 액션 클라이언트 리프.
 
 액션 클라이언트는 orchestrator_node에서 생성해 주입한다 (BT 노드는 ROS2 의존 없음).
 update()는 액션 완료까지 blocking — BT tick 전용 스레드에서만 호출할 것.
@@ -19,8 +19,9 @@ class RunAction(py_trees.behaviour.Behaviour):
     Args:
         name: BT 노드 이름 (고유하게).
         action_client: rclpy ActionClient 인스턴스.
-        build_goal_fn: blackboard → goal 객체 생성 함수.
+        build_goal_fn: tool_id(str) → goal 객체 생성 함수.
         timeout_sec: 액션 완료 대기 타임아웃 (초).
+        max_attempts: 실패 시 재시도 횟수. 기본 1 (재시도 없음).
         feedback_callback: action feedback의 phase 문자열을 받는 콜백.
             tool_action_server는 step.marker가 설정된 step("pick"/"place")
             실행 직후 phase=marker로 feedback을 발행한다 (E-9: 콜백은 빠르게
@@ -33,12 +34,14 @@ class RunAction(py_trees.behaviour.Behaviour):
         action_client: Any,
         build_goal_fn: Callable,
         timeout_sec: float = 120.0,
+        max_attempts: int = 1,
         feedback_callback: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(name=name)
         self._client = action_client
         self._build_goal_fn = build_goal_fn
         self._timeout = timeout_sec
+        self._max_attempts = max_attempts
         self._feedback_callback = feedback_callback
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
@@ -49,6 +52,19 @@ class RunAction(py_trees.behaviour.Behaviour):
         tool_id = self.blackboard.active_tool_id or ""
         goal = self._build_goal_fn(tool_id)
 
+        for attempt in range(self._max_attempts):
+            if attempt > 0:
+                self.logger.warning(
+                    f"[{self.name}] 재시도 {attempt}/{self._max_attempts - 1}"
+                )
+            status = self._send_and_wait(goal)
+            if status == py_trees.common.Status.SUCCESS:
+                return py_trees.common.Status.SUCCESS
+
+        return py_trees.common.Status.FAILURE
+
+    def _send_and_wait(self, goal: Any) -> py_trees.common.Status:
+        """goal을 발송하고 완료를 대기한다 (블로킹)."""
         if not self._client.wait_for_server(timeout_sec=5.0):
             self.logger.error(f"[{self.name}] 액션 서버 없음")
             return py_trees.common.Status.FAILURE

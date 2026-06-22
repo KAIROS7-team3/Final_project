@@ -1,0 +1,21 @@
+# ExecutePhase — Track A BT가 모션 phase 1개를 motion 액션 서버에 요청하는 단일 인터페이스.
+# 굵은(전체작업) PlaceAtStaging/ReturnToSlot 대신 phase 단위 오케스트레이션에 사용한다.
+#
+# phase 허용값:
+#   "open_drawer"  — layer_id 서랍 열기 (tool_id 불필요)
+#   "fetch"        — 서랍 지그에서 공구 파지 → staging 거치 (tool_id 필수, 비전-free 고정좌표)
+#   "return"       — staging 픽업 → 서랍 지그 반납 (tool_id 필수, staging 픽업은 라이브 비전)
+#   "close_drawer" — layer_id 서랍 닫기 (tool_id 불필요)
+#   "home"         — 홈 복귀 (tool_id/layer_id 불필요)
+string phase
+# fetch/return 대상 공구 (open_drawer/close_drawer/home에서는 무시).
+string tool_id
+# 서랍 layer (0=1층 ...). open_drawer/close_drawer/fetch/return에서 사용.
+int32 layer_id
+---
+bool success
+string message
+---
+# 현재 step 단계 라벨 + 진행도 [0.0, 1.0]
+string phase
+float32 progress

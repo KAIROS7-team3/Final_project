@@ -20,6 +20,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/LogEvent.srv"
   "srv/GripperSetPosition.srv"
   # Actions
+  "action/ExecutePhase.action"
   "action/MoveToPose.action"
   "action/Grasp.action"
   "action/Release.action"

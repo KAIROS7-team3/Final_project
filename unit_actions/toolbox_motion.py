@@ -41,6 +41,7 @@ class StepKind(Enum):
     WAIT_VISION_RETURN_XY = auto()   # return: /vision/tool_gripper_pose 캐시 초기화 후 신규 수신 대기
     MOVE_L_SLOT_XYZ       = auto()   # return ⑩: toolbox.yaml slot XY + return_z_mm 하강
     MOVE_L_STAGING_XYZ    = auto()   # return ⑥: 그리퍼 캠 XY + staging_pickup_z_mm 하강
+    MOVE_L_SLOT_XYZ_FETCH = auto()   # fetch ⑤: toolbox.yaml slot XY + grasp_z_mm 하강 (비전-free)
 
 
 PickPlaceMarker = Literal["pick", "place"]
@@ -479,12 +480,12 @@ VISION_FETCH_SCAN_J_DEG:  list = [-30.1,  15.5,  74.7,  20.9,  101.2,  -27.8]   
 VISION_RETURN_SCAN_J_DEG: list = [-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]  # return 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
 
 
-def vision_fetch_seq() -> list[Step]:
+def vision_fetch_seq(scan_j_deg: list | None = None) -> list[Step]:
     """그리퍼 캠 XY + grasp_z_mm 기반 공구 fetch 시퀀스 (14단계).
 
     ① JOINT_HOME
     ② grip(0)         — 완전 개방 (pulse=0)
-    ③ MoveJ → VISION_FETCH_SCAN_J_DEG  (그리퍼 캠 스캔 자세)
+    ③ MoveJ → scan_j_deg  (그리퍼 캠 스캔 자세, config/toolbox.yaml gripper_cam_scan.fetch_j_deg)
     ④ WAIT_VISION_TOP_XY — 캐시 초기화 후 /vision/tool_gripper_pose 신규 수신 대기
     ④-1 GRIP_RELEASE  — 파지 준비 개방 (pulse=450)
     ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 XY + APPROACH_Z 로 이동
@@ -497,13 +498,17 @@ def vision_fetch_seq() -> list[Step]:
     ⑫ MoveL → SOCKET_BOTTOM_XY  (staging 위 복귀)
     ⑬ JOINT_HOME
 
+    Args:
+        scan_j_deg: 그리퍼 캠 스캔 자세 (deg). None이면 VISION_FETCH_SCAN_J_DEG 사용.
+
     호출 전 팔이 홈 자세에 있어야 함.
-    좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리 (파라미터 불필요).
+    좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리.
     """
+    _scan = scan_j_deg if scan_j_deg is not None else VISION_FETCH_SCAN_J_DEG
     return [
         JOINT_HOME(),                               # ①
         grip(0),                                    # ② 완전 개방 (pulse=0)
-        mj_abs(VISION_FETCH_SCAN_J_DEG),            # ③ 그리퍼 캠 스캔 자세
+        mj_abs(_scan),                              # ③ 그리퍼 캠 스캔 자세
         Step(kind=StepKind.WAIT_VISION_TOP_XY),     # ④ 신규 그리퍼 캠 좌표 수신 대기
         GRIP_RELEASE(),                             # ④-1 파지 준비 개방 (pulse=450)
         Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + 고정 Z
@@ -515,6 +520,43 @@ def vision_fetch_seq() -> list[Step]:
         GRIP_RELEASE(),                             # ⑪
         ml_abs(SOCKET_BOTTOM_XY),                   # ⑫ staging 위 복귀
         JOINT_HOME(),                               # ⑬
+    ]
+
+
+def fixed_fetch_seq() -> list[Step]:
+    """고정좌표 fetch: grasp_pose_base XY + grasp_z_mm (비전-free) → staging 거치 (12단계).
+
+    vision_fetch_seq와 달리 그리퍼 캠 비전을 사용하지 않는다.
+    공구함 지그가 고정이므로 toolbox.yaml per-tool grasp_pose_base(XY) + grasp_z_mm(Z) 사용.
+
+    ① JOINT_HOME
+    ② grip(0)               — 완전 개방
+    ③ GRIP_RELEASE           — 파지 준비 개방 (pulse=450)
+    ④ MOVE_L_SLOT_XY         — grasp_pose_base XY + approach_z_mm 이동
+    ⑤ MOVE_L_SLOT_XYZ_FETCH  — grasp_pose_base XY + grasp_z_mm 하강 (비전-free)
+    ⑥ GRIP_TOOL (pick)
+    ⑦ MOVE_L_SLOT_XY         — approach_z_mm 상승 (④와 동일)
+    ⑧ MoveL → SOCKET_BOTTOM_XY  (staging 위)
+    ⑨ MoveL → SOCKET_BOTTOM     (staging 하강)
+    ⑩ GRIP_RELEASE (place)
+    ⑪ MoveL → SOCKET_BOTTOM_XY  (staging 위 복귀)
+    ⑫ JOINT_HOME
+
+    호출 전 팔이 홈 자세에 있어야 함.
+    """
+    return [
+        JOINT_HOME(),                                  # ①
+        grip(0),                                       # ② 완전 개방
+        GRIP_RELEASE(),                                # ③ 파지 준비 개방
+        Step(kind=StepKind.MOVE_L_SLOT_XY),            # ④ slot 위 (approach_z)
+        Step(kind=StepKind.MOVE_L_SLOT_XYZ_FETCH),     # ⑤ slot 하강 (grasp_z_mm, 비전-free)
+        marked(GRIP_TOOL(), "pick"),                   # ⑥
+        Step(kind=StepKind.MOVE_L_SLOT_XY),            # ⑦ approach_z 상승
+        ml_abs(SOCKET_BOTTOM_XY),                      # ⑧ staging 위
+        ml_abs(SOCKET_BOTTOM),                         # ⑨ staging 하강
+        marked(GRIP_RELEASE(), "place"),               # ⑩
+        ml_abs(SOCKET_BOTTOM_XY),                      # ⑪ staging 위 복귀
+        JOINT_HOME(),                                  # ⑫
     ]
 
 
@@ -539,12 +581,12 @@ def socket_return_seq() -> list[Step]:
     ]
 
 
-def vision_return_seq() -> list[Step]:
+def vision_return_seq(scan_j_deg: list | None = None) -> list[Step]:
     """그리퍼 캠 XY + grasp_z_mm/return_z_mm 기반 공구 return 시퀀스 (14단계).
 
     ① JOINT_HOME
     ② grip(0)         — 완전 개방 (pulse=0)
-    ③ MoveJ → VISION_RETURN_SCAN_J_DEG (그리퍼 캠 스캔 자세)
+    ③ MoveJ → scan_j_deg (그리퍼 캠 스캔 자세, config/toolbox.yaml gripper_cam_scan.return_j_deg)
     ④ WAIT_VISION_RETURN_XY — 캐시 초기화 후 /vision/tool_gripper_pose 신규 수신 대기
     ④-1 GRIP_RELEASE  — 파지 준비 개방 (pulse=450)
     ⑤ MOVE_L_TOP_XY   — 그리퍼 캠 XY + rz + 고정 Z (staging 위)
@@ -557,22 +599,26 @@ def vision_return_seq() -> list[Step]:
     ⑫ MOVE_L_SLOT_XY  — grasp_pose_base XY + 고정 Z 상승 (⑨과 동일)
     ⑬ JOINT_HOME
 
+    Args:
+        scan_j_deg: 그리퍼 캠 스캔 자세 (deg). None이면 VISION_RETURN_SCAN_J_DEG 사용.
+
     호출 전 팔이 홈 자세에 있어야 함.
-    좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리 (파라미터 불필요).
+    좌표는 모두 runner가 토픽에서 실시간으로 읽어 처리.
     """
+    _scan = scan_j_deg if scan_j_deg is not None else VISION_RETURN_SCAN_J_DEG
     return [
         JOINT_HOME(),                               # ①
         grip(0),                                    # ② 완전 개방 (pulse=0)
-        mj_abs(VISION_RETURN_SCAN_J_DEG),           # ③ 그리퍼 캠 스캔 자세
+        mj_abs(_scan),                              # ③ 그리퍼 캠 스캔 자세
         Step(kind=StepKind.WAIT_VISION_RETURN_XY),  # ④ /vision/tool_gripper_pose 수신 대기
         GRIP_RELEASE(),                             # ④-1 파지 준비 개방 (pulse=450)
         Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑤ 그리퍼 캠 XY + rz + 고정 Z (staging 위)
         Step(kind=StepKind.MOVE_L_STAGING_XYZ),     # ⑥ 그리퍼 캠 XY + rz + staging_pickup_z_mm 하강
-        GRIP_TOOL(),                                # ⑦
+        marked(GRIP_TOOL(), "pick"),                # ⑦
         Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑧ 그리퍼 캠 XY + 고정 Z 상승
         Step(kind=StepKind.MOVE_L_SLOT_XY),         # ⑨ grasp_pose_base XY + 고정 Z (slot 위)
         Step(kind=StepKind.MOVE_L_SLOT_XYZ),        # ⑩ grasp_pose_base XY + return_z_mm 하강
-        GRIP_RELEASE(),                             # ⑪
+        marked(GRIP_RELEASE(), "place"),            # ⑪
         Step(kind=StepKind.MOVE_L_SLOT_XY),         # ⑫ grasp_pose_base XY + 고정 Z 상승
         JOINT_HOME(),                               # ⑬
     ]

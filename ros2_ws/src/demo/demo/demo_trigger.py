@@ -1,8 +1,8 @@
 """demo_trigger — 마이크 없이 `/voice/intent`를 1회 publish하는 데모 트리거.
 
-음성 스택(whisper + rule_intent) 없이 demo_runner를 시연/테스트할 때 사용한다.
-demo_runner는 자체 DB Gate(db_core 직접 조회, S-2)를 수행하므로 이 경로로
-intent를 주입해도 안전 게이트는 우회되지 않는다.
+음성 스택(whisper + rule_intent) 없이 orchestrator BT를 시연/테스트할 때 사용한다.
+orchestrator가 `/db/CheckToolFeasibility` 서비스(S-2 DB Gate)를 수행하므로
+이 경로로 intent를 주입해도 안전 게이트는 우회되지 않는다.
 
 사용:
     ros2 run demo demo_trigger fetch

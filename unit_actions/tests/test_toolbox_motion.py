@@ -124,3 +124,37 @@ def test_drawer_seq_v2_rejects_invalid_layer(seq_fn, bad_layer: int) -> None:
     """failure path: layer는 0/1만 지원 — 그 외는 ValueError."""
     with pytest.raises(ValueError):
         seq_fn(bad_layer)
+
+
+# ── fixed_fetch_seq (feat/motion-drawer-v2, §5 신규) ─────────────────────────
+
+from unit_actions.toolbox_motion import fixed_fetch_seq  # noqa: E402
+
+
+def test_fixed_fetch_seq_has_one_pick_and_one_place() -> None:
+    """fixed_fetch_seq는 정확히 pick 1개, place 1개를 순서대로 가진다."""
+    seq = fixed_fetch_seq()
+    marks = _markers(seq)
+    assert [m for _, m in marks] == ["pick", "place"]
+    pick_idx, place_idx = marks[0][0], marks[1][0]
+    assert seq[pick_idx].kind == StepKind.GRIP
+    assert seq[place_idx].kind == StepKind.GRIP
+    assert pick_idx < place_idx
+
+
+def test_fixed_fetch_seq_length() -> None:
+    """fixed_fetch_seq는 12단계로 구성된다 (계획서 기준)."""
+    seq = fixed_fetch_seq()
+    assert len(seq) == 12
+
+
+def test_fixed_fetch_seq_starts_with_joint_home() -> None:
+    """첫 번째 스텝은 JOINT_HOME (MOVE_J_ABS) 이다."""
+    seq = fixed_fetch_seq()
+    assert seq[0].kind == StepKind.MOVE_J_ABS
+
+
+def test_fixed_fetch_seq_ends_with_joint_home() -> None:
+    """마지막 스텝은 JOINT_HOME (MOVE_J_ABS) 이다."""
+    seq = fixed_fetch_seq()
+    assert seq[-1].kind == StepKind.MOVE_J_ABS

@@ -1,3 +1,5 @@
+# DEPRECATED: phase 단위 ExecutePhase.action 로 대체 예정 (Track A 단일 흐름 통합).
+# 신규 코드는 ExecutePhase(phase="return")을 사용할 것.
 string tool_id
 int32 slot_row
 int32 slot_col

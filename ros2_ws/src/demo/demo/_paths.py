@@ -9,8 +9,7 @@
   2. 현재 작업 디렉터리에서 위로
   3. 이 모듈 위치에서 위로
 
-`unit_actions/` 디렉터리를 포함한 첫 조상을 레포 루트로 본다
-(`demo_runner.py`의 기존 unit_actions 탐색과 동일한 마커).
+`unit_actions/` 디렉터리를 포함한 첫 조상을 레포 루트로 본다.
 """
 
 from __future__ import annotations

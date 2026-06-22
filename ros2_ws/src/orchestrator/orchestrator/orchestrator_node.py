@@ -17,7 +17,7 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import String
 from vision_msgs.msg import Detection3DArray
 
-from interfaces.action import PlaceAtStaging, ReturnToSlot
+from interfaces.action import ExecutePhase
 from interfaces.msg import Intent, RobotStatus
 from interfaces.srv import CheckToolFeasibility, LogEvent, UpdateToolStatus
 
@@ -73,16 +73,10 @@ class OrchestratorNode(Node):
         )
 
         # ── 액션 클라이언트 ───────────────────────────────────────────────
-        self._place_cli = ActionClient(
+        self._exec_phase_cli = ActionClient(
             self,
-            PlaceAtStaging,
-            "place_at_staging",
-            callback_group=self._normal_cbg,
-        )
-        self._return_cli = ActionClient(
-            self,
-            ReturnToSlot,
-            "return_to_slot",
+            ExecutePhase,
+            "execute_phase",
             callback_group=self._normal_cbg,
         )
 
@@ -91,15 +85,25 @@ class OrchestratorNode(Node):
         # DB 상태를 물리적 집기/놓기 시점에 즉시 전이시킨다 (BT 완료 대기 X).
         self._fetch_tree = build_fetch_subtree(
             feasibility_client=self._feasibility_cli,
-            place_at_staging_client=self._place_cli,
+            execute_phase_client=self._exec_phase_cli,
+            publish_status_fn=self._publish_status,
+            set_plc_fn=self._set_plc,
+            log_error_fn=self._log_error_event,
             on_pick=self._on_fetch_pick,
             on_place=self._on_fetch_place,
+            layer_id=1,
+            max_fetch_attempts=3,
         )
         self._return_tree = build_return_subtree(
             feasibility_client=self._feasibility_cli,
-            return_to_slot_client=self._return_cli,
+            execute_phase_client=self._exec_phase_cli,
+            publish_status_fn=self._publish_status,
+            set_plc_fn=self._set_plc,
+            log_error_fn=self._log_error_event,
             on_pick=self._on_return_pick,
             on_place=self._on_return_place,
+            layer_id=1,
+            max_return_attempts=2,
         )
         self._fetch_tree.setup(timeout=5)
         self._return_tree.setup(timeout=5)
@@ -115,11 +119,12 @@ class OrchestratorNode(Node):
         # ── /plc/system_state 발행자 ──────────────────────────────────────
         self._plc_pub = self.create_publisher(String, "/plc/system_state", 1)
 
-        # ── 구독 ─────────────────────────────────────────────────────────
-        self._robot_status_sub = self.create_subscription(
-            RobotStatus, "/robot/status", self._on_robot_status, _QOS_ROBOT_STATUS,
-            callback_group=self._normal_cbg,
+        # ── /robot/status 발행자 (is_moving 발행권 orchestrator 소유) ─────
+        self._status_pub = self.create_publisher(
+            RobotStatus, "/robot/status", _QOS_ROBOT_STATUS
         )
+
+        # ── 구독 ─────────────────────────────────────────────────────────
         self._intent_sub = self.create_subscription(
             Intent, "/voice/intent", self._on_intent, _QOS_INTENT,
             callback_group=self._normal_cbg,
@@ -140,8 +145,16 @@ class OrchestratorNode(Node):
             "[OrchestratorNode] ready — listening on /voice/intent"
         )
 
-    def _on_robot_status(self, msg: RobotStatus) -> None:
-        self._is_moving = msg.is_moving
+    def _publish_status(self, is_moving: bool) -> None:
+        """is_moving 상태를 /robot/status에 발행한다. (is_moving 발행권 소유)"""
+        self._is_moving = is_moving
+        msg = RobotStatus()
+        msg.is_moving = is_moving
+        self._status_pub.publish(msg)
+
+    def _log_error_event(self, tool_id: str, notes: str) -> None:
+        """FaultHandler용 DB 에러 이벤트 로그 (동기, 별도 스레드에서 호출됨)."""
+        self._call_update_status(tool_id, "error", "error", notes)
 
     def _on_intent(self, msg: Intent) -> None:
         if self._is_moving:
@@ -187,23 +200,21 @@ class OrchestratorNode(Node):
             self.get_logger().info(
                 f"[OrchestratorNode] BT tick 시작: intent={intent_type} tool_id={tool_id}"
             )
-            self._set_plc("moving")
             status = tree.tick_once()
 
             if status == py_trees.common.Status.SUCCESS:
                 self.get_logger().info(
                     f"[OrchestratorNode] BT 성공: intent={intent_type} tool_id={tool_id}"
                 )
-                self._set_plc("idle")
             else:
                 self.get_logger().error(
                     f"[OrchestratorNode] BT 실패: intent={intent_type} "
                     f"tool_id={tool_id} status={status}"
                 )
-                self._set_plc("error")
         except Exception as exc:
             self.get_logger().error(f"[OrchestratorNode] BT tick 예외: {exc}")
             self._set_plc("error")
+            self._publish_status(False)  # 예외 시 is_moving 안전 해제
         finally:
             self._bt_lock.release()
 
@@ -238,9 +249,8 @@ class OrchestratorNode(Node):
 
         이 메서드는 action feedback 콜백(rclpy executor 스레드)에서
         동기 호출되므로, 최대 5초까지 블로킹되는 _call_update_status를
-        직접 호출하면 그 시간 동안 같은 콜백 그룹의 다른 콜백
-        (/robot/status 등) 처리가 지연된다. 모션 진행 중인 시점이라
-        fire-and-forget으로 분리한다.
+        직접 호출하면 그 시간 동안 같은 콜백 그룹의 다른 콜백 처리가 지연된다.
+        모션 진행 중인 시점이라 fire-and-forget으로 분리한다.
         """
         def _run() -> None:
             if not self._call_update_status(tool_id, event_type, new_status, notes):

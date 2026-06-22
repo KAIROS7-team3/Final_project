@@ -8,6 +8,11 @@ interfaces/ 패키지의 msg/srv/action 변경 이력.
 ## [Unreleased]
 
 ### Added
+- `action/ExecutePhase.action` — Track A BT phase 단위 모션 오케스트레이션 단일 인터페이스
+  - goal: `phase` (open_drawer|fetch|return|close_drawer|home), `tool_id`, `layer_id`
+  - result: `success`, `message` / feedback: `phase`, `progress`
+  - motion 액션 서버가 호스팅, orchestrator BT가 phase마다 goal 1개로 호출
+  - 굵은(전체작업) `PlaceAtStaging`/`ReturnToSlot`를 대체 (Track A 단일 흐름 통합)
 - `srv/GripperSetPosition.srv` — RH-P12-RN 그리퍼 위치 제어 서비스 (Track B Phase 1, PR #35)
   - request: `position` (pulse), `current` (mA), `timeout_sec` / response: `success`, `message`, `final_position`, `final_current`
   - `gripper_node`가 `/gripper/set_position`으로 호스팅, Doosan 컨트롤러 TCP(port 9105) 경유 Modbus RTU 전송
@@ -19,3 +24,8 @@ interfaces/ 패키지의 msg/srv/action 변경 이력.
 - `msg/MarkerMap.msg` — 탑뷰 ArUco 다중 마커 스캔 결과 메시지
   - `marker_ids[]`, `poses_robot[]` (geometry_msgs/Pose, m + quaternion), `place_zone_radius` (m), `calibrated`
   - MarkerScanNode → orchestrator BT ScanMarkers 연동용 (PR #22)
+
+### Deprecated
+- `action/PlaceAtStaging.action`, `action/ReturnToSlot.action` — phase 단위
+  `ExecutePhase.action`로 대체 예정. 마이그레이션(orchestrator BT + motion 액션 서버)
+  완료 후 제거. 그 전까지 빌드 유지.
