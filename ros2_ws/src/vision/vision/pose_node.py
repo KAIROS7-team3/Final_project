@@ -23,7 +23,6 @@ from pathlib import Path
 import numpy as np
 import rclpy
 import yaml
-from cv_bridge import CvBridge
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
@@ -100,7 +99,6 @@ class PoseNode(Node):
 
         self._K = _load_intrinsics()
         self._T: np.ndarray | None = self._try_load_hand_eye()
-        self._bridge = CvBridge()
 
         det_sub = Subscriber(self, Detection2DArray, "/vision/detections",
                              qos_profile=_QOS_BEST_EFFORT_10)
@@ -141,7 +139,9 @@ class PoseNode(Node):
             return None
 
     def _on_detections_depth(self, det_msg: Detection2DArray, depth_msg: Image) -> None:
-        depth_raw = self._bridge.imgmsg_to_cv2(depth_msg, desired_encoding="passthrough")
+        depth_raw = np.frombuffer(depth_msg.data, dtype=np.uint16).reshape(
+            depth_msg.height, depth_msg.width
+        ).copy()
 
         pose_array = Detection3DArray()
         pose_array.header = det_msg.header

@@ -31,6 +31,7 @@ setup(
             'toolbox_seq_runner = motion.toolbox_seq_runner:main',
             'home_on_start = motion.home_on_start:main',
             'tool_action_server = motion.tool_action_server:main',
+            'toolbox_scan = motion.toolbox_scan_node:main',
         ],
     },
 )

@@ -1,19 +1,23 @@
 """dashboard_node.py
-───────────────────
+────────────────────
 FastAPI + WebSocket 대시보드 ROS2 노드.
 
-카메라 2대 MJPEG 스트림, 그리퍼 전류 파형, fetch/return/home/E-stop 버튼,
-DB 상태 / 이벤트 로그 탭. 위젯별 독립 health 표시 — 일부 소스 장애 시 페이지 유지.
+카메라 4종 MJPEG 스트림 (ROS2 토픽 기반):
+  /cam/gripper   ← /c270/image_raw          (그리퍼 원본)
+  /cam/top       ← /d455f/color/image_raw   (탑뷰 원본)
+  /cam/annotated ← /vision/debug/annotated  (YOLO 어노테이션)
+  /cam/mask      ← /vision/debug/mask       (세그멘테이션 마스크)
+
+검출 현황 실시간, 그리퍼 전류 파형,
+fetch/return/home/E-stop 버튼, DB 상태 / 이벤트 로그 탭.
 
 의존 (pip): fastapi uvicorn opencv-python-headless
-            (RealSense는 선택: pyrealsense2)
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sqlite3
 import threading
 import time
@@ -25,8 +29,8 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy
-from sensor_msgs.msg import JointState
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
+from sensor_msgs.msg import Image as ImgMsg, JointState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
@@ -38,8 +42,16 @@ try:
 except ImportError:
     _CV2_OK = False
 
+# cv_bridge는 NumPy 1.x/2.x 충돌 위험이 있으므로 사용하지 않는다.
+# ROS Image → numpy 변환은 _imgmsg_to_bgr()에서 직접 처리.
+
 try:
-    import fastapi
+    from vision_msgs.msg import Detection2DArray
+    _VISION_OK = True
+except ImportError:
+    _VISION_OK = False
+
+try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
     from fastapi.responses import HTMLResponse, StreamingResponse
     import uvicorn
@@ -49,70 +61,28 @@ except ImportError:
 
 _HOST = "0.0.0.0"
 _PORT = 8080
-_GRIPPER_CURRENT_MAXLEN = 200  # 파형 표시용 최근 N개
+_GRIPPER_CURRENT_MAXLEN = 200
+_FRAME_STALE_SEC = 5.0   # 이 시간 이상 미수신 → stale
+
+_CAM_TOPICS: dict[str, str] = {
+    "gripper":           "/c270/image_raw",
+    "top":               "/d455f/color/image_raw",
+    "gripper_annotated": "/vision/debug/gripper/annotated",
+    "gripper_mask":      "/vision/debug/gripper/mask",
+    "top_annotated":     "/vision/debug/top_view/annotated",
+    "top_mask":          "/vision/debug/top_view/mask",
+}
 
 
-class CameraWorker:
-    """독립 카메라 스레드 — 장애 시 placeholder 프레임 반환."""
-
-    _PLACEHOLDER: bytes | None = None
-
-    def __init__(self, device: str, name: str, fourcc: str = "YUYV") -> None:
-        self.name = name
-        self._device = device
-        self._fourcc = fourcc
-        self._frame: bytes | None = None
-        self._lock = threading.Lock()
-        self._health = "error"
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    @classmethod
-    def _get_placeholder(cls) -> bytes:
-        if cls._PLACEHOLDER is None:
-            if _CV2_OK:
-                import numpy as np
-                img = np.zeros((240, 320, 3), dtype=np.uint8)
-                cv2.putText(img, "CAM OFFLINE", (40, 130),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 80, 200), 2)
-                _, buf = cv2.imencode(".jpg", img)
-                cls._PLACEHOLDER = buf.tobytes()
-            else:
-                cls._PLACEHOLDER = b""
-        return cls._PLACEHOLDER
-
-    def _run(self) -> None:
-        while True:
-            if not _CV2_OK:
-                time.sleep(5)
-                continue
-            cap = cv2.VideoCapture(self._device)
-            if not cap.isOpened():
-                self._health = "error"
-                time.sleep(3)
-                continue
-            if self._fourcc:
-                cap.set(cv2.CAP_PROP_FOURCC,
-                        cv2.VideoWriter_fourcc(*self._fourcc))
-            self._health = "ok"
-            while True:
-                ok, frame = cap.read()
-                if not ok:
-                    self._health = "error"
-                    break
-                _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-                with self._lock:
-                    self._frame = buf.tobytes()
-            cap.release()
-            time.sleep(2)
-
-    def get_frame(self) -> bytes:
-        with self._lock:
-            return self._frame or self._get_placeholder()
-
-    @property
-    def health(self) -> str:
-        return self._health
+def _make_placeholder() -> bytes:
+    if not _CV2_OK:
+        return b""
+    import numpy as np
+    img = np.zeros((240, 320, 3), dtype=np.uint8)
+    cv2.putText(img, "NO SIGNAL", (50, 130),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (40, 80, 200), 2)
+    _, buf = cv2.imencode(".jpg", img)
+    return buf.tobytes()
 
 
 class DashboardNode(Node):
@@ -122,9 +92,6 @@ class DashboardNode(Node):
         super().__init__("dashboard_node")
 
         self.declare_parameter("db_path", "~/robot_tools.db")
-        self.declare_parameter("gripper_cam", "/dev/gripper_cam")
-        self.declare_parameter("top_cam", "/dev/top_cam")
-
         self._db_path = Path(
             self.get_parameter("db_path").get_parameter_value().string_value
         ).expanduser()
@@ -137,74 +104,121 @@ class DashboardNode(Node):
             "tool_id": "socket_19mm",
             "gripper_current": 0,
             "gripper_position": 0,
-            "health": {
-                "robot": "stale",
-                "plc": "stale",
-                "db": "stale",
-                "gripper_cam": "stale",
-                "top_cam": "stale",
-            },
+            "detections": {"gripper": [], "top_view": []},
+            "health": {"robot": "stale", "plc": "stale", "db": "stale"},
         }
         self._state_lock = threading.Lock()
         self._gripper_history: deque[float] = deque(maxlen=_GRIPPER_CURRENT_MAXLEN)
         self._ws_clients: list[WebSocket] = []
         self._ws_lock = threading.Lock()
-        self._web_loop = None  # FastAPI asyncio 루프 참조 (브로드캐스트용)
+        self._web_loop = None
 
-        # ── ROS2 구독 ────────────────────────────────────────────────────
-        qos_r = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
+        # ── 카메라 프레임 저장 ────────────────────────────────────────────
+        _ph = _make_placeholder()
+        self._frames: dict[str, bytes] = {k: _ph for k in _CAM_TOPICS}
+        self._frame_times: dict[str, float] = {k: 0.0 for k in _CAM_TOPICS}
+        self._frames_lock = threading.Lock()
+
+        # ── ROS2 구독 — 카메라 이미지 ────────────────────────────────────
+        for name, topic in _CAM_TOPICS.items():
+            self.create_subscription(
+                ImgMsg, topic,
+                lambda msg, _n=name: self._on_image(msg, _n),
+                qos_profile_sensor_data,
+            )
+
+        # ── ROS2 구독 — 시스템 상태 ───────────────────────────────────────
+        qos_r  = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
         qos_be = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.BEST_EFFORT)
+        self.create_subscription(RobotStatus, "/robot/status", self._on_robot_status, qos_r)
+        self.create_subscription(String, "/plc/system_state", self._on_plc_state, qos_be)
+        self.create_subscription(JointState, "/gripper/state", self._on_gripper_state, qos_be)
 
-        self._robot_sub = self.create_subscription(
-            RobotStatus, "/robot/status", self._on_robot_status, qos_r
-        )
-        self._plc_sub = self.create_subscription(
-            String, "/plc/system_state", self._on_plc_state, qos_be
-        )
-        self._gripper_sub = self.create_subscription(
-            JointState, "/gripper/state", self._on_gripper_state, qos_be
-        )
+        # ── ROS2 구독 — 검출 (yolo_node는 BEST_EFFORT로 발행) ─────────────
+        if _VISION_OK:
+            _qos_det = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.BEST_EFFORT)
+            self.create_subscription(
+                Detection2DArray, "/vision/detections/gripper",
+                lambda m: self._on_detections(m, "gripper"), _qos_det,
+            )
+            self.create_subscription(
+                Detection2DArray, "/vision/detections/top_view",
+                lambda m: self._on_detections(m, "top_view"), _qos_det,
+            )
 
-        # ── ROS2 발행자 / 클라이언트 ─────────────────────────────────────
+        # ── ROS2 발행자 / 서비스 클라이언트 ─────────────────────────────
         self._intent_pub = self.create_publisher(Intent, "/voice/intent", 1)
-        self._home_cli = self.create_client(Trigger, "/tool_action_server/home")
-        self._estop_cli = self.create_client(Trigger, "/tool_action_server/estop")
-        self._estop_reset_cli = self.create_client(
-            Trigger, "/tool_action_server/estop_reset"
-        )
-        self._open_toolbox_cli = self.create_client(
-            Trigger, "/tool_action_server/open_toolbox"
-        )
-        self._close_toolbox_cli = self.create_client(
-            Trigger, "/tool_action_server/close_toolbox"
-        )
+        self._home_cli         = self.create_client(Trigger, "/tool_action_server/home")
+        self._estop_cli        = self.create_client(Trigger, "/tool_action_server/estop")
+        self._estop_reset_cli  = self.create_client(Trigger, "/tool_action_server/estop_reset")
+        self._open_toolbox_cli = self.create_client(Trigger, "/tool_action_server/open_toolbox")
+        self._close_toolbox_cli= self.create_client(Trigger, "/tool_action_server/close_toolbox")
 
-        # ── 카메라 워커 ───────────────────────────────────────────────────
-        gripper_cam_dev = (
-            self.get_parameter("gripper_cam").get_parameter_value().string_value
-        )
-        top_cam_dev = self.get_parameter("top_cam").get_parameter_value().string_value
-        self._cam_gripper = CameraWorker(gripper_cam_dev, "gripper_cam")
-        self._cam_top = CameraWorker(top_cam_dev, "top_cam", fourcc="")
-
-        # ── DB 폴링 타이머 ────────────────────────────────────────────────
+        # ── 타이머 ───────────────────────────────────────────────────────
         self.create_timer(2.0, self._poll_db)
+        self.create_timer(0.1, self._broadcast_state)   # 10 Hz
 
-        # ── WebSocket 브로드캐스트 타이머 ─────────────────────────────────
-        self.create_timer(0.2, self._broadcast_state)
-
-        # ── FastAPI 서버 스레드 ───────────────────────────────────────────
         if _FASTAPI_OK:
             threading.Thread(target=self._start_web, daemon=True).start()
-            self.get_logger().info(
-                f"[Dashboard] 웹서버 http://{_HOST}:{_PORT}"
-            )
+            self.get_logger().info(f"[Dashboard] http://{_HOST}:{_PORT}")
         else:
-            self.get_logger().error(
-                "[Dashboard] fastapi/uvicorn 없음 — pip install fastapi uvicorn"
-            )
+            self.get_logger().error("[Dashboard] fastapi/uvicorn 없음 — pip install fastapi uvicorn")
 
-    # ── ROS2 콜백 ────────────────────────────────────────────────────────────
+    # ── 카메라 콜백 ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _imgmsg_to_bgr(msg: ImgMsg):
+        """cv_bridge 없이 ROS Image → BGR numpy 배열 변환."""
+        import numpy as np
+        enc = msg.encoding.lower()
+        if enc in ("bgr8", "rgb8"):
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3).copy()
+            if enc == "rgb8":
+                arr = arr[:, :, ::-1]
+            return arr
+        if enc == "mono8":
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width)
+            return cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
+        if enc in ("16uc1",):
+            arr = np.frombuffer(msg.data, dtype=np.uint16).reshape(msg.height, msg.width)
+            norm = cv2.normalize(arr, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+            return cv2.cvtColor(norm, cv2.COLOR_GRAY2BGR)
+        return None
+
+    def _on_image(self, msg: ImgMsg, name: str) -> None:
+        if not _CV2_OK:
+            return
+        try:
+            frame = self._imgmsg_to_bgr(msg)
+            if frame is None:
+                return
+            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 72])
+            with self._frames_lock:
+                self._frames[name] = buf.tobytes()
+                self._frame_times[name] = time.monotonic()
+        except Exception as exc:
+            self.get_logger().debug(f"[Dashboard] {name} 변환 실패: {exc}")
+
+    # ── 검출 콜백 ────────────────────────────────────────────────────────────
+
+    def _on_detections(self, msg: "Detection2DArray", camera_type: str) -> None:
+        dets = []
+        for d in msg.detections:
+            if not d.results:
+                continue
+            h = d.results[0].hypothesis
+            dets.append({
+                "tool_id": h.class_id,
+                "score":   round(float(h.score), 2),
+                "cx":      round(d.bbox.center.position.x, 1),
+                "cy":      round(d.bbox.center.position.y, 1),
+                "w":       round(d.bbox.size_x, 1),
+                "h":       round(d.bbox.size_y, 1),
+            })
+        with self._state_lock:
+            self._state["detections"][camera_type] = dets
+
+    # ── 시스템 상태 콜백 ──────────────────────────────────────────────────────
 
     def _on_robot_status(self, msg: RobotStatus) -> None:
         with self._state_lock:
@@ -243,19 +257,26 @@ class DashboardNode(Node):
                 self._state["health"]["db"] = "error"
 
     def _broadcast_state(self) -> None:
-        """WebSocket 클라이언트에 현재 상태를 JSON으로 브로드캐스트."""
+        now = time.monotonic()
         with self._state_lock:
             snapshot = dict(self._state)
+            snapshot["detections"] = {
+                k: list(v) for k, v in self._state["detections"].items()
+            }
             snapshot["gripper_history"] = list(self._gripper_history)
-            snapshot["health"]["gripper_cam"] = self._cam_gripper.health
-            snapshot["health"]["top_cam"] = self._cam_top.health
+            with self._frames_lock:
+                cam_health = {
+                    name: "ok" if (now - self._frame_times[name]) < _FRAME_STALE_SEC
+                    else "stale"
+                    for name in _CAM_TOPICS
+                }
+            snapshot["health"] = {**snapshot["health"], **cam_health}
 
-        payload = json.dumps(snapshot)
-        dead: list[WebSocket] = []
-        with self._ws_lock:
-            clients = list(self._ws_clients)
         if self._web_loop is None:
             return
+        payload = json.dumps(snapshot)
+        with self._ws_lock:
+            clients = list(self._ws_clients)
         for ws in clients:
             fut = asyncio.run_coroutine_threadsafe(ws.send_text(payload), self._web_loop)
 
@@ -271,7 +292,7 @@ class DashboardNode(Node):
 
     # ── 버튼 액션 ────────────────────────────────────────────────────────────
 
-    def _pub_intent(self, intent_type: str, tool_id: str = "socket_19mm") -> None:
+    def _pub_intent(self, intent_type: str, tool_id: str) -> None:
         msg = Intent()
         msg.intent_type = intent_type
         msg.tool_id = tool_id
@@ -292,19 +313,24 @@ class DashboardNode(Node):
         r = result_holder[0]
         return {"success": r.success, "message": r.message}
 
-    # ── FastAPI 웹서버 ────────────────────────────────────────────────────────
+    # ── FastAPI 앱 ────────────────────────────────────────────────────────────
 
     def _start_web(self) -> None:
         app = self._build_app()
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        self._web_loop = loop  # ROS2 타이머에서 run_coroutine_threadsafe로 접근
+        self._web_loop = loop
         config = uvicorn.Config(app, host=_HOST, port=_PORT,
                                 loop="asyncio", log_level="warning")
         server = uvicorn.Server(config)
+        server.install_signal_handlers = lambda: None
         loop.run_until_complete(server.serve())
 
-    def _build_app(self) -> "FastAPI":
+    def _get_frame(self, name: str) -> bytes:
+        with self._frames_lock:
+            return self._frames.get(name, b"")
+
+    def _build_app(self):
         from fastapi import FastAPI, WebSocket, WebSocketDisconnect
         from fastapi.responses import HTMLResponse, StreamingResponse
 
@@ -318,32 +344,46 @@ class DashboardNode(Node):
         @app.get("/", response_class=HTMLResponse)
         async def index():
             p = static_dir / "index.html"
-            if p.exists():
-                return HTMLResponse(content=p.read_text())
-            return HTMLResponse("<h1>index.html not found</h1>", status_code=500)
+            return HTMLResponse(content=p.read_text() if p.exists()
+                                else "<h1>index.html not found</h1>",
+                                status_code=200 if p.exists() else 500)
 
-        def _mjpeg_gen(cam: CameraWorker):
+        def _mjpeg_gen(name: str):
             while True:
-                frame = cam.get_frame()
-                yield (
-                    b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
-                    + frame + b"\r\n"
-                )
-                time.sleep(0.05)
+                frame = self._get_frame(name)
+                if frame:
+                    yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+                time.sleep(0.04)   # ~25 fps max
 
         @app.get("/cam/gripper")
         async def cam_gripper():
-            return StreamingResponse(
-                _mjpeg_gen(self._cam_gripper),
-                media_type="multipart/x-mixed-replace; boundary=frame",
-            )
+            return StreamingResponse(_mjpeg_gen("gripper"),
+                                     media_type="multipart/x-mixed-replace; boundary=frame")
 
         @app.get("/cam/top")
         async def cam_top():
-            return StreamingResponse(
-                _mjpeg_gen(self._cam_top),
-                media_type="multipart/x-mixed-replace; boundary=frame",
-            )
+            return StreamingResponse(_mjpeg_gen("top"),
+                                     media_type="multipart/x-mixed-replace; boundary=frame")
+
+        @app.get("/cam/gripper_annotated")
+        async def cam_gripper_annotated():
+            return StreamingResponse(_mjpeg_gen("gripper_annotated"),
+                                     media_type="multipart/x-mixed-replace; boundary=frame")
+
+        @app.get("/cam/gripper_mask")
+        async def cam_gripper_mask():
+            return StreamingResponse(_mjpeg_gen("gripper_mask"),
+                                     media_type="multipart/x-mixed-replace; boundary=frame")
+
+        @app.get("/cam/top_annotated")
+        async def cam_top_annotated():
+            return StreamingResponse(_mjpeg_gen("top_annotated"),
+                                     media_type="multipart/x-mixed-replace; boundary=frame")
+
+        @app.get("/cam/top_mask")
+        async def cam_top_mask():
+            return StreamingResponse(_mjpeg_gen("top_mask"),
+                                     media_type="multipart/x-mixed-replace; boundary=frame")
 
         @app.websocket("/ws")
         async def ws_endpoint(ws: WebSocket):
@@ -364,17 +404,14 @@ class DashboardNode(Node):
 
         @app.post("/action/fetch")
         async def action_fetch(tool_id: str = "socket_19mm"):
-            self._pub_intent("fetch", tool_id=tool_id)
-            return {"ok": True}
+            self._pub_intent("fetch", tool_id)
+            return {"ok": True, "message": f"fetch {tool_id} 전송"}
 
         @app.post("/action/return")
         async def action_return(tool_id: str = "socket_19mm"):
-            self._pub_intent("return", tool_id=tool_id)
-            return {"ok": True}
+            self._pub_intent("return", tool_id)
+            return {"ok": True, "message": f"return {tool_id} 전송"}
 
-        # 아래 3개는 _call_trigger가 동기 블로킹(threading.Event.wait)이므로
-        # async def 대신 def로 선언 — FastAPI가 threadpool에서 실행해 이벤트 루프
-        # (WebSocket 브로드캐스트·MJPEG·기타 요청)를 막지 않는다.
         @app.post("/action/home")
         def action_home():
             return self._call_trigger(self._home_cli)
@@ -418,7 +455,9 @@ class DashboardNode(Node):
                 with sqlite3.connect(str(self._db_path), timeout=2) as conn:
                     conn.row_factory = sqlite3.Row
                     rows = conn.execute(
-                        "SELECT * FROM tool_events ORDER BY timestamp DESC LIMIT 100"
+                        "SELECT tool_id, event_type, track, "
+                        "status_before, status_after, notes, timestamp "
+                        "FROM tool_events ORDER BY timestamp DESC LIMIT 100"
                     ).fetchall()
                 return [dict(r) for r in rows]
             except Exception as e:

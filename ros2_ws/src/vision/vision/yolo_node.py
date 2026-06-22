@@ -23,7 +23,6 @@ import cv2
 import numpy as np
 import rclpy
 import yaml
-from cv_bridge import CvBridge
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Image
@@ -77,7 +76,6 @@ class YoloNode(Node):
 
         model_path = yolo_cfg.get(_MODEL_KEYS[camera_type])
         self._model = self._load_model(model_path)
-        self._bridge = CvBridge()
 
         image_topic: str = _CAMERA_TOPICS[camera_type]
 
@@ -95,8 +93,12 @@ class YoloNode(Node):
         )
 
         if self._publish_debug:
-            self._debug_pub = self.create_publisher(Image, "/vision/debug/annotated", 1)
-            self._mask_pub = self.create_publisher(Image, "/vision/debug/mask", 1)
+            self._debug_pub = self.create_publisher(
+                Image, f"/vision/debug/{camera_type}/annotated", 1
+            )
+            self._mask_pub = self.create_publisher(
+                Image, f"/vision/debug/{camera_type}/mask", 1
+            )
         else:
             self._debug_pub = None
             self._mask_pub = None
@@ -116,6 +118,40 @@ class YoloNode(Node):
                 f"classes={len(self._class_names)} conf={self._conf} device={self._device}"
             )
 
+    @staticmethod
+    def _imgmsg_to_bgr(msg: Image) -> np.ndarray:
+        enc = msg.encoding.lower()
+        if enc == "bgr8":
+            return np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3).copy()
+        if enc == "rgb8":
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3).copy()
+            return arr[:, :, ::-1]
+        if enc == "mono8":
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width)
+            return cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
+        if enc in ("yuv422_yuy2", "yuyv"):
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 2)
+            return cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_YUYV)
+        raise ValueError(f"[yolo_node] 지원하지 않는 encoding: {enc}")
+
+    @staticmethod
+    def _bgr_to_imgmsg(arr: np.ndarray, encoding: str = "bgr8") -> Image:
+        msg = Image()
+        msg.height, msg.width = arr.shape[:2]
+        msg.encoding = encoding
+        msg.step = arr.shape[1] * (arr.shape[2] if arr.ndim == 3 else 1)
+        msg.data = arr.tobytes()
+        return msg
+
+    @staticmethod
+    def _mono_to_imgmsg(arr: np.ndarray) -> Image:
+        msg = Image()
+        msg.height, msg.width = arr.shape
+        msg.encoding = "mono8"
+        msg.step = arr.shape[1]
+        msg.data = arr.tobytes()
+        return msg
+
     def _load_model(self, model_path: str | None):
         if model_path is None:
             return None
@@ -132,7 +168,7 @@ class YoloNode(Node):
         if self._model is None:
             return
 
-        rgb = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        rgb = self._imgmsg_to_bgr(msg)
         results = self._model(
             rgb,
             conf=self._conf,
@@ -147,19 +183,19 @@ class YoloNode(Node):
         if self._gripper_mask_pub is not None:
             best_mask = self._build_best_mask(rgb, results[0])
             if best_mask is not None:
-                mask_msg = self._bridge.cv2_to_imgmsg(best_mask, encoding="mono8")
+                mask_msg = self._mono_to_imgmsg(best_mask)
                 mask_msg.header = msg.header
                 self._gripper_mask_pub.publish(mask_msg)
 
         if self._debug_pub is not None:
             annotated = results[0].plot()
-            debug_msg = self._bridge.cv2_to_imgmsg(annotated, encoding="bgr8")
+            debug_msg = self._bgr_to_imgmsg(annotated, "bgr8")
             debug_msg.header = msg.header
             self._debug_pub.publish(debug_msg)
 
             if self._mask_pub is not None and results[0].masks is not None:
                 mask_vis = self._build_mask_image(rgb, results[0])
-                mask_msg = self._bridge.cv2_to_imgmsg(mask_vis, encoding="bgr8")
+                mask_msg = self._bgr_to_imgmsg(mask_vis, "bgr8")
                 mask_msg.header = msg.header
                 self._mask_pub.publish(mask_msg)
 
