@@ -45,12 +45,13 @@ from motion.sequence_engine import SequenceEngine
 from unit_actions.toolbox_motion import (
     drawer_close_seq,
     drawer_open_seq,
+    scan_layer_seq,
     fixed_fetch_seq,
     home_seq,
     vision_return_seq,
 )
 
-_VALID_PHASES = frozenset({"open_drawer", "fetch", "return", "close_drawer", "home"})
+_VALID_PHASES = frozenset({"open_drawer", "fetch", "return", "close_drawer", "home", "scan_pose"})
 _DEFAULT_TCP_NAME   = "GripperDA_v1"
 _DEFAULT_CONFIG_PATH = "/home/kg/assistant/config/toolbox.yaml"
 _STANDALONE_LAYER   = 1   # ~/open_toolbox · ~/close_toolbox 기본 layer
@@ -119,6 +120,12 @@ class ExecutePhaseServer(Node):
         )
         self._close_srv = self.create_service(
             Trigger, "~/close_toolbox", self._on_close_toolbox, callback_group=self._normal_cbg
+        )
+        self._open_srv_l2 = self.create_service(
+            Trigger, "~/open_toolbox_l2", self._on_open_toolbox_l2, callback_group=self._normal_cbg
+        )
+        self._close_srv_l2 = self.create_service(
+            Trigger, "~/close_toolbox_l2", self._on_close_toolbox_l2, callback_group=self._normal_cbg
         )
 
         # ── TCP 초기 설정 타이머 ─────────────────────────────────────────────
@@ -240,6 +247,8 @@ class ExecutePhaseServer(Node):
             return drawer_close_seq(layer_id)
         if phase == "home":
             return home_seq()
+        if phase == "scan_pose":
+            return scan_layer_seq(getattr(self._engine, "_fetch_scan_j_deg", None))
         return None
 
     # ── 서비스 핸들러 ────────────────────────────────────────────────────────
@@ -278,12 +287,22 @@ class ExecutePhaseServer(Node):
 
     def _on_open_toolbox(self, _req, response: Trigger.Response) -> Trigger.Response:
         return self._run_service_seq(
-            drawer_open_seq(_STANDALONE_LAYER), "open_toolbox", response
+            drawer_open_seq(_STANDALONE_LAYER), "open_toolbox_l1", response
         )
 
     def _on_close_toolbox(self, _req, response: Trigger.Response) -> Trigger.Response:
         return self._run_service_seq(
-            drawer_close_seq(_STANDALONE_LAYER), "close_toolbox", response
+            drawer_close_seq(_STANDALONE_LAYER), "close_toolbox_l1", response
+        )
+
+    def _on_open_toolbox_l2(self, _req, response: Trigger.Response) -> Trigger.Response:
+        return self._run_service_seq(
+            drawer_open_seq(2), "open_toolbox_l2", response
+        )
+
+    def _on_close_toolbox_l2(self, _req, response: Trigger.Response) -> Trigger.Response:
+        return self._run_service_seq(
+            drawer_close_seq(2), "close_toolbox_l2", response
         )
 
     def _run_service_seq(

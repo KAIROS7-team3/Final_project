@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+import subprocess
 import threading
 import time
 from collections import deque
@@ -31,7 +32,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Image as ImgMsg, JointState
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
 from interfaces.msg import Intent, RobotStatus
@@ -148,11 +149,23 @@ class DashboardNode(Node):
 
         # ── ROS2 발행자 / 서비스 클라이언트 ─────────────────────────────
         self._intent_pub = self.create_publisher(Intent, "/voice/intent", 1)
-        self._home_cli         = self.create_client(Trigger, "/tool_action_server/home")
-        self._estop_cli        = self.create_client(Trigger, "/tool_action_server/estop")
-        self._estop_reset_cli  = self.create_client(Trigger, "/tool_action_server/estop_reset")
-        self._open_toolbox_cli = self.create_client(Trigger, "/tool_action_server/open_toolbox")
-        self._close_toolbox_cli= self.create_client(Trigger, "/tool_action_server/close_toolbox")
+        self._plc_reset_pub = self.create_publisher(Bool, "/plc_reset", 1)
+        self._home_cli        = self.create_client(Trigger, "/tool_action_server/home")
+        self._estop_cli       = self.create_client(Trigger, "/tool_action_server/estop")
+        self._estop_reset_cli = self.create_client(Trigger, "/tool_action_server/estop_reset")
+        self._open_toolbox_cli  = self.create_client(Trigger, "/tool_action_server/open_toolbox")
+        self._close_toolbox_cli = self.create_client(Trigger, "/tool_action_server/close_toolbox")
+        self._open_toolbox_clis  = {
+            1: self._open_toolbox_cli,
+            2: self.create_client(Trigger, "/tool_action_server/open_toolbox_l2"),
+        }
+        self._close_toolbox_clis = {
+            1: self._close_toolbox_cli,
+            2: self.create_client(Trigger, "/tool_action_server/close_toolbox_l2"),
+        }
+
+        self._scan_procs: dict[int, subprocess.Popen] = {}   # layer_id → proc
+        self._config_dir = Path("config")
 
         # ── 타이머 ───────────────────────────────────────────────────────
         self.create_timer(2.0, self._poll_db)
@@ -299,19 +312,129 @@ class DashboardNode(Node):
         msg.raw_utterance = "dashboard"
         self._intent_pub.publish(msg)
 
-    def _call_trigger(self, client) -> dict:
+    def _call_trigger(self, client, timeout: float = 60.0) -> dict:
         if not client.service_is_ready():
-            return {"success": False, "message": "서비스 미준비"}
+            return {"success": False, "message": "서비스 미준비 — tool_action_server 실행 확인"}
         req = Trigger.Request()
         future = client.call_async(req)
         done = threading.Event()
         result_holder: list = []
         future.add_done_callback(lambda f: (result_holder.append(f.result()), done.set()))
-        done.wait(timeout=5.0)
+        done.wait(timeout=timeout)
         if not result_holder:
-            return {"success": False, "message": "타임아웃"}
+            return {"success": False, "message": f"타임아웃 ({timeout:.0f}s) — 동작 완료 후 재시도"}
         r = result_holder[0]
         return {"success": r.success, "message": r.message}
+
+    # ── 운영/테스트 액션 ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _find_scan_script() -> str | None:
+        """toolbox_scan_node.py 소스 경로를 탐색."""
+        candidates = [
+            Path("ros2_ws/src/motion/motion/toolbox_scan_node.py"),
+            Path(__file__).parent.parent.parent.parent / "motion/motion/toolbox_scan_node.py",
+        ]
+        for p in candidates:
+            if p.exists():
+                return str(p)
+        return None
+
+    def _start_scan(self, layer_id: int) -> dict:
+        """toolbox_scan_node를 백그라운드 서브프로세스로 기동."""
+        if layer_id not in (1, 2):
+            return {"success": False, "message": f"layer_id={layer_id} 는 1 또는 2만 허용"}
+        proc = self._scan_procs.get(layer_id)
+        if proc is not None and proc.poll() is None:
+            return {"success": False, "message": f"{layer_id}층 스캔이 이미 실행 중입니다"}
+        script = self._find_scan_script()
+        if script is None:
+            return {"success": False, "message": "toolbox_scan_node.py 를 찾을 수 없습니다"}
+        try:
+            p = subprocess.Popen(
+                ["python3", script, "--ros-args", "-p", f"layer_id:={layer_id}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._scan_procs[layer_id] = p
+            self.get_logger().info(f"[Dashboard] 스캔 시작 layer_id={layer_id} pid={p.pid}")
+            return {"success": True, "message": f"{layer_id}층 스캔 시작 (pid={p.pid}). 완료 시 config/에 yaml 저장됩니다."}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def _scan_status(self, layer_id: int) -> dict:
+        proc = self._scan_procs.get(layer_id)
+        if proc is None:
+            return {"running": False, "status": "미실행"}
+        rc = proc.poll()
+        if rc is None:
+            return {"running": True,  "status": f"실행 중 (pid={proc.pid})"}
+        return {"running": False, "status": f"완료 (exit={rc})"}
+
+    def _scan_results(self) -> list[dict]:
+        """config/ 폴더의 toolbox_scan_*.yaml 파일 목록 반환."""
+        files = sorted(self._config_dir.glob("toolbox_scan_*.yaml"), reverse=True)
+        out = []
+        for f in files:
+            try:
+                import yaml
+                data = yaml.safe_load(f.read_text())
+                out.append({"filename": f.name, "meta": data.get("scan_meta", {}),
+                             "tools": data.get("tools", [])})
+            except Exception:
+                out.append({"filename": f.name, "meta": {}, "tools": []})
+        return out
+
+    def _db_reset_all(self) -> dict:
+        """모든 공구 상태를 in_slot으로 초기화."""
+        try:
+            if not self._db_path.exists():
+                return {"success": False, "message": "DB 파일 없음"}
+            with sqlite3.connect(str(self._db_path), timeout=5) as conn:
+                conn.execute("UPDATE tools SET current_status='in_slot', last_updated=strftime('%Y-%m-%dT%H:%M:%fZ','now')")
+                conn.execute(
+                    "INSERT INTO system_events(event_type, track, severity, notes) "
+                    "VALUES ('boot','A','info','dashboard: 전체 공구 in_slot 초기화')"
+                )
+                conn.commit()
+            return {"success": True, "message": "모든 공구 상태가 in_slot으로 초기화됐습니다."}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def _db_set_tool_status(self, tool_id: str, status: str) -> dict:
+        valid = {"in_slot", "out", "staged", "missing", "fod_alert"}
+        if status not in valid:
+            return {"success": False, "message": f"유효하지 않은 상태: {status}. 허용: {sorted(valid)}"}
+        try:
+            if not self._db_path.exists():
+                return {"success": False, "message": "DB 파일 없음"}
+            with sqlite3.connect(str(self._db_path), timeout=5) as conn:
+                n = conn.execute(
+                    "UPDATE tools SET current_status=?, last_updated=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE tool_id=?",
+                    (status, tool_id),
+                ).rowcount
+                conn.commit()
+            if n == 0:
+                return {"success": False, "message": f"tool_id={tool_id} 없음"}
+            return {"success": True, "message": f"{tool_id} → {status}"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def _plc_reset(self) -> dict:
+        msg = Bool()
+        msg.data = True
+        self._plc_reset_pub.publish(msg)
+        return {"success": True, "message": "PLC 리셋 신호 전송 완료 (/plc_reset)"}
+
+    def _get_ros2_nodes(self) -> list[str]:
+        try:
+            r = subprocess.run(
+                ["ros2", "node", "list"],
+                capture_output=True, text=True, timeout=5
+            )
+            return [n.strip() for n in r.stdout.strip().splitlines() if n.strip()]
+        except Exception as e:
+            return [f"오류: {e}"]
 
     # ── FastAPI 앱 ────────────────────────────────────────────────────────────
 
@@ -414,23 +537,25 @@ class DashboardNode(Node):
 
         @app.post("/action/home")
         def action_home():
-            return self._call_trigger(self._home_cli)
+            return self._call_trigger(self._home_cli, timeout=60.0)
 
         @app.post("/action/estop")
         def action_estop():
-            return self._call_trigger(self._estop_cli)
+            return self._call_trigger(self._estop_cli, timeout=5.0)
 
         @app.post("/action/estop_reset")
         def action_estop_reset():
-            return self._call_trigger(self._estop_reset_cli)
+            return self._call_trigger(self._estop_reset_cli, timeout=5.0)
 
         @app.post("/action/open_toolbox")
-        def action_open_toolbox():
-            return self._call_trigger(self._open_toolbox_cli)
+        def action_open_toolbox(layer_id: int = 1):
+            cli = self._open_toolbox_clis.get(layer_id, self._open_toolbox_cli)
+            return self._call_trigger(cli, timeout=30.0)
 
         @app.post("/action/close_toolbox")
-        def action_close_toolbox():
-            return self._call_trigger(self._close_toolbox_cli)
+        def action_close_toolbox(layer_id: int = 1):
+            cli = self._close_toolbox_clis.get(layer_id, self._close_toolbox_cli)
+            return self._call_trigger(cli, timeout=30.0)
 
         @app.get("/api/db/tools")
         async def api_tools():
@@ -462,6 +587,37 @@ class DashboardNode(Node):
                 return [dict(r) for r in rows]
             except Exception as e:
                 return {"error": str(e)}
+
+        # ── 운영/테스트 API ────────────────────────────────────────────────
+
+        @app.post("/action/scan")
+        def action_scan(layer_id: int = 1):
+            self._pub_intent("scan", str(layer_id))
+            return {"ok": True, "message": f"{layer_id}층 스캔 명령 전송 (orchestrator BT 처리)"}
+
+        @app.get("/api/scan/status")
+        def api_scan_status(layer_id: int = 1):
+            return self._scan_status(layer_id)
+
+        @app.get("/api/scan/results")
+        def api_scan_results():
+            return self._scan_results()
+
+        @app.post("/action/db_reset_all")
+        def action_db_reset_all():
+            return self._db_reset_all()
+
+        @app.post("/action/db_set_status")
+        def action_db_set_status(tool_id: str, status: str):
+            return self._db_set_tool_status(tool_id, status)
+
+        @app.post("/action/plc_reset")
+        def action_plc_reset():
+            return self._plc_reset()
+
+        @app.get("/api/system/nodes")
+        def api_system_nodes():
+            return {"nodes": self._get_ros2_nodes()}
 
         return app
 

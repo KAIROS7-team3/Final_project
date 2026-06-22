@@ -480,6 +480,16 @@ VISION_FETCH_SCAN_J_DEG:  list = [-30.1,  15.5,  74.7,  20.9,  101.2,  -27.8]   
 VISION_RETURN_SCAN_J_DEG: list = [-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]  # return 그리퍼 캠 스캔 자세 (deg) — unit_action_server에서 변환 금지
 
 
+def scan_layer_seq(scan_j_deg: list | None = None) -> list[Step]:
+    """서랍이 열린 상태에서 그리퍼 캠 스캔 자세로 이동.
+
+    BT에서 open_drawer → scan_pose → (오케스트레이터가 데이터 수집) → home → close_drawer
+    순서로 사용. 이 함수는 스캔 자세 이동만 담당한다.
+    """
+    _scan = scan_j_deg if scan_j_deg is not None else VISION_FETCH_SCAN_J_DEG
+    return [mj_abs(_scan)]
+
+
 def vision_fetch_seq(scan_j_deg: list | None = None) -> list[Step]:
     """그리퍼 캠 XY + grasp_z_mm 기반 공구 fetch 시퀀스 (14단계).
 

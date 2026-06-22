@@ -1,6 +1,6 @@
 """orchestrator_node — Behavior Tree를 실행하는 메인 ROS2 노드.
 
-/voice/intent, /vision/tracked_poses, /vision/scene_context를 구독한다.
+/voice/intent, /vision/tracked_poses, /vision/scene_context, /vision/tool_gripper_pose를 구독한다.
 Track A/B 전용.
 """
 from __future__ import annotations
@@ -14,8 +14,9 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
+from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import String
-from vision_msgs.msg import Detection3DArray
+from vision_msgs.msg import Detection2DArray, Detection3DArray
 
 from interfaces.action import ExecutePhase
 from interfaces.msg import Intent, RobotStatus
@@ -28,12 +29,14 @@ from orchestrator.blackboard import (
 )
 from orchestrator.bt_nodes.fetch_tool import build_fetch_subtree
 from orchestrator.bt_nodes.return_tool import build_return_subtree
+from orchestrator.bt_nodes.scan_layer import build_scan_subtree
 
 # interfaces.md §4 QoS
 _QOS_INTENT = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
 _QOS_TRACKED_POSES = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.BEST_EFFORT)
 _QOS_SCENE_CONTEXT = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
 _QOS_ROBOT_STATUS = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
+_QOS_GRIPPER_POSE = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.BEST_EFFORT)
 
 _MAX_PENDING_S7_LOGS = 16
 _UPDATE_STATUS_TIMEOUT_S = 5.0
@@ -108,6 +111,23 @@ class OrchestratorNode(Node):
         self._fetch_tree.setup(timeout=5)
         self._return_tree.setup(timeout=5)
 
+        # ── 스캔 공유 버퍼 (CollectAndSave BT 노드와 공유) ───────────────
+        self._scan_pose_buf: list[dict] = []
+        self._scan_pose_buf_lock = threading.Lock()
+
+        _scan_kwargs = dict(
+            execute_phase_client=self._exec_phase_cli,
+            pose_buf=self._scan_pose_buf,
+            buf_lock=self._scan_pose_buf_lock,
+            publish_status_fn=self._publish_status,
+            set_plc_fn=self._set_plc,
+            log_error_fn=self._log_error_event,
+        )
+        self._scan_tree_l1 = build_scan_subtree(layer_id=1, **_scan_kwargs)
+        self._scan_tree_l2 = build_scan_subtree(layer_id=2, **_scan_kwargs)
+        self._scan_tree_l1.setup(timeout=5)
+        self._scan_tree_l2.setup(timeout=5)
+
         # ── 상태 ─────────────────────────────────────────────────────────
         self._active_tool_id: str = ""
         self._latest_scene_context: str | None = None
@@ -140,6 +160,18 @@ class OrchestratorNode(Node):
             String, "/vision/scene_context", self._on_scene_context, _QOS_SCENE_CONTEXT,
             callback_group=self._normal_cbg,
         )
+        self._gripper_pose_sub = self.create_subscription(
+            PoseStamped, "/vision/tool_gripper_pose",
+            self._on_gripper_pose, _QOS_GRIPPER_POSE,
+            callback_group=self._normal_cbg,
+        )
+        self._gripper_det_sub = self.create_subscription(
+            Detection2DArray, "/vision/detections/gripper",
+            self._on_gripper_det, _QOS_GRIPPER_POSE,
+            callback_group=self._normal_cbg,
+        )
+        self._latest_gripper_det: Detection2DArray | None = None
+        self._latest_gripper_det_stamp: float = 0.0
 
         self.get_logger().info(
             "[OrchestratorNode] ready — listening on /voice/intent"
@@ -191,6 +223,9 @@ class OrchestratorNode(Node):
                 tree = self._fetch_tree
             elif intent_type == "return":
                 tree = self._return_tree
+            elif intent_type == "scan":
+                layer = int(tool_id) if tool_id in ("1", "2") else 1
+                tree = self._scan_tree_l1 if layer == 1 else self._scan_tree_l2
             else:
                 self.get_logger().warning(
                     f"[OrchestratorNode] 알 수 없는 intent: {intent_type}"
@@ -335,6 +370,33 @@ class OrchestratorNode(Node):
 
     def _on_scene_context(self, msg: String) -> None:
         self._latest_scene_context = msg.data
+
+    def _on_gripper_det(self, msg: Detection2DArray) -> None:
+        """최신 그리퍼 detection을 보관 (gripper_pose와 timestamp 매칭용)."""
+        self._latest_gripper_det = msg
+        self._latest_gripper_det_stamp = (
+            msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        )
+
+    def _on_gripper_pose(self, msg: PoseStamped) -> None:
+        """스캔 중 그리퍼캠 XY를 버퍼에 누적. CollectAndSave BT 노드가 소비한다."""
+        det = self._latest_gripper_det
+        if det is None or not det.detections:
+            return
+        pose_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if abs(pose_stamp - self._latest_gripper_det_stamp) > 0.15:
+            return  # 타임스탬프 슬롭 초과 — 페어 스킵
+        best = max(det.detections, key=lambda d: d.results[0].hypothesis.score)
+        tool_id = best.results[0].hypothesis.class_id
+        if not tool_id:
+            return
+        entry = {
+            "tool_id": tool_id,
+            "x": msg.pose.position.x,
+            "y": msg.pose.position.y,
+        }
+        with self._scan_pose_buf_lock:
+            self._scan_pose_buf.append(entry)
 
     def _log_s7_rejection(self, msg: Intent) -> None:
         try:

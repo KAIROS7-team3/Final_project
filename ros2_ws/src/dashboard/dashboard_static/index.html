@@ -93,6 +93,7 @@
   <div class="tab active" onclick="switchTab('realtime', this)">실시간</div>
   <div class="tab" onclick="switchTab('db', this)">DB 상태</div>
   <div class="tab" onclick="switchTab('logs', this)">이벤트 로그</div>
+  <div class="tab" onclick="switchTab('ops', this)">운영/테스트</div>
 </div>
 
 <!-- ═══════════════════ 실시간 탭 ═══════════════════ -->
@@ -193,8 +194,12 @@
       <!-- 공구함 -->
       <div style="margin-bottom:6px;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600">공구함</div>
       <div class="btn-row" style="margin-bottom:10px">
-        <button class="btn btn-gray" onclick="doAction('open_toolbox')">📂 열기</button>
-        <button class="btn btn-gray" onclick="doAction('close_toolbox')">📁 닫기</button>
+        <select id="drawer-layer-select" class="btn btn-gray" style="padding:9px 10px">
+          <option value="1">1층</option>
+          <option value="2">2층</option>
+        </select>
+        <button class="btn btn-gray" onclick="doDrawer('open_toolbox')">📂 열기</button>
+        <button class="btn btn-gray" onclick="doDrawer('close_toolbox')">📁 닫기</button>
       </div>
 
       <hr class="section-divider">
@@ -245,6 +250,81 @@
       <thead><tr><th>시간</th><th>tool_id</th><th>event_type</th><th>track</th><th>전/후</th><th>notes</th></tr></thead>
       <tbody id="logs-body"><tr><td colspan="6" style="color:var(--text2)">로딩 중...</td></tr></tbody>
     </table>
+  </div>
+</div>
+
+<!-- ═══════════════════ 운영/테스트 탭 ═══════════════════ -->
+<div id="tab-ops" class="tab-content">
+  <div class="grid" style="max-width:1100px;grid-template-columns:1fr 1fr">
+
+    <!-- ── 공구함 스캔 ─────────────────────────────────── -->
+    <div class="card" style="grid-column:span 2">
+      <div class="card-title">공구함 스캔 (서랍 → 그리퍼캠 XY 수집)</div>
+      <div class="btn-row" style="margin-bottom:12px">
+        <button class="btn btn-blue"  onclick="startScan(1)" id="scan-btn-1">📷 1층 스캔</button>
+        <button class="btn btn-blue"  onclick="startScan(2)" id="scan-btn-2">📷 2층 스캔</button>
+        <span id="scan-status-1" style="font-size:12px;color:var(--text2)"></span>
+        <span id="scan-status-2" style="font-size:12px;color:var(--text2)"></span>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:12px">
+        ※ tool_action_server + yolo_node(gripper) + gripper_marker_scan_node 가 실행 중이어야 합니다.<br>
+        완료 시 config/toolbox_scan_YYYYMMDD_*.yaml 에 결과가 저장됩니다.
+      </div>
+      <div class="card-title" style="margin-top:4px">스캔 결과 파일</div>
+      <div id="scan-results-list" style="font-size:12px;color:var(--text2)">로딩 중...</div>
+      <button class="btn btn-gray" style="margin-top:8px;padding:4px 12px;font-size:12px" onclick="loadScanResults()">새로고침</button>
+    </div>
+
+    <!-- ── DB 운영 ─────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">DB 운영</div>
+
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px">전체 초기화 — 모든 공구를 in_slot으로 리셋</div>
+        <button class="btn btn-gray" onclick="dbResetAll()" style="border-color:var(--red);color:var(--red)">
+          ⚠ 전체 in_slot 초기화
+        </button>
+      </div>
+
+      <hr class="section-divider">
+
+      <div style="margin-bottom:8px;font-size:11px;color:var(--text2)">개별 공구 상태 변경</div>
+      <div class="btn-row" style="margin-bottom:8px">
+        <select id="db-tool-select" class="btn btn-gray" style="flex:1;min-width:150px">
+          <option value="socket_19mm">socket_19mm</option>
+          <option value="screwdriver">screwdriver</option>
+          <option value="utility_knife">utility_knife</option>
+          <option value="ratchet_wrench">ratchet_wrench</option>
+          <option value="multi_tool">multi_tool</option>
+          <option value="spanner_16mm">spanner_16mm</option>
+        </select>
+        <select id="db-status-select" class="btn btn-gray">
+          <option value="in_slot">in_slot</option>
+          <option value="out">out</option>
+          <option value="staged">staged</option>
+          <option value="missing">missing</option>
+          <option value="fod_alert">fod_alert</option>
+        </select>
+        <button class="btn btn-gray" onclick="dbSetStatus()">적용</button>
+      </div>
+    </div>
+
+    <!-- ── PLC / 시스템 ──────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">PLC / 시스템</div>
+
+      <div style="margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px">PLC 리셋 (/plc_reset 토픽 발행)</div>
+        <button class="btn btn-gray" onclick="plcReset()">🔄 PLC 리셋</button>
+      </div>
+
+      <hr class="section-divider">
+
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px">실행 중인 ROS2 노드</div>
+      <button class="btn btn-gray" style="margin-bottom:8px;padding:4px 12px;font-size:12px" onclick="loadNodes()">새로고침</button>
+      <div id="nodes-list" style="font-size:12px;color:var(--text2);line-height:1.8">—</div>
+    </div>
+
   </div>
 </div>
 
@@ -434,6 +514,16 @@ async function doEstop() {
   doAction('estop');
 }
 
+async function doDrawer(action) {
+  const layerId = document.getElementById('drawer-layer-select').value;
+  try {
+    const r = await fetch(`/action/${action}?layer_id=${layerId}`, { method: 'POST' });
+    const j = await r.json();
+    const msg = j.message ?? (j.ok ? '명령 전송' : '실패');
+    toast(msg, !j.ok && !j.success);
+  } catch (e) { toast('오류: ' + e.message, true); }
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // 탭
 // ────────────────────────────────────────────────────────────────────────────
@@ -444,6 +534,7 @@ function switchTab(id, el) {
   el.classList.add('active');
   if (id === 'db')   loadDB();
   if (id === 'logs') loadLogs();
+  if (id === 'ops')  { loadScanResults(); loadNodes(); pollScanStatus(); }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -497,6 +588,100 @@ async function loadLogs() {
     document.getElementById('logs-body').innerHTML =
       `<tr><td colspan="6" style="color:var(--red)">로드 실패: ${e}</td></tr>`;
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 운영/테스트 탭
+// ────────────────────────────────────────────────────────────────────────────
+let scanPollTimer = null;
+
+async function startScan(layerId) {
+  const btn = document.getElementById(`scan-btn-${layerId}`);
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/action/scan?layer_id=${layerId}`, { method: 'POST' });
+    const j = await r.json();
+    toast(j.message ?? (j.ok ? '스캔 명령 전송' : '실패'), !j.ok && !j.success);
+  } catch(e) { toast('스캔 시작 오류: ' + e.message, true); }
+  finally { setTimeout(() => { btn.disabled = false; }, 1000); }
+}
+
+async function pollScanStatus() {
+  clearTimeout(scanPollTimer);
+  for (const layer of [1, 2]) {
+    try {
+      const j = await (await fetch(`/api/scan/status?layer_id=${layer}`)).json();
+      const el = document.getElementById(`scan-status-${layer}`);
+      if (el) {
+        el.textContent = `${layer}층: ${j.status}`;
+        el.style.color = j.running ? 'var(--yellow)' : 'var(--text2)';
+      }
+    } catch(_) {}
+  }
+  // 실행 중이면 3초마다 폴링
+  scanPollTimer = setTimeout(async () => {
+    const anyRunning = [1,2].some(l => {
+      const el = document.getElementById(`scan-status-${l}`);
+      return el && el.style.color.includes('yellow');
+    });
+    if (anyRunning) pollScanStatus();
+  }, 3000);
+}
+
+async function loadScanResults() {
+  const el = document.getElementById('scan-results-list');
+  try {
+    const rows = await (await fetch('/api/scan/results')).json();
+    if (!rows.length) { el.textContent = '스캔 결과 파일 없음'; return; }
+    el.innerHTML = rows.map(r => {
+      const tools = (r.tools || []).map(t =>
+        `<span style="margin-right:12px">${t.tool_id}: x=${(t.grasp_pose_base?.x*1000||0).toFixed(1)}mm y=${(t.grasp_pose_base?.y*1000||0).toFixed(1)}mm [n=${t.samples}]</span>`
+      ).join('');
+      return `<div style="margin-bottom:8px;padding:8px;background:var(--bg3);border-radius:4px;border:1px solid var(--border)">
+        <div style="font-weight:600;margin-bottom:4px">${r.filename}</div>
+        <div style="color:var(--text2)">${tools || '데이터 없음'}</div>
+      </div>`;
+    }).join('');
+  } catch(e) { el.textContent = '로드 실패: ' + e; }
+}
+
+async function dbResetAll() {
+  if (!confirm('모든 공구 상태를 in_slot으로 초기화합니다. 계속하시겠습니까?')) return;
+  try {
+    const j = await (await fetch('/action/db_reset_all', { method: 'POST' })).json();
+    toast(j.message, !j.success);
+    if (j.success) loadDB();
+  } catch(e) { toast('오류: ' + e.message, true); }
+}
+
+async function dbSetStatus() {
+  const toolId = document.getElementById('db-tool-select').value;
+  const status = document.getElementById('db-status-select').value;
+  try {
+    const j = await (await fetch(`/action/db_set_status?tool_id=${encodeURIComponent(toolId)}&status=${encodeURIComponent(status)}`, { method: 'POST' })).json();
+    toast(j.message, !j.success);
+    if (j.success) loadDB();
+  } catch(e) { toast('오류: ' + e.message, true); }
+}
+
+async function plcReset() {
+  try {
+    const j = await (await fetch('/action/plc_reset', { method: 'POST' })).json();
+    toast(j.message, !j.success);
+  } catch(e) { toast('오류: ' + e.message, true); }
+}
+
+async function loadNodes() {
+  const el = document.getElementById('nodes-list');
+  el.textContent = '조회 중...';
+  try {
+    const j = await (await fetch('/api/system/nodes')).json();
+    const nodes = j.nodes || [];
+    if (!nodes.length) { el.textContent = '실행 중인 노드 없음'; return; }
+    el.innerHTML = nodes.map(n =>
+      `<div style="font-family:monospace;padding:2px 0">${n}</div>`
+    ).join('');
+  } catch(e) { el.textContent = '조회 실패: ' + e; }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
