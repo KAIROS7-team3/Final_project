@@ -943,9 +943,9 @@ class ToolActionServer(Node):
         )
 
         # 컴플라이언스 모드 ON (place 하강 직전)
-        stx = self._h_cfg.get(
-            "place_compliance_stiffness", [500.0, 500.0, 500.0, 100.0, 100.0, 100.0]
-        )
+        # E0509 Non-FTS: XYZ 3축만 유효 — 서비스는 float64[6] 고정이므로 회전 3개를 0으로 패딩
+        stx_raw = self._h_cfg.get("place_compliance_stiffness", [500.0, 500.0, 500.0])
+        stx = (list(stx_raw) + [0.0, 0.0, 0.0])[:6]
         c_req = TaskComplianceCtrl.Request()
         c_req.stx = [float(v) for v in stx]
         c_req.ref = DR_BASE
