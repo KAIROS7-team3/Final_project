@@ -75,15 +75,15 @@ def _load_roi() -> tuple[bool, tuple[int, int, int, int]]:
         cfg = yaml.safe_load(_HANDOVER_CFG.read_text())["handover"]
         enabled = cfg.get("roi_enabled", False)
         roi = (
-            int(cfg.get("roi_x_min", 441)),
-            int(cfg.get("roi_x_max", 585)),
-            int(cfg.get("roi_y_min", 248)),
-            int(cfg.get("roi_y_max", 449)),
+            int(cfg.get("roi_x_min", 330)),
+            int(cfg.get("roi_x_max", 578)),
+            int(cfg.get("roi_y_min", 140)),
+            int(cfg.get("roi_y_max", 441)),
         )
         return enabled, roi
     except Exception as e:
         print(f"[hand_viz] ROI yaml 로드 실패: {e} — 기본값 사용")
-        return True, (695, 839, 248, 449)
+        return True, (330, 578, 140, 441)
 
 
 def _load_handover_params() -> dict:
