@@ -473,8 +473,9 @@ class ToolActionServer(Node):
         sync_type=1로 이미 완료된 경우 즉시 True 반환."""
         deadline = time.monotonic() + timeout
 
-        # 이미 멈춰있으면 즉시 반환 (sync_type=1이 완료까지 기다린 경우)
-        time.sleep(0.1)
+        # 초기 대기: 5mm/s 저속 모션 가속 시간(acc=20mm/s² → ramp=0.25s) 고려
+        # 0.1s는 로봇이 아직 가속 전이라 vel≈0 → 완료로 오인하므로 0.5s로 연장
+        time.sleep(0.5)
         with self._joint_vel_lock:
             vels = self._joint_velocities
         if vels and max(abs(v) for v in vels) < still_thresh:
