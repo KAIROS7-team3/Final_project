@@ -1119,7 +1119,12 @@ class GripperNode(Node):
                 time.sleep(max(0.2, self._tcp_wd_period))
                 if not self._tcp_wd_enabled or self._cmd_transport != "tcp":
                     continue
-                if not self._socket_active or self._tcp_reconnect_inflight:
+                if self._tcp_reconnect_inflight:
+                    continue
+                # socket offline → DRL 포함 재연결 시도
+                if not self._socket_active:
+                    self.get_logger().warn("[gripper] TCP offline 감지 -> 재연결 시도")
+                    threading.Thread(target=self._reconnect_with_reinject, daemon=True).start()
                     continue
                 try:
                     self._send_frame({"type": "ping"})
@@ -1133,6 +1138,65 @@ class GripperNode(Node):
                     threading.Thread(target=self._reconnect_tcp_only, daemon=True).start()
             except Exception:
                 continue
+
+    def _reconnect_with_reinject(self) -> None:
+        """socket_active=False 복구: DRL 재주입 후 TCP 재연결."""
+        if not self._tcp_reconnect_lock.acquire(blocking=False):
+            return
+        self._tcp_reconnect_inflight = True
+        try:
+            if not self._tcp_external:
+                self.get_logger().info("[gripper] DRL 재주입 시작 (socket offline 복구)")
+                try:
+                    killer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    killer.settimeout(0.7)
+                    killer.connect((self._robot_ip, self._tcp_port))
+                    killer.sendall(b"STOP")
+                    killer.close()
+                    time.sleep(0.5)
+                except Exception:
+                    pass
+                self._call_drl(self._build_drl_server_code(), timeout_sec=10.0)
+                time.sleep(2.0)
+            # TCP 재연결
+            for attempt in range(10):
+                try:
+                    time.sleep(0.3 if attempt == 0 else 0.5)
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(3.0)
+                    sock.connect((self._robot_ip, self._tcp_port))
+                    self._configure_tcp_socket(sock)
+                    if self._sock:
+                        try:
+                            self._sock.close()
+                        except Exception:
+                            pass
+                    self._sock = sock
+                    self._tcp_rx_buf = bytearray()
+                    self._tcp_hello_seen = False
+                    self._tcp_state_seen = False
+                    self._tcp_pong_seen = False
+                    self._tcp_ack_seen = False
+                    self._tcp_sniff_logged = False
+                    self._socket_active = True
+                    self._recv_thread = threading.Thread(target=self._recv_loop, daemon=True)
+                    self._recv_thread.start()
+                    # DRL hello/state/pong 수신 대기 (플래그 리셋 후 GRIP 전 보장)
+                    if self._tcp_handshake(timeout_sec=3.0):
+                        self._last_pong_rx_t = time.time()
+                        self.get_logger().info("[gripper] TCP 재연결 성공 (offline 복구, handshake OK)")
+                        return
+                    self._socket_active = False
+                    self._sock.close()
+                    self._sock = None
+                except Exception as e:
+                    self.get_logger().warn(f"[gripper] TCP 재연결 대기 ({attempt+1}/10): {e}")
+            self.get_logger().error("[gripper] TCP offline 복구 실패")
+        except Exception as e:
+            self.get_logger().error(f"[gripper] offline 복구 예외: {e}")
+        finally:
+            self._tcp_reconnect_inflight = False
+            self._tcp_reconnect_lock.release()
 
     def _reconnect_tcp_only(self) -> None:
         if not self._tcp_reconnect_lock.acquire(blocking=False):

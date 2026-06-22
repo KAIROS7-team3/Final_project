@@ -38,9 +38,10 @@ from std_msgs.msg import Bool, String
 from handpose_interfaces.msg import Hands, HandLandmarks
 from vision.hand_eye_loader import HandEyeNotCalibratedError, camera_to_base, load_transform
 
-_HAND_EYE_PATH = Path("config/hand_eye.yaml")
-_CAMERA_INFO_PATH = Path("config/camera_info.yaml")
-_HANDOVER_CFG_PATH = Path("config/handover.yaml")
+_CFG_DIR = Path(__file__).parents[4] / "config"
+_HAND_EYE_PATH = _CFG_DIR / "hand_eye.yaml"
+_CAMERA_INFO_PATH = _CFG_DIR / "camera_info.yaml"
+_HANDOVER_CFG_PATH = _CFG_DIR / "handover.yaml"
 _DEPTH_SCALE = 0.001  # uint16 mm → float m
 
 _QOS_SENSOR = qos_profile_sensor_data
@@ -179,6 +180,10 @@ class HandNode(Node):
             int(cfg.get("roi_y_min", 0)),
             int(cfg.get("roi_y_max", 720)),
         )  # (x_min, x_max, y_min, y_max)
+        self.get_logger().info(
+            f"[hand_node] ROI enabled={self._roi_enabled} "
+            f"x={self._roi[0]}-{self._roi[1]} y={self._roi[2]}-{self._roi[3]}"
+        )
 
         self._bridge = CvBridge()
         self._mutex = threading.Lock()
@@ -242,13 +247,12 @@ class HandNode(Node):
     def _on_hand_depth(self, hands_msg: Hands, depth_img: np.ndarray) -> None:
         with self._mutex:
 
-            # ── Phase 1: 손 감지 여부 / 신뢰도 검사 ──────────────────────
-            if not hands_msg.hands:
+            # ── Phase 1: 손 선택 / 신뢰도 검사 ──────────────────────────────
+            # ROI 내 2개 이상 → 신뢰도 최고, 그 외 → base_link Z 최고(depth 최소) 손 선택
+            hand_msg = self._select_hand(hands_msg.hands, depth_img)
+            if hand_msg is None:
                 self._handle_no_detection()
                 return
-
-            # 신뢰도 가장 높은 손 선택
-            hand_msg: HandLandmarks = max(hands_msg.hands, key=lambda h: h.score)
 
             if hand_msg.score < self._score_min:
                 self._handle_no_detection()
@@ -256,28 +260,6 @@ class HandNode(Node):
 
             canon = _reshape_landmarks(hand_msg.landmarks_canon)   # (21,3) pixel
             world = _reshape_landmarks(hand_msg.landmarks_world)    # (21,3) MediaPipe world [m]
-
-            # ── ROI 체크 — 손목이 유효 영역 밖이면 skip ───────────────────
-            if self._roi_enabled:
-                wx, wy = int(canon[_WRIST][0]), int(canon[_WRIST][1])
-                x_min, x_max, y_min, y_max = self._roi
-                if not (x_min <= wx <= x_max and y_min <= wy <= y_max):
-                    self._publish_debug(
-                        f"wrist=({wx},{wy}) "
-                        f"ROI=({x_min}~{x_max},{y_min}~{y_max}) "
-                        f"score={hand_msg.score:.2f} "
-                        f"[OUTSIDE_ROI]"
-                    )
-                    if self._locked:
-                        self.get_logger().info(
-                            f"[hand_node] lock 해제 — ROI 이탈 "
-                            f"wrist=({wx},{wy}) roi=({x_min},{x_max},{y_min},{y_max})"
-                        )
-                        self._reset_state()
-                        self._publish_ready(False)
-                    else:
-                        self._handle_no_detection()
-                    return
 
             # ── Phase 2: 손바닥 위 방향 판단 ───────────────────────────────
             palm_normal_base, palm_pos_base, finger_dir_base = self._compute_palm(
@@ -347,7 +329,8 @@ class HandNode(Node):
             # ── Phase 3: lock ──────────────────────────────────────────────
             if not self._locked:
                 self._locked = True
-                self._locked_pos = palm_pos_base.copy()
+                # 현재 프레임 hand가 바뀌어도 history 평균으로 고정 (ROI 밖 손 오염 방지)
+                self._locked_pos = np.mean(positions, axis=0)
                 self._locked_quat = _palm_normal_to_quat(palm_normal_base, finger_dir_base)
                 self.get_logger().info(
                     f"[hand_node] 위치 lock: "
@@ -477,6 +460,77 @@ class HandNode(Node):
             > np.linalg.norm(world[mcp_i] - wrist) * self._finger_extend_ratio
         )
         return extended >= self._min_fingers_open
+
+    def _select_hand(
+        self,
+        hands: list,
+        depth_img: np.ndarray,
+    ) -> "HandLandmarks | None":
+        """손 선택.
+
+        Step 1 — ROI 필터링 (roi_enabled 시 바깥 손 완전 제거, 항상 먼저 실행)
+        Step 2 — 후보 선택:
+          - 1개 → 해당 손
+          - 2개 이상 + ROI 활성 → 신뢰도(score) 최고 손
+          - 2개 이상 + ROI 비활성 → base_link Z 최고(wrist depth 최소) 손
+        """
+        if not hands:
+            return None
+
+        # Step 1: ROI 필터링 — roi_enabled면 바깥 손은 무조건 제거
+        # 손목(0) 단독이 아닌 손바닥 중심(0,5,9,13,17 평균)으로 판정
+        _PALM_CENTER_IDX = [0, 5, 9, 13, 17]
+        candidates = list(hands)
+        if self._roi_enabled:
+            x_min, x_max, y_min, y_max = self._roi
+            filtered = []
+            for h in candidates:
+                canon = _reshape_landmarks(h.landmarks_canon)
+                px = float(np.mean(canon[_PALM_CENTER_IDX, 0]))
+                py = float(np.mean(canon[_PALM_CENTER_IDX, 1]))
+                inside = x_min <= px <= x_max and y_min <= py <= y_max
+                self.get_logger().debug(
+                    f"[select] label={h.label} score={h.score:.2f} "
+                    f"palm_center=({px:.0f},{py:.0f}) roi=({x_min}-{x_max},{y_min}-{y_max}) "
+                    f"{'IN' if inside else 'OUT'}"
+                )
+                if inside:
+                    filtered.append(h)
+            if not filtered:
+                self.get_logger().debug("[select] ROI 내 손 없음 → None")
+                return None
+            candidates = filtered
+
+        # Step 2: 후보 선택
+        if len(candidates) == 1:
+            return candidates[0]
+
+        if self._roi_enabled:
+            # ROI 내 2개 이상 → 신뢰도 최고
+            return max(candidates, key=lambda h: h.score)
+
+        # ROI 비활성, 2개 이상 → base_link Z 최고(depth 최소)
+        return self._pick_highest_z(candidates, depth_img)
+
+    def _pick_highest_z(
+        self,
+        hands: list,
+        depth_img: np.ndarray,
+    ) -> "HandLandmarks | None":
+        """wrist depth 최소(= 탑뷰 기준 base_link Z 최고) 손 반환.
+
+        depth 획득 실패 시 score 최고 손으로 fallback.
+        """
+        best_hand = None
+        best_depth = float("inf")
+        for h in hands:
+            canon = _reshape_landmarks(h.landmarks_canon)
+            wu, wv = int(canon[_WRIST][0]), int(canon[_WRIST][1])
+            d = _sample_depth(depth_img, wu, wv, self._depth_radius, self._min_depth_px)
+            if d is not None and 0.0 < d < best_depth:
+                best_depth = d
+                best_hand = h
+        return best_hand if best_hand is not None else max(hands, key=lambda h: h.score)
 
     def _handle_no_detection(self) -> None:
         """감지 소실 처리 — lock 상태면 lock_keep_s 동안 유지 (occlusion 대응)."""

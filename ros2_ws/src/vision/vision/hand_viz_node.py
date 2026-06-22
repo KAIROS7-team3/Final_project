@@ -24,6 +24,7 @@ _REPO_ROOT = next(
 _HANDOVER_CFG = _REPO_ROOT / "config" / "handover.yaml"
 _CAMERA_INFO = _REPO_ROOT / "config" / "camera_info.yaml"
 _HAND_EYE = _REPO_ROOT / "config" / "hand_eye.yaml"
+_TOOLBOX_CFG = _REPO_ROOT / "config" / "toolbox.yaml"
 _WIN = "Hand Monitor"
 
 # MediaPipe 손 스켈레톤 연결선 (21개 랜드마크)
@@ -83,6 +84,35 @@ def _load_roi() -> tuple[bool, tuple[int, int, int, int]]:
     except Exception as e:
         print(f"[hand_viz] ROI yaml 로드 실패: {e} — 기본값 사용")
         return True, (695, 839, 248, 449)
+
+
+def _load_handover_params() -> dict:
+    try:
+        cfg = yaml.safe_load(_HANDOVER_CFG.read_text())["handover"]
+        return {
+            "approach_height_m": cfg.get("approach_height_m", 0.05),
+            "place_z_offset_m": cfg.get("place_z_offset_m", -0.03),
+            "rz_cal_hand_yaw": cfg.get("rz_cal_hand_yaw", 77.0),
+            "rz_cal_robot_rz": cfg.get("rz_cal_robot_rz", 8.39),
+            "rz_sign": cfg.get("rz_sign", -1.0),
+        }
+    except Exception as e:
+        print(f"[hand_viz] handover.yaml 로드 실패: {e}")
+        return {"approach_height_m": 0.05, "place_z_offset_m": -0.03,
+                "rz_cal_hand_yaw": 77.0, "rz_cal_robot_rz": 8.39, "rz_sign": -1.0}
+
+
+def _load_tool_lengths() -> dict[str, float]:
+    """toolbox.yaml에서 handle_first 공구별 길이(m) 반환."""
+    try:
+        tools = yaml.safe_load(_TOOLBOX_CFG.read_text()).get("tools", [])
+        return {
+            t["tool_id"]: t.get("dimensions", {}).get("length", 0.15)
+            for t in tools
+            if t.get("handover_type") == "handle_first"
+        }
+    except Exception:
+        return {"screwdriver": 0.18, "utility_knife": 0.16, "ratchet_wrench": 0.20}
 
 
 def _imgmsg_to_bgr(msg: Image) -> np.ndarray:
@@ -147,11 +177,17 @@ class HandVizNode(Node):
         print(f"[hand_viz] ROI enabled={self._roi_enabled} roi={self._roi}")
         self._frame: np.ndarray | None = None
         self._debug_str: str = ""
-        self._landmarks_flat: list | None = None
+        self._all_landmarks: list[list] = []  # 감지된 모든 손 랜드마크
 
         self._K = _load_intrinsics()
         self._T = _load_T()
         self._lock_px: tuple[int, int] | None = None  # lock 시점 픽셀 좌표
+        self._h_params = _load_handover_params()
+        self._tool_lengths = _load_tool_lengths()
+        # ROS2 파라미터: 현재 검증할 tool_id (기본: screwdriver)
+        self.declare_parameter("tool_id", "screwdriver")
+        print(f"[hand_viz] approach_height={self._h_params['approach_height_m']*100:.0f}cm "
+              f"tool_lengths={self._tool_lengths}")
 
         self.create_subscription(PoseStamped, "/hand/pose", self._on_pose, _QOS_BE)
         self.create_subscription(Bool, "/hand/ready", self._on_ready, _QOS_BE)
@@ -182,14 +218,79 @@ class HandVizNode(Node):
         self._debug_str = msg.data
 
     def _on_hands(self, msg: Hands) -> None:
-        if msg.hands:
-            best = max(msg.hands, key=lambda h: h.score)
-            self._landmarks_flat = list(best.landmarks_canon)
-        else:
-            self._landmarks_flat = None
+        self._all_landmarks = [list(h.landmarks_canon) for h in msg.hands]
 
     def _on_image(self, msg: Image) -> None:
         self._frame = _imgmsg_to_bgr(msg)
+
+    def _draw_approach_overlay(self, img: np.ndarray) -> None:
+        """locked pose 기반으로 approach / place / handle_first 위치를 역투영해 오버레이."""
+        pose = self._locked_pose
+        p = pose.pose.position
+        o = pose.pose.orientation
+        palm_base = np.array([p.x, p.y, p.z])
+        hp = self._h_params
+        ah = hp["approach_height_m"]
+        pz = hp["place_z_offset_m"]
+
+        fx, fy, cx, cy = self._K
+        T = self._T
+
+        def proj(pt: np.ndarray) -> tuple[int, int] | None:
+            return _project_base_to_pixel(pt, T, fx, fy, cx, cy)
+
+        palm_px = proj(palm_base)
+        approach_px = proj(palm_base + np.array([0.0, 0.0, ah]))
+        place_px = proj(palm_base + np.array([0.0, 0.0, pz]))
+
+        R_mat = Rotation.from_quat([o.x, o.y, o.z, o.w]).as_matrix()
+        y_col = R_mat[:, 1]  # finger direction (손가락 방향)
+
+        tool_id = self.get_parameter("tool_id").get_parameter_value().string_value
+        tool_len = self._tool_lengths.get(tool_id, 0.18)
+        # handle_first: 그리퍼가 헤드 파지 → 손잡이는 -Y 방향으로 offset
+        handle_offset = -y_col * (tool_len / 2.0)
+        handle_approach_px = proj(palm_base + handle_offset + np.array([0.0, 0.0, ah]))
+        handle_place_px = proj(palm_base + handle_offset + np.array([0.0, 0.0, pz]))
+
+        # palm 중심 (파란 원)
+        if palm_px:
+            cv2.circle(img, palm_px, 8, (255, 100, 0), 2)
+
+        # approach 위치 (빨간 십자 + 원)
+        if approach_px:
+            cv2.circle(img, approach_px, 14, (0, 0, 255), 2)
+            cv2.drawMarker(img, approach_px, (0, 0, 255), cv2.MARKER_CROSS, 28, 2)
+            cv2.putText(img, f"APPROACH +{ah*100:.0f}cm",
+                        (approach_px[0] + 8, approach_px[1] - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 80, 255), 1)
+            if palm_px:
+                cv2.arrowedLine(img, approach_px, palm_px, (0, 0, 255), 1, tipLength=0.12)
+
+        # place 위치 (주황 원)
+        if place_px:
+            cv2.circle(img, place_px, 10, (0, 140, 255), 2)
+            cv2.putText(img, f"PLACE {pz*100:+.0f}cm",
+                        (place_px[0] + 8, place_px[1] + 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 140, 255), 1)
+
+        # handle_first approach / place (노란색)
+        if handle_approach_px:
+            cv2.circle(img, handle_approach_px, 12, (0, 220, 255), 2)
+            cv2.drawMarker(img, handle_approach_px, (0, 220, 255),
+                           cv2.MARKER_TILTED_CROSS, 24, 2)
+            cv2.putText(img, f"H+APPROACH ({tool_id})",
+                        (handle_approach_px[0] + 8, handle_approach_px[1] - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 220, 255), 1)
+        if handle_place_px:
+            cv2.circle(img, handle_place_px, 8, (0, 200, 255), 2)
+            cv2.putText(img, "H+PLACE",
+                        (handle_place_px[0] + 8, handle_place_px[1] + 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 200, 255), 1)
+
+        # handle_first 오프셋 방향 화살표 (palm → handle approach)
+        if palm_px and handle_approach_px:
+            cv2.arrowedLine(img, palm_px, handle_approach_px, (0, 220, 255), 1, tipLength=0.12)
 
     def _display(self) -> None:
         if self._frame is None:
@@ -198,13 +299,13 @@ class HandVizNode(Node):
         img = self._frame.copy()
         h, w = img.shape[:2]
 
-        # ── 랜드마크 오버레이 ─────────────────────────────────────────────
-        if self._landmarks_flat is not None:
-            _draw_landmarks(img, self._landmarks_flat, self._ready)
+        # ── 모든 손 랜드마크 오버레이 ────────────────────────────────────
+        for lm in self._all_landmarks:
+            _draw_landmarks(img, lm, self._ready)
 
         # ── Lock 위치 픽셀 표시 (손바닥 중심 = 랜드마크 9번 MIDDLE_MCP) ──
-        if self._ready and self._landmarks_flat is not None:
-            pts = np.array(self._landmarks_flat, dtype=np.float32).reshape(21, 3)
+        if self._ready and self._all_landmarks:
+            pts = np.array(self._all_landmarks[0], dtype=np.float32).reshape(21, 3)
             # 손바닥 중심: 0(wrist), 5, 9, 13, 17 평균
             palm_idx = [0, 5, 9, 13, 17]
             cx_f = float(np.mean(pts[palm_idx, 0]))
@@ -218,6 +319,7 @@ class HandVizNode(Node):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         elif not self._ready:
             self._lock_px = None
+
 
         # ── ROI 박스 (항상 표시 — enabled: 색상, disabled: 회색) ──────────
         x_min, x_max, y_min, y_max = self._roi
@@ -233,33 +335,11 @@ class HandVizNode(Node):
         cv2.putText(img, label, (x_min + 4, y_min - 6),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, roi_color, 1)
 
-        # ── 상태 + XYZ + Yaw 오버레이 (상단 바) ─────────────────────────
+        # ── LOCK / WAITING 텍스트 (좌상단 한 줄) ────────────────────────
         color = (0, 255, 0) if self._ready else (0, 165, 255)
-        cv2.rectangle(img, (0, 0), (img.shape[1], 60), (20, 20, 20), -1)
-        display_pose = self._locked_pose if self._ready and self._locked_pose is not None else self._pose
-        if display_pose is not None:
-            p = display_pose.pose.position
-            o = display_pose.pose.orientation
-            yaw_deg = float(
-                Rotation.from_quat([o.x, o.y, o.z, o.w]).as_euler("xyz", degrees=True)[2]
-            )
-            cv2.putText(img,
-                        f"{'READY [LOCKED]' if self._ready else 'WAITING'}  "
-                        f"X:{p.x:+.3f}  Y:{p.y:+.3f}  Z:{p.z:+.3f} m",
-                        (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
-            cv2.putText(img,
-                        f"Yaw:{yaw_deg:+.1f}deg {'[LOCKED]' if self._ready else '(finger dir)'}",
-                        (10, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
-        else:
-            cv2.putText(img, "WAITING  (no pose)", (10, 38),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, color, 2)
-
-        # ── 디버그 정보 (하단 바) ─────────────────────────────────────────
-        if self._debug_str:
-            h = img.shape[0]
-            cv2.rectangle(img, (0, h - 28), (img.shape[1], h), (20, 20, 20), -1)
-            cv2.putText(img, self._debug_str, (6, h - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 200, 200), 1)
+        label = "LOCK" if self._ready else "WAITING"
+        cv2.putText(img, label, (10, 28),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
 
         cv2.imshow(_WIN, img)
         if cv2.waitKey(1) & 0xFF == ord('q'):

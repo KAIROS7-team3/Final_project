@@ -37,6 +37,7 @@ from scipy.spatial.transform import Rotation
 
 from dsr_msgs2.srv import ConfigCreateTcp, MoveLine, MoveJoint, MoveStop, SetCurrentTcp
 from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import JointState
 from interfaces.action import PlaceAtStaging, PlaceOnHand, ReturnToSlot
 from interfaces.msg import RobotStatus
 from interfaces.srv import GripperSetPosition, LogEvent
@@ -108,9 +109,9 @@ _HANDOVER_ACC_L: float = 40.0
 _HANDOVER_VEL_R: float = 5.0    # deg/s
 _HANDOVER_ACC_R: float = 20.0
 
-# 핸드오버 고정 rx/ry (hand_orientation_test.py 실측 — gripper down, 홈 기준)
-_HANDOVER_RX: float = 8.39
-_HANDOVER_RY: float = -180.0
+# 핸드오버 rx/ry — fetch/place와 동일한 tool_approach_ori 기준 (RX=180, RY=180)
+_HANDOVER_RX: float = 180.0
+_HANDOVER_RY: float = 180.0
 
 
 def _load_yaml_cfg(filename: str) -> dict:
@@ -193,6 +194,13 @@ class ToolActionServer(Node):
         self._current_tool_id: str = ""
         self._hand_approach_pos: Optional[list] = None  # approach 단계에서 저장, place에서 재사용
         self._current_goal_handle = None                # 진행 중인 goal (cancel 체크용)
+
+        # DSR joint velocity 모니터 (모션 완료 감지용)
+        self._joint_vel_lock = threading.Lock()
+        self._joint_velocities: list[float] = []
+        self.create_subscription(
+            JointState, "/dsr01/joint_states", self._on_joint_states, qos_profile_sensor_data
+        )
 
         self.create_subscription(
             PoseStamped, "/hand/pose", self._on_hand_pose, qos_profile_sensor_data
@@ -439,6 +447,23 @@ class ToolActionServer(Node):
 
     # ── 핸드오버 콜백 ───────────────────────────────────────────────────────
 
+    def _on_joint_states(self, msg: JointState) -> None:
+        with self._joint_vel_lock:
+            self._joint_velocities = list(msg.velocity)
+
+    def _wait_motion_complete(self, timeout: float = 60.0, still_thresh: float = 0.01) -> bool:
+        """joint velocity가 still_thresh(rad/s) 이하로 안정될 때까지 대기."""
+        time.sleep(0.5)  # 명령 후 로봇이 움직이기 시작할 때까지 대기
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with self._joint_vel_lock:
+                vels = self._joint_velocities
+            if vels and max(abs(v) for v in vels) < still_thresh:
+                return True
+            time.sleep(0.05)
+        self.get_logger().warn("[TAS] _wait_motion_complete timeout")
+        return False
+
     def _on_hand_pose(self, msg: PoseStamped) -> None:
         with self._hand_lock:
             self._hand_pose = msg
@@ -595,11 +620,18 @@ class ToolActionServer(Node):
     def _quat_to_robot_rz(self, qx: float, qy: float, qz: float, qw: float) -> float:
         """손 쿼터니언 → Doosan rz (deg). handover.yaml 캘리브레이션 적용."""
         raw_yaw = float(Rotation.from_quat([qx, qy, qz, qw]).as_euler("xyz", degrees=True)[2])
-        return (
+        rz = (
             (raw_yaw - self._h_cfg.get("rz_cal_hand_yaw", 77.0))
             * self._h_cfg.get("rz_sign", -1.0)
             + self._h_cfg.get("rz_cal_robot_rz", 8.39)
+            + 180.0
         )
+        # [-180, 180] 범위로 정규화
+        if rz > 180.0:
+            rz -= 360.0
+        elif rz < -180.0:
+            rz += 360.0
+        return rz
 
     # ── 비전 그리퍼 캠 콜백 ─────────────────────────────────────────────────
 
@@ -752,19 +784,29 @@ class ToolActionServer(Node):
 
         o = pose.pose.orientation
         rz = self._quat_to_robot_rz(o.x, o.y, o.z, o.w)
+        # robot_base_link 기준 실제 손 방향 각도 (오프셋 계산 전용)
+        raw_yaw = float(
+            Rotation.from_quat([o.x, o.y, o.z, o.w]).as_euler("xyz", degrees=True)[2]
+        )
 
         # hand_node는 m 단위 → DSR은 mm
         x_mm = pose.pose.position.x * 1000.0
         y_mm = pose.pose.position.y * 1000.0
         z_mm = pose.pose.position.z * 1000.0
-        approach_h_mm = self._h_cfg.get("approach_height_m", 0.10) * 1000.0
+        approach_h_mm = self._h_cfg.get("approach_height_m", 0.05) * 1000.0
+        x_mm += self._h_cfg.get("approach_x_offset_m", 0.0) * 1000.0
+        y_mm += self._h_cfg.get("approach_y_offset_m", 0.0) * 1000.0
 
         if handle_first:
-            # finger_dir 방향(rz 각도)으로 tool_length/2 오프셋
+            R_mat = Rotation.from_quat([o.x, o.y, o.z, o.w]).as_matrix()
+            # 1) palm center 보정: wrist 포함으로 손목 쪽 쏠림 → 중지 방향(Y컬럼)으로 먼저 보정
+            finger_off_mm = self._h_cfg.get("finger_offset_m", 0.02) * 1000.0
+            x_mm += float(R_mat[0, 1]) * finger_off_mm
+            y_mm += float(R_mat[1, 1]) * finger_off_mm
+            # 2) 손잡이 방향 = X컬럼 (새끼→검지)으로 tool_length/2 오프셋
             offset_mm = self._get_tool_length_mm(self._current_tool_id) / 2.0
-            rz_rad = math.radians(rz)
-            x_mm += math.cos(rz_rad) * offset_mm
-            y_mm += math.sin(rz_rad) * offset_mm
+            x_mm += float(R_mat[0, 0]) * offset_mm
+            y_mm += float(R_mat[1, 0]) * offset_mm
 
         # place 단계에서 재사용할 위치 저장 (approach_height 제외)
         self._hand_approach_pos = [x_mm, y_mm, z_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
@@ -784,14 +826,16 @@ class ToolActionServer(Node):
         req.ref = DR_BASE
         req.mode = DR_MV_MOD_ABS
         req.blend_type = 0
-        req.sync_type = 0
+        req.sync_type = 1
         fut = self._movel_cli.call_async(req)
-        if not self._wait_future(fut, timeout=30.0):
+        if not self._wait_future(fut, timeout=60.0):
             self.get_logger().error("[TAS] hand_approach 타임아웃")
             return False
         res = fut.result()
-        time.sleep(0.2)
-        return bool(res and res.success)
+        if not (res and res.success):
+            return False
+        self._wait_motion_complete(timeout=60.0)  # 실제 모션 완료 대기
+        return True
 
     def _move_hand_place(self) -> bool:
         """MOVE_L_HAND_PLACE(_HANDLE): approach 단계에서 저장한 손바닥 높이로 Z 수직 하강."""
@@ -799,7 +843,9 @@ class ToolActionServer(Node):
             self.get_logger().error("[TAS] _hand_approach_pos 없음 — approach 먼저 실행 필요")
             return False
 
-        dsr_pos = self._hand_approach_pos
+        place_z_offset_mm = self._h_cfg.get("place_z_offset_m", 0.0) * 1000.0
+        dsr_pos = list(self._hand_approach_pos)
+        dsr_pos[2] += place_z_offset_mm
         self.get_logger().info(
             f"[TAS] hand_place pos={[round(v, 1) for v in dsr_pos]}"
         )
@@ -813,13 +859,16 @@ class ToolActionServer(Node):
         req.ref = DR_BASE
         req.mode = DR_MV_MOD_ABS
         req.blend_type = 0
-        req.sync_type = 0
+        req.sync_type = 1
         fut = self._movel_cli.call_async(req)
-        if not self._wait_future(fut, timeout=30.0):
+        if not self._wait_future(fut, timeout=60.0):
             self.get_logger().error("[TAS] hand_place 타임아웃")
             return False
         res = fut.result()
-        time.sleep(0.2)
+        if not (res and res.success):
+            return False
+        self._wait_motion_complete(timeout=60.0)  # GRIP 전 실제 모션 완료 보장
+        time.sleep(0.3)
         return bool(res and res.success)
 
     # ── 서비스 핸들러 ───────────────────────────────────────────────────────
