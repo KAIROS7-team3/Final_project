@@ -451,17 +451,40 @@ class ToolActionServer(Node):
         with self._joint_vel_lock:
             self._joint_velocities = list(msg.velocity)
 
-    def _wait_motion_complete(self, timeout: float = 60.0, still_thresh: float = 0.01) -> bool:
-        """joint velocity가 still_thresh(rad/s) 이하로 안정될 때까지 대기."""
-        time.sleep(0.5)  # 명령 후 로봇이 움직이기 시작할 때까지 대기
+    def _wait_motion_complete(
+        self, timeout: float = 60.0, still_thresh: float = 0.01, moving_thresh: float = 0.05
+    ) -> bool:
+        """joint velocity 기반 모션 완료 대기 — 시작 감지 후 멈춤 감지 2단계.
+        sync_type=1로 이미 완료된 경우 즉시 True 반환."""
         deadline = time.monotonic() + timeout
+
+        # 이미 멈춰있으면 즉시 반환 (sync_type=1이 완료까지 기다린 경우)
+        time.sleep(0.1)
+        with self._joint_vel_lock:
+            vels = self._joint_velocities
+        if vels and max(abs(v) for v in vels) < still_thresh:
+            return True
+
+        # 1단계: 로봇이 실제로 움직이기 시작할 때까지 대기
+        while time.monotonic() < deadline:
+            with self._joint_vel_lock:
+                vels = self._joint_velocities
+            if vels and max(abs(v) for v in vels) > moving_thresh:
+                break
+            time.sleep(0.02)
+        else:
+            self.get_logger().warn("[TAS] _wait_motion_complete: 움직임 미감지 timeout")
+            return False
+
+        # 2단계: 움직임이 멈출 때까지 대기
         while time.monotonic() < deadline:
             with self._joint_vel_lock:
                 vels = self._joint_velocities
             if vels and max(abs(v) for v in vels) < still_thresh:
                 return True
             time.sleep(0.05)
-        self.get_logger().warn("[TAS] _wait_motion_complete timeout")
+
+        self.get_logger().warn("[TAS] _wait_motion_complete: 정지 timeout")
         return False
 
     def _on_hand_pose(self, msg: PoseStamped) -> None:
@@ -835,6 +858,7 @@ class ToolActionServer(Node):
         if not (res and res.success):
             self.get_logger().error("[TAS] hand_pre_approach 실패")
             return False
+        self._wait_motion_complete(timeout=60.0)  # 실제 모션 완료 대기
 
         # ── 본 approach: XY 유지, Z만 approach 높이로 하강 ──
         dsr_pos = [x_mm, y_mm, z_mm + approach_h_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
