@@ -811,6 +811,32 @@ class ToolActionServer(Node):
         # place 단계에서 재사용할 위치 저장 (approach_height 제외)
         self._hand_approach_pos = [x_mm, y_mm, z_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
 
+        # ── 사전 이동: approach XY로 이동하되 Z는 손 Z + approach_height + 50mm ──
+        pre_pos = [x_mm, y_mm, z_mm + approach_h_mm + 50.0, _HANDOVER_RX, _HANDOVER_RY, rz]
+        self.get_logger().info(
+            f"[TAS] hand_pre_approach ({'handle' if handle_first else 'direct'}) "
+            f"pos={[round(v, 1) for v in pre_pos]}"
+        )
+        req = MoveLine.Request()
+        req.pos = [float(v) for v in pre_pos]
+        req.vel = [_HANDOVER_VEL_L, _HANDOVER_VEL_R]
+        req.acc = [_HANDOVER_ACC_L, _HANDOVER_ACC_R]
+        req.time = 0.0
+        req.radius = 0.0
+        req.ref = DR_BASE
+        req.mode = DR_MV_MOD_ABS
+        req.blend_type = 0
+        req.sync_type = 1
+        fut = self._movel_cli.call_async(req)
+        if not self._wait_future(fut, timeout=60.0):
+            self.get_logger().error("[TAS] hand_pre_approach 타임아웃")
+            return False
+        res = fut.result()
+        if not (res and res.success):
+            self.get_logger().error("[TAS] hand_pre_approach 실패")
+            return False
+
+        # ── 본 approach: XY 유지, Z만 approach 높이로 하강 ──
         dsr_pos = [x_mm, y_mm, z_mm + approach_h_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
         self.get_logger().info(
             f"[TAS] hand_approach ({'handle' if handle_first else 'direct'}) "

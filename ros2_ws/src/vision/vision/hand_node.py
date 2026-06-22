@@ -373,6 +373,13 @@ class HandNode(Node):
             yaw_deg = float(
                 Rotation.from_quat(self._locked_quat).as_euler("xyz", degrees=True)[2]
             )
+            self.get_logger().info(
+                f"[STATUS] LOCKED  "
+                f"xyz=({self._locked_pos[0]:.3f},{self._locked_pos[1]:.3f},{self._locked_pos[2]:.3f})m  "
+                f"yaw={yaw_deg:.1f}deg  "
+                f"no_detect={(time.monotonic() - self._no_detect_start) if self._no_detect_start else 0.0:.1f}s/{self._lock_keep_s:.1f}s  "
+                f"stable_buf={stable_cur}"
+            )
             self._publish_debug(
                 f"normal_z={palm_normal_base[2]:+.3f} "
                 f"palm_up=O hand_open=O "
