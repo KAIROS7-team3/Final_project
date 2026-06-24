@@ -6,7 +6,7 @@ import rclpy
 from pathlib import Path
 
 from db_core.repository import ToolRepository
-from interfaces.srv import CheckToolFeasibility, LogEvent, UpdateToolStatus
+from interfaces.srv import CheckToolFeasibility, LogEvent, UpdateDrawerState, UpdateToolStatus
 from rclpy.node import Node
 
 
@@ -43,6 +43,11 @@ class DbServiceNode(Node):
             LogEvent,
             "/db/LogEvent",
             self._handle_log_event,
+        )
+        self.create_service(
+            UpdateDrawerState,
+            "/db/UpdateDrawerState",
+            self._handle_update_drawer_state,
         )
 
     def _handle_check_tool_feasibility(
@@ -113,6 +118,27 @@ class DbServiceNode(Node):
         if not result.success:
             self.get_logger().error(
                 f"LogEvent failed tool_id={request.tool_id}: {result.message}"
+            )
+        return response
+
+
+    def _handle_update_drawer_state(
+        self,
+        request: UpdateDrawerState.Request,
+        response: UpdateDrawerState.Response,
+    ) -> UpdateDrawerState.Response:
+        """open/close_drawer phase 완료 후 drawers 테이블 상태 기록."""
+        result = self._repository.update_drawer_state(request.layer_id, request.intent)
+        response.success = result.success
+        response.message = result.message
+        if not result.success:
+            self.get_logger().error(
+                f"UpdateDrawerState failed layer_id={request.layer_id} "
+                f"intent={request.intent}: {result.message}"
+            )
+        else:
+            self.get_logger().info(
+                f"DrawerState updated layer_id={request.layer_id} intent={request.intent}"
             )
         return response
 

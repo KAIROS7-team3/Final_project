@@ -35,6 +35,8 @@ def build_fetch_subtree(
     on_place: Optional[Callable[[], None]] = None,
     layer_id: int = 1,
     max_fetch_attempts: int = 3,
+    on_open_drawer: Optional[Callable[[], None]] = None,
+    on_close_drawer: Optional[Callable[[], None]] = None,
 ) -> py_trees.behaviour.Behaviour:
     """FetchTool 서브트리를 조립해 루트 노드를 반환한다.
 
@@ -92,6 +94,7 @@ def build_fetch_subtree(
             action_client=execute_phase_client,
             build_goal_fn=_build_open_drawer_goal,
             timeout_sec=60.0,
+            success_callback=on_open_drawer,
         ),
         RunAction(
             name="RunAction_fetch",
@@ -106,6 +109,7 @@ def build_fetch_subtree(
             action_client=execute_phase_client,
             build_goal_fn=_build_close_drawer_goal,
             timeout_sec=60.0,
+            success_callback=on_close_drawer,
         ),
         SetMoving(
             "SetMoving_false",

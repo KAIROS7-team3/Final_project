@@ -36,6 +36,7 @@ class RunAction(py_trees.behaviour.Behaviour):
         timeout_sec: float = 120.0,
         max_attempts: int = 1,
         feedback_callback: Callable[[str], None] | None = None,
+        success_callback: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(name=name)
         self._client = action_client
@@ -43,6 +44,7 @@ class RunAction(py_trees.behaviour.Behaviour):
         self._timeout = timeout_sec
         self._max_attempts = max_attempts
         self._feedback_callback = feedback_callback
+        self._success_callback = success_callback
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
             key=KEY_ACTIVE_TOOL_ID, access=py_trees.common.Access.READ
@@ -59,6 +61,11 @@ class RunAction(py_trees.behaviour.Behaviour):
                 )
             status = self._send_and_wait(goal)
             if status == py_trees.common.Status.SUCCESS:
+                if self._success_callback is not None:
+                    try:
+                        self._success_callback()
+                    except Exception as exc:
+                        self.logger.error(f"[{self.name}] success_callback 예외: {exc}")
                 return py_trees.common.Status.SUCCESS
 
         return py_trees.common.Status.FAILURE

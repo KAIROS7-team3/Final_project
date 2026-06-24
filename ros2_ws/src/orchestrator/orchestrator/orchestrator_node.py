@@ -22,7 +22,7 @@ from vision_msgs.msg import Detection2DArray, Detection3DArray
 
 from interfaces.action import ExecutePhase
 from interfaces.msg import Intent, RobotStatus
-from interfaces.srv import CheckToolFeasibility, LogEvent, UpdateToolStatus
+from interfaces.srv import CheckToolFeasibility, LogEvent, UpdateDrawerState, UpdateToolStatus
 
 from orchestrator.blackboard import (
     KEY_ACTIVE_TOOL_ID,
@@ -88,6 +88,11 @@ class OrchestratorNode(Node):
         self._update_status_cli = self.create_client(
             UpdateToolStatus,
             "/db/UpdateToolStatus",
+            callback_group=self._normal_cbg,
+        )
+        self._update_drawer_cli = self.create_client(
+            UpdateDrawerState,
+            "/db/UpdateDrawerState",
             callback_group=self._normal_cbg,
         )
         self._log_event_cli = self.create_client(
@@ -242,13 +247,25 @@ class OrchestratorNode(Node):
         try:
             if intent_type == "fetch":
                 layer = self._tool_layer_map.get(tool_id, 1)
+                layer_0idx = layer - 1
                 self.get_logger().info(f"[OrchestratorNode] fetch layer={layer} (tool_id={tool_id})")
-                tree = build_fetch_subtree(**self._fetch_tree_kwargs, layer_id=layer)
+                tree = build_fetch_subtree(
+                    **self._fetch_tree_kwargs,
+                    layer_id=layer,
+                    on_open_drawer=lambda: self._dispatch_update_drawer_state(layer_0idx, "open"),
+                    on_close_drawer=lambda: self._dispatch_update_drawer_state(layer_0idx, "close"),
+                )
                 tree.setup(timeout=5)
             elif intent_type == "return":
                 layer = self._tool_layer_map.get(tool_id, 1)
+                layer_0idx = layer - 1
                 self.get_logger().info(f"[OrchestratorNode] return layer={layer} (tool_id={tool_id})")
-                tree = build_return_subtree(**self._return_tree_kwargs, layer_id=layer)
+                tree = build_return_subtree(
+                    **self._return_tree_kwargs,
+                    layer_id=layer,
+                    on_open_drawer=lambda: self._dispatch_update_drawer_state(layer_0idx, "open"),
+                    on_close_drawer=lambda: self._dispatch_update_drawer_state(layer_0idx, "close"),
+                )
                 tree.setup(timeout=5)
             elif intent_type == "scan":
                 layer = int(tool_id) if tool_id in ("1", "2") else 1
@@ -423,6 +440,38 @@ class OrchestratorNode(Node):
             f"new_status={new_status}"
         )
         return True
+
+    def _dispatch_update_drawer_state(self, layer_id: int, intent: str) -> None:
+        """UpdateDrawerState 서비스를 daemon thread에서 fire-and-forget 호출."""
+        def _run() -> None:
+            if not self._update_drawer_cli.service_is_ready():
+                self.get_logger().warning(
+                    f"[OrchestratorNode] UpdateDrawerState 서비스 미준비 — layer={layer_id} intent={intent}"
+                )
+                return
+            req = UpdateDrawerState.Request()
+            req.layer_id = layer_id
+            req.intent = intent
+            future = self._update_drawer_cli.call_async(req)
+            done = threading.Event()
+
+            def _on_done(f) -> None:
+                try:
+                    res = f.result()
+                    if not res.success:
+                        self.get_logger().error(
+                            f"[OrchestratorNode] UpdateDrawerState 실패 — layer={layer_id} "
+                            f"intent={intent}: {res.message}"
+                        )
+                except Exception as exc:
+                    self.get_logger().error(f"[OrchestratorNode] UpdateDrawerState 예외: {exc}")
+                finally:
+                    done.set()
+
+            future.add_done_callback(_on_done)
+            done.wait(timeout=3.0)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _set_plc(self, state: str) -> None:
         msg = String()

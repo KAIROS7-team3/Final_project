@@ -8,6 +8,10 @@ interfaces/ 패키지의 msg/srv/action 변경 이력.
 ## [Unreleased]
 
 ### Added
+- `srv/UpdateDrawerState.srv` — 서랍 개폐 상태 DB 기록 서비스
+  - request: `layer_id` (int32, 0-indexed), `intent` ("open"|"close")
+  - response: `success`, `message`
+  - db_service_node가 `/db/UpdateDrawerState`로 호스팅, open/close_drawer phase 성공 후 오케스트레이터가 호출
 - `action/ExecutePhase.action` — Track A BT phase 단위 모션 오케스트레이션 단일 인터페이스
   - goal: `phase` (open_drawer|fetch|return|close_drawer|home), `tool_id`, `layer_id`
   - result: `success`, `message` / feedback: `phase`, `progress`

@@ -1,0 +1,5 @@
+int32 layer_id   # 0-indexed (0=1층, 1=2층), toolbox_motion 규약과 동일
+string intent    # "open" | "close"
+---
+bool success
+string message

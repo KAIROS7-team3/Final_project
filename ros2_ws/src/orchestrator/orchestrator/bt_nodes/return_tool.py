@@ -35,6 +35,8 @@ def build_return_subtree(
     on_place: Optional[Callable[[], None]] = None,
     layer_id: int = 1,
     max_return_attempts: int = 2,
+    on_open_drawer: Optional[Callable[[], None]] = None,
+    on_close_drawer: Optional[Callable[[], None]] = None,
 ) -> py_trees.behaviour.Behaviour:
     """ReturnTool 서브트리 조립.
 
@@ -91,6 +93,7 @@ def build_return_subtree(
             action_client=execute_phase_client,
             build_goal_fn=_build_open_drawer_goal,
             timeout_sec=60.0,
+            success_callback=on_open_drawer,
         ),
         RunAction(
             name="RunAction_return",
@@ -105,6 +108,7 @@ def build_return_subtree(
             action_client=execute_phase_client,
             build_goal_fn=_build_close_drawer_goal,
             timeout_sec=60.0,
+            success_callback=on_close_drawer,
         ),
         SetMoving(
             "SetMoving_false",
