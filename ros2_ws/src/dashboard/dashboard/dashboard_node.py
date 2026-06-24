@@ -268,28 +268,33 @@ class DashboardNode(Node):
                 self._state["gripper_position"] = float(msg.position[0])
 
     def _poll_db(self) -> None:
+        if not self._db_path.exists():
+            return
         try:
-            if not self._db_path.exists():
-                return
             with sqlite3.connect(str(self._db_path), timeout=2) as conn:
                 row = conn.execute(
                     "SELECT current_status FROM tools WHERE tool_id=?",
                     (self._state["tool_id"],),
                 ).fetchone()
-                drawer_rows = conn.execute(
-                    "SELECT layer_id, is_open, last_updated FROM drawers ORDER BY layer_id"
-                ).fetchall()
             with self._state_lock:
                 self._state["tool_status"] = row[0] if row else "unknown"
                 self._state["health"]["db"] = "ok"
-                if drawer_rows:
+        except Exception:
+            with self._state_lock:
+                self._state["health"]["db"] = "error"
+        try:
+            with sqlite3.connect(str(self._db_path), timeout=2) as conn:
+                drawer_rows = conn.execute(
+                    "SELECT layer_id, is_open, last_updated FROM drawers ORDER BY layer_id"
+                ).fetchall()
+            if drawer_rows:
+                with self._state_lock:
                     self._state["drawer_states"] = [
                         {"layer_id": r[0], "is_open": bool(r[1]), "last_updated": r[2]}
                         for r in drawer_rows
                     ]
         except Exception:
-            with self._state_lock:
-                self._state["health"]["db"] = "error"
+            pass
 
     def _broadcast_state(self) -> None:
         now = time.monotonic()

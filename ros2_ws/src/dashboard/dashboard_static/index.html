@@ -250,15 +250,24 @@
 
 <!-- ═══════════════════ DB 탭 ═══════════════════ -->
 <div id="tab-db" class="tab-content">
-  <div class="card" style="max-width:960px">
-    <div class="card-title" style="margin-bottom:12px;display:flex;align-items:center">
-      공구 목록
-      <button class="btn btn-gray" style="margin-left:auto;padding:4px 12px;font-size:12px" onclick="loadDB()">새로고침</button>
+  <div style="display:grid;grid-template-columns:1fr auto;gap:16px;max-width:960px;margin-bottom:16px">
+    <div class="card" style="min-width:0">
+      <div class="card-title" style="margin-bottom:12px;display:flex;align-items:center">
+        공구 목록
+        <button class="btn btn-gray" style="margin-left:auto;padding:4px 12px;font-size:12px" onclick="loadDB()">새로고침</button>
+      </div>
+      <table id="tools-table">
+        <thead><tr><th>tool_id</th><th>표시명</th><th>상태</th><th>슬롯(row,col)</th><th>갱신</th></tr></thead>
+        <tbody id="tools-body"><tr><td colspan="5" style="color:var(--text2)">로딩 중...</td></tr></tbody>
+      </table>
     </div>
-    <table id="tools-table">
-      <thead><tr><th>tool_id</th><th>표시명</th><th>상태</th><th>슬롯(row,col)</th><th>갱신</th></tr></thead>
-      <tbody id="tools-body"><tr><td colspan="5" style="color:var(--text2)">로딩 중...</td></tr></tbody>
-    </table>
+    <div class="card" style="min-width:180px;align-self:start">
+      <div class="card-title" style="margin-bottom:12px">서랍 상태</div>
+      <div id="db-drawer-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+        <div style="color:var(--text2);font-size:13px">로딩 중...</div>
+      </div>
+      <button class="btn btn-gray" style="width:100%;font-size:12px" onclick="loadDrawerStates()">새로고침</button>
+    </div>
   </div>
 </div>
 
@@ -668,7 +677,7 @@ function switchTab(id, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + id).classList.add('active');
   el.classList.add('active');
-  if (id === 'db')   loadDB();
+  if (id === 'db')   { loadDB(); loadDrawerStates(); }
   if (id === 'logs') loadLogs();
   if (id === 'ops')  { loadScanResults(); loadNodes(); pollScanStatus(); }
 }
@@ -859,7 +868,34 @@ async function dbResetDrawer() {
   try {
     const j = await (await fetch('/action/db_reset_drawer', { method: 'POST' })).json();
     toast(j.message, !j.success);
+    if (j.success) loadDrawerStates();
   } catch(e) { toast('오류: ' + e.message, true); }
+}
+
+async function loadDrawerStates() {
+  const el = document.getElementById('db-drawer-list');
+  if (!el) return;
+  try {
+    const j = await (await fetch('/api/drawer/states')).json();
+    const drawers = j.drawers || [];
+    if (!drawers.length) {
+      el.innerHTML = '<div style="color:var(--text2);font-size:13px">데이터 없음</div>';
+      return;
+    }
+    el.innerHTML = drawers.map(d => {
+      const label = `${d.layer_id + 1}층`;
+      const isOpen = d.is_open;
+      const cls = isOpen ? 'badge-yellow' : 'badge-green';
+      const text = isOpen ? '열림' : '닫힘';
+      const updated = d.last_updated ? d.last_updated.substring(11, 19) : '—';
+      return `<div style="display:flex;align-items:center;gap:8px">
+        <span class="badge ${cls}" style="min-width:60px;text-align:center">${label} ${text}</span>
+        <span style="font-size:12px;color:var(--text2)">${updated}</span>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--red);font-size:13px">오류: ${e.message}</div>`;
+  }
 }
 
 async function dbSetStatus() {

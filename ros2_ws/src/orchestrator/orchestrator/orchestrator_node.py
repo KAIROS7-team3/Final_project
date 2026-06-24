@@ -45,10 +45,17 @@ _MAX_PENDING_S7_LOGS = 16
 
 def _load_tool_layer_map() -> dict[str, int]:
     """toolbox.yaml tools[].slot_layer (1-indexed) 를 {tool_id: layer} 딕셔너리로 반환."""
-    candidates = [
-        os.environ.get("FINAL_PROJECT_ROOT", ""),
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".."),
-    ]
+    candidates: list[str] = []
+    env_root = os.environ.get("FINAL_PROJECT_ROOT")
+    if env_root:
+        candidates.append(env_root)
+    here = os.path.dirname(os.path.abspath(__file__))
+    while True:
+        candidates.append(here)
+        parent = os.path.dirname(here)
+        if parent == here:
+            break
+        here = parent
     for base in candidates:
         path = os.path.join(base, "config", "toolbox.yaml")
         if os.path.isfile(path):
