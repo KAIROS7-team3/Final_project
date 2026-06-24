@@ -128,6 +128,14 @@ class DbServiceNode(Node):
         response: UpdateDrawerState.Response,
     ) -> UpdateDrawerState.Response:
         """open/close_drawer phase 완료 후 drawers 테이블 상태 기록."""
+        if request.intent not in ("open", "close"):
+            response.success = False
+            response.message = f"invalid intent: {request.intent!r} — 허용값: 'open', 'close'"
+            self.get_logger().warning(
+                f"UpdateDrawerState rejected invalid intent={request.intent!r} "
+                f"layer_id={request.layer_id}"
+            )
+            return response
         result = self._repository.update_drawer_state(request.layer_id, request.intent)
         response.success = result.success
         response.message = result.message
