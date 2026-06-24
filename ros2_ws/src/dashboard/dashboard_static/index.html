@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Robot Demo Dashboard</title>
+<title>Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
@@ -95,7 +95,7 @@
 
 <header>
   <div class="ws-dot" id="ws-dot"></div>
-  <h1>Robot Demo Dashboard</h1>
+  <h1>Dashboard</h1>
   <span id="moving-badge" style="display:none;margin-left:4px">
     <span class="badge badge-yellow moving-indicator">이동 중</span>
   </span>
@@ -111,10 +111,10 @@
 
 <!-- ═══════════════════ 실시간 탭 ═══════════════════ -->
 <div id="tab-realtime" class="tab-content active">
-  <div class="grid grid-2" style="max-width:1280px">
+  <div style="display:grid;grid-template-columns:1fr 1fr 300px;grid-template-rows:auto auto;gap:16px;width:100%">
 
-    <!-- ── 그리퍼 캠 ───────────────────────────────── -->
-    <div class="card">
+    <!-- ── 그리퍼 캠 : col 1, row 1 ─────────────────── -->
+    <div class="card" style="grid-column:1;grid-row:1">
       <div class="card-title">그리퍼 캠 (C270)</div>
       <div class="cam-mode" id="gripper-mode-btns">
         <button class="cam-mode-btn active" onclick="setCamMode('gripper','gripper',this)">원본</button>
@@ -129,23 +129,100 @@
       </div>
     </div>
 
-    <!-- ── 탑뷰 캠 ────────────────────────────────── -->
-    <div class="card">
+    <!-- ── 탑뷰 캠 : col 2, row 1–2 ─────────────────── -->
+    <div class="card" style="grid-column:2;grid-row:1/3">
       <div class="card-title">탑뷰 캠 (RealSense D455f)</div>
       <div class="cam-mode" id="top-mode-btns">
         <button class="cam-mode-btn active" onclick="setCamMode('top','top',this)">원본</button>
         <button class="cam-mode-btn"        onclick="setCamMode('top','top_annotated',this)">검출</button>
         <button class="cam-mode-btn"        onclick="setCamMode('top','top_mask',this)">마스크</button>
       </div>
-      <div class="cam-wrap" id="cam-top-wrap">
+      <div class="cam-wrap" id="cam-top-wrap" style="aspect-ratio:4/3">
         <img id="cam-top" class="cam-img" src="/cam/top" alt="top"
              onerror="handleCamErr('cam-top')">
         <div id="cam-top-offline" class="cam-offline" style="display:none">NO SIGNAL</div>
       </div>
     </div>
 
-    <!-- ── 검출 현황 ──────────────────────────────── -->
-    <div class="card" style="grid-column:span 2">
+    <!-- ── 우측 패널 : col 3, row 1–2 ────────────────── -->
+    <div style="grid-column:3;grid-row:1/3;display:flex;flex-direction:column;gap:16px">
+
+      <!-- 시스템 상태 -->
+      <div class="card">
+        <div class="card-title">시스템 상태</div>
+        <div class="grid grid-3" style="margin-bottom:10px">
+          <div>
+            <div style="color:var(--text2);font-size:11px">로봇</div>
+            <div class="status-val" id="st-robot">—</div>
+          </div>
+          <div>
+            <div style="color:var(--text2);font-size:11px">PLC</div>
+            <div class="status-val" id="st-plc">—</div>
+          </div>
+          <div>
+            <div style="color:var(--text2);font-size:11px">공구 상태</div>
+            <div class="status-val" id="st-tool">—</div>
+          </div>
+        </div>
+        <div class="health-row" id="health-row"></div>
+      </div>
+
+      <!-- 명령 -->
+      <div class="card">
+        <div class="card-title">명령</div>
+        <div class="btn-row" style="margin-bottom:10px">
+          <select id="tool-select" class="btn btn-gray" style="cursor:pointer;flex:1;min-width:0">
+            <option value="socket_19mm">소켓 19mm</option>
+            <option value="screwdriver">십자 드라이버</option>
+            <option value="utility_knife">커터칼</option>
+            <option value="ratchet_wrench">라쳇 렌치</option>
+            <option value="multi_tool">멀티툴</option>
+            <option value="spanner_16mm">스패너 16mm</option>
+          </select>
+        </div>
+        <div class="btn-row" style="margin-bottom:10px">
+          <button class="btn btn-blue"  onclick="doAction('fetch')">⬇ Fetch</button>
+          <button class="btn btn-green" onclick="doAction('return')">⬆ Return</button>
+          <button class="btn btn-gray"  onclick="doAction('home')">🏠 Home</button>
+        </div>
+        <hr class="section-divider">
+        <div style="margin-bottom:6px;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600">공구함</div>
+        <div class="btn-row" style="margin-bottom:10px">
+          <select id="drawer-layer-select" class="btn btn-gray" style="padding:9px 10px">
+            <option value="1">1층</option>
+            <option value="2">2층</option>
+          </select>
+          <button class="btn btn-gray" onclick="doDrawer('open_toolbox')">📂 열기</button>
+          <button class="btn btn-gray" onclick="doDrawer('close_toolbox')">📁 닫기</button>
+        </div>
+        <hr class="section-divider">
+        <div style="margin-bottom:6px;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600">서랍 상태</div>
+        <div id="drawer-states" style="display:flex;gap:10px;margin-bottom:10px">
+          <span id="drawer-0" class="badge badge-gray">1층 —</span>
+          <span id="drawer-1" class="badge badge-gray">2층 —</span>
+        </div>
+        <hr class="section-divider">
+        <div class="btn-row">
+          <button class="btn btn-red" id="estop-btn" onclick="doEstop()">⚡ E-STOP</button>
+          <button class="btn btn-gray" onclick="doAction('estop_reset')">✓ Reset</button>
+        </div>
+      </div>
+
+      <!-- 그리퍼 전류 파형 -->
+      <div class="card" style="flex:1;min-height:0">
+        <div class="card-title" style="display:flex;justify-content:space-between">
+          <span>그리퍼 전류 파형 (mA)</span>
+          <span id="current-val" style="color:var(--blue);font-weight:600"></span>
+        </div>
+        <div id="chart-container" style="height:140px">
+          <canvas id="current-chart"></canvas>
+        </div>
+      </div>
+
+    </div><!-- /우측 패널 -->
+
+    <!-- ── 검출 현황 : col 1, row 2 ─────────────────── -->
+    <div class="card" style="grid-column:1;grid-row:2">
       <div class="card-title">검출 현황</div>
       <div class="grid grid-2">
         <div class="det-section">
@@ -158,90 +235,7 @@
         </div>
       </div>
       <div style="margin-top:8px;font-size:10px;color:var(--text2)">
-        ※ 검출 표시 — YOLO 어노테이션: vision.yaml debug.publish_annotated_image: true 설정 필요
-      </div>
-    </div>
-
-    <!-- ── 시스템 상태 ─────────────────────────────── -->
-    <div class="card">
-      <div class="card-title">시스템 상태</div>
-      <div class="grid grid-3" style="margin-bottom:10px">
-        <div>
-          <div style="color:var(--text2);font-size:11px">로봇</div>
-          <div class="status-val" id="st-robot">—</div>
-        </div>
-        <div>
-          <div style="color:var(--text2);font-size:11px">PLC</div>
-          <div class="status-val" id="st-plc">—</div>
-        </div>
-        <div>
-          <div style="color:var(--text2);font-size:11px">선택 공구 상태</div>
-          <div class="status-val" id="st-tool">—</div>
-        </div>
-      </div>
-      <div class="health-row" id="health-row"></div>
-    </div>
-
-    <!-- ── 명령 패널 ───────────────────────────────── -->
-    <div class="card">
-      <div class="card-title">명령</div>
-
-      <!-- 공구 선택 + Fetch/Return -->
-      <div class="btn-row" style="margin-bottom:10px">
-        <select id="tool-select" class="btn btn-gray" style="cursor:pointer;flex:1;min-width:160px">
-          <option value="socket_19mm">소켓 19mm</option>
-          <option value="screwdriver">십자 드라이버</option>
-          <option value="utility_knife">커터칼</option>
-          <option value="ratchet_wrench">라쳇 렌치</option>
-          <option value="multi_tool">멀티툴</option>
-          <option value="spanner_16mm">스패너 16mm</option>
-        </select>
-      </div>
-      <div class="btn-row" style="margin-bottom:10px">
-        <button class="btn btn-blue"  onclick="doAction('fetch')">⬇ Fetch</button>
-        <button class="btn btn-green" onclick="doAction('return')">⬆ Return</button>
-        <button class="btn btn-gray"  onclick="doAction('home')">🏠 Home</button>
-      </div>
-
-      <hr class="section-divider">
-
-      <!-- 공구함 -->
-      <div style="margin-bottom:6px;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600">공구함</div>
-      <div class="btn-row" style="margin-bottom:10px">
-        <select id="drawer-layer-select" class="btn btn-gray" style="padding:9px 10px">
-          <option value="1">1층</option>
-          <option value="2">2층</option>
-        </select>
-        <button class="btn btn-gray" onclick="doDrawer('open_toolbox')">📂 열기</button>
-        <button class="btn btn-gray" onclick="doDrawer('close_toolbox')">📁 닫기</button>
-      </div>
-
-      <hr class="section-divider">
-
-      <!-- 서랍 상태 -->
-      <div style="margin-bottom:6px;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600">서랍 상태</div>
-      <div id="drawer-states" style="display:flex;gap:10px;margin-bottom:10px">
-        <span id="drawer-0" class="badge badge-gray">1층 —</span>
-        <span id="drawer-1" class="badge badge-gray">2층 —</span>
-      </div>
-
-      <hr class="section-divider">
-
-      <!-- E-stop -->
-      <div class="btn-row">
-        <button class="btn btn-red" id="estop-btn" onclick="doEstop()">⚡ E-STOP</button>
-        <button class="btn btn-gray" onclick="doAction('estop_reset')">✓ Reset</button>
-      </div>
-    </div>
-
-    <!-- ── 그리퍼 전류 파형 ────────────────────────── -->
-    <div class="card" style="grid-column:span 2">
-      <div class="card-title" style="display:flex;justify-content:space-between">
-        <span>그리퍼 전류 파형 (mA)</span>
-        <span id="current-val" style="color:var(--blue);font-weight:600"></span>
-      </div>
-      <div id="chart-container">
-        <canvas id="current-chart"></canvas>
+        ※ YOLO 어노테이션: vision.yaml debug.publish_annotated_image: true 필요
       </div>
     </div>
 
@@ -480,7 +474,7 @@ const chart = new Chart(chartCtx, {
     animation: false,
     scales: {
       x: { display: false },
-      y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, min: 0 }
+      y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' }, min: 0, max: 1000 }
     },
     plugins: { legend: { display: false } }
   }
