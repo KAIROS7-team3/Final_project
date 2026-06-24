@@ -121,7 +121,7 @@
         <button class="cam-mode-btn"        onclick="setCamMode('gripper','gripper_mask',this)">마스크</button>
         <button class="cam-mode-btn"        onclick="setCamMode('gripper','gripper_marker',this)">파지점</button>
       </div>
-      <div class="cam-wrap" id="cam-gripper-wrap" style="height:200px;aspect-ratio:unset">
+      <div class="cam-wrap" id="cam-gripper-wrap">
         <img id="cam-gripper" class="cam-img" src="/cam/gripper" alt="gripper"
              onerror="handleCamErr('cam-gripper')">
         <div id="cam-gripper-offline" class="cam-offline" style="display:none">NO SIGNAL</div>
@@ -136,7 +136,7 @@
         <button class="cam-mode-btn"        onclick="setCamMode('top','top_annotated',this)">검출</button>
         <button class="cam-mode-btn"        onclick="setCamMode('top','top_mask',this)">마스크</button>
       </div>
-      <div class="cam-wrap" id="cam-top-wrap" style="height:200px;aspect-ratio:unset">
+      <div class="cam-wrap" id="cam-top-wrap">
         <img id="cam-top" class="cam-img" src="/cam/top" alt="top"
              onerror="handleCamErr('cam-top')">
         <div id="cam-top-offline" class="cam-offline" style="display:none">NO SIGNAL</div>
