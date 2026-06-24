@@ -42,6 +42,7 @@ class StepKind(Enum):
     MOVE_L_SLOT_XYZ       = auto()   # return ⑩: toolbox.yaml slot XY + return_z_mm 하강
     MOVE_L_STAGING_XYZ    = auto()   # return ⑥: 그리퍼 캠 XY + staging_pickup_z_mm 하강
     MOVE_L_SLOT_XYZ_FETCH = auto()   # fetch ⑤: toolbox.yaml slot XY + grasp_z_mm 하강 (비전-free)
+    MOVE_L_STAGING_PLACE  = auto()   # fetch ⑨: SOCKET_BOTTOM XY/ori + per-tool staging_place_z_mm 하강
 
 
 PickPlaceMarker = Literal["pick", "place"]
@@ -548,10 +549,10 @@ def fixed_fetch_seq() -> list[Step]:
     ⑤ MOVE_L_SLOT_XYZ_FETCH  — grasp_pose_base XY + grasp_z_mm 하강 (비전-free)
     ⑥ GRIP_TOOL (pick)
     ⑦ MOVE_L_SLOT_XY         — approach_z_mm 상승 (④와 동일)
-    ⑧ MoveL → SOCKET_BOTTOM_XY  (staging 위)
-    ⑨ MoveL → SOCKET_BOTTOM     (staging 하강)
+    ⑧ MoveL → SOCKET_BOTTOM_XY         (staging 위)
+    ⑨ MOVE_L_STAGING_PLACE             (per-tool staging_place_z_mm 하강, XY/ori는 SOCKET_BOTTOM 동일)
     ⑩ GRIP_RELEASE (place)
-    ⑪ MoveL → SOCKET_BOTTOM_XY  (staging 위 복귀)
+    ⑪ MoveL → SOCKET_BOTTOM_XY         (staging 위 복귀)
     ⑫ JOINT_HOME
 
     호출 전 팔이 홈 자세에 있어야 함.
@@ -565,7 +566,7 @@ def fixed_fetch_seq() -> list[Step]:
         marked(GRIP_TOOL(), "pick"),                   # ⑥
         Step(kind=StepKind.MOVE_L_SLOT_XY),            # ⑦ approach_z 상승
         ml_abs(SOCKET_BOTTOM_XY),                      # ⑧ staging 위
-        ml_abs(SOCKET_BOTTOM),                         # ⑨ staging 하강
+        Step(kind=StepKind.MOVE_L_STAGING_PLACE),      # ⑨ staging 하강 (per-tool z)
         marked(GRIP_RELEASE(), "place"),               # ⑩
         ml_abs(SOCKET_BOTTOM_XY),                      # ⑪ staging 위 복귀
         JOINT_HOME(),                                  # ⑫

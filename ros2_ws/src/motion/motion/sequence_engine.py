@@ -245,6 +245,11 @@ class SequenceEngine:
                 for t in cfg.get('tools', [])
                 if 'staging_pickup_z_mm' in t
             }
+            self._staging_place_z_map: dict[str, float] = {
+                t['tool_id']: float(t['staging_place_z_mm'])
+                for t in cfg.get('tools', [])
+                if 'staging_place_z_mm' in t
+            }
             # 공구별 grip_stroke (미등록 시 PULSE_GRIP_TOOL=650 사용)
             self._grip_stroke_map: dict[str, int] = {
                 t['tool_id']: int(t['grip_stroke'])
@@ -289,6 +294,7 @@ class SequenceEngine:
             self._grasp_z_map = {}
             self._return_z_map = {}
             self._staging_pickup_z_map = {}
+            self._staging_place_z_map = {}
             self._grip_stroke_map = {}
             self._slot_xy_map = {}
             self._fetch_scan_j_deg  = [-30.1, 15.5, 74.7, 20.9, 101.2, -27.8]
@@ -504,6 +510,8 @@ class SequenceEngine:
             return self._exec_move_l_staging_xyz_return()
         elif step.kind == StepKind.MOVE_L_SLOT_XYZ_FETCH:
             return self._exec_move_l_slot_xyz_fetch()
+        elif step.kind == StepKind.MOVE_L_STAGING_PLACE:
+            return self._exec_move_l_staging_place()
         self._node.get_logger().warn(f'  알 수 없는 StepKind: {step.kind}')
         return False
 
@@ -946,6 +954,24 @@ class SequenceEngine:
         step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
         self._node.get_logger().info(
             f'  [SLOT_XYZ_FETCH] → ({x:.1f}, {y:.1f}, {z:.1f}) mm  tool_id={self._tool_id}'
+        )
+        return self._movel(step, DR_MV_MOD_ABS)
+
+    def _exec_move_l_staging_place(self) -> bool:
+        """fetch ⑨: SOCKET_BOTTOM XY/ori + per-tool staging_place_z_mm 로 staging 하강."""
+        from unit_actions.toolbox_motion import SOCKET_BOTTOM
+        place_z = self._staging_place_z_map.get(self._tool_id)
+        if place_z is None:
+            self._node.get_logger().warn(
+                f'  [STAGING_PLACE] tool_id={self._tool_id!r} staging_place_z_mm 미등록 — SOCKET_BOTTOM z 사용'
+            )
+            place_z = SOCKET_BOTTOM[2]
+        x, y = SOCKET_BOTTOM[0], SOCKET_BOTTOM[1]
+        ori = list(SOCKET_BOTTOM[3:])
+        pos = [x, y, place_z] + ori
+        step = Step(kind=StepKind.MOVE_L_ABS, pose=pos, vel=self._vel_l, acc=self._acc_l)
+        self._node.get_logger().info(
+            f'  [STAGING_PLACE] → ({x:.1f}, {y:.1f}, {place_z:.2f}) mm  tool_id={self._tool_id}'
         )
         return self._movel(step, DR_MV_MOD_ABS)
 
