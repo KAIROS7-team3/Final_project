@@ -72,6 +72,9 @@ log/
 config/hand_eye.yaml
 config/c270_hand_eye.yaml
 
+# 공구함 스캔 결과 (수동으로 toolbox.yaml에 반영 후 커밋, 원본 파일은 제외)
+config/toolbox_scan_*.yaml
+
 # 캘리브레이션 샘플 이미지 (로컬 수집 데이터, git 제외)
 scripts/samples/
 scripts/samples_c270/

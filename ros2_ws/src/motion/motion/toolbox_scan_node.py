@@ -291,7 +291,11 @@ class ToolboxScanNode(Node):
                 "layer_id": self._layer_id,
                 "timestamp": ts,
                 "scan_duration_sec": self._scan_dur,
-                "note": "grasp_pose_base.x/y 에 수동 반영 후 커밋",
+                "note": (
+                    "grasp_pose_base.x/y 에 수동 반영 후 커밋. "
+                    "tool_id에 _top 접미사 변형(예: socket_19mm_top)이 있으면 "
+                    "해당 결과를 베이스 tool_id(socket_19mm)에 우선 적용할 것."
+                ),
             },
             "tools": [
                 {
@@ -306,7 +310,8 @@ class ToolboxScanNode(Node):
             yaml.dump(out, f, allow_unicode=True, default_flow_style=False)
         self.get_logger().info(f"[scan] 결과 저장: {out_path}")
         self.get_logger().info(
-            "[scan] ⚠️  toolbox.yaml 의 grasp_pose_base.x/y 에 수동 반영 후 커밋하세요."
+            "[scan] ⚠️  toolbox.yaml 의 grasp_pose_base.x/y 에 수동 반영 후 커밋하세요. "
+            "_top 접미사 변형(예: socket_19mm_top)이 있으면 베이스 tool_id에 우선 적용."
         )
 
 
