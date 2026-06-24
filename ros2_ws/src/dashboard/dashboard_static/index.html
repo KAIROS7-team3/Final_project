@@ -218,6 +218,15 @@
 
       <hr class="section-divider">
 
+      <!-- 서랍 상태 -->
+      <div style="margin-bottom:6px;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600">서랍 상태</div>
+      <div id="drawer-states" style="display:flex;gap:10px;margin-bottom:10px">
+        <span id="drawer-0" class="badge badge-gray">1층 —</span>
+        <span id="drawer-1" class="badge badge-gray">2층 —</span>
+      </div>
+
+      <hr class="section-divider">
+
       <!-- E-stop -->
       <div class="btn-row">
         <button class="btn btn-red" id="estop-btn" onclick="doEstop()">⚡ E-STOP</button>
@@ -366,6 +375,13 @@
         <button class="btn btn-gray" onclick="dbResetAll()"
           style="border-color:var(--red);color:var(--red);padding:11px 22px;font-size:14px">
           ⚠ 전체 in_slot 초기화
+        </button>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px">서랍 상태 초기화 — 1층·2층 모두 닫힘으로 리셋</div>
+        <button class="btn btn-gray" onclick="dbResetDrawer()" style="padding:11px 22px;font-size:14px">
+          📁 서랍 상태 초기화
         </button>
       </div>
 
@@ -536,6 +552,22 @@ function updateState(s) {
   if (s.detections) {
     renderDetections(s.detections.gripper,   'det-gripper');
     renderDetections(s.detections.top_view,  'det-topview');
+  }
+
+  // 서랍 상태
+  if (s.drawer_states) {
+    s.drawer_states.forEach(d => {
+      const el = document.getElementById(`drawer-${d.layer_id}`);
+      if (!el) return;
+      const label = `${d.layer_id + 1}층`;
+      if (d.is_open) {
+        el.className = 'badge badge-yellow';
+        el.textContent = `${label} 열림`;
+      } else {
+        el.className = 'badge badge-green';
+        el.textContent = `${label} 닫힘`;
+      }
+    });
   }
 
   // 전류 파형
@@ -819,6 +851,14 @@ async function dbResetAll() {
     const j = await (await fetch('/action/db_reset_all', { method: 'POST' })).json();
     toast(j.message, !j.success);
     if (j.success) loadDB();
+  } catch(e) { toast('오류: ' + e.message, true); }
+}
+
+async function dbResetDrawer() {
+  if (!confirm('서랍 상태를 모두 닫힘으로 초기화합니다. 계속하시겠습니까?')) return;
+  try {
+    const j = await (await fetch('/action/db_reset_drawer', { method: 'POST' })).json();
+    toast(j.message, !j.success);
   } catch(e) { toast('오류: ' + e.message, true); }
 }
 

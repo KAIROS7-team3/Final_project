@@ -108,6 +108,10 @@ class DashboardNode(Node):
             "gripper_position": 0,
             "detections": {"gripper": [], "top_view": []},
             "health": {"robot": "stale", "plc": "stale", "db": "stale"},
+            "drawer_states": [
+                {"layer_id": 0, "is_open": False, "last_updated": None},
+                {"layer_id": 1, "is_open": False, "last_updated": None},
+            ],
         }
         self._state_lock = threading.Lock()
         self._gripper_history: deque[float] = deque(maxlen=_GRIPPER_CURRENT_MAXLEN)
@@ -272,9 +276,17 @@ class DashboardNode(Node):
                     "SELECT current_status FROM tools WHERE tool_id=?",
                     (self._state["tool_id"],),
                 ).fetchone()
+                drawer_rows = conn.execute(
+                    "SELECT layer_id, is_open, last_updated FROM drawers ORDER BY layer_id"
+                ).fetchall()
             with self._state_lock:
                 self._state["tool_status"] = row[0] if row else "unknown"
                 self._state["health"]["db"] = "ok"
+                if drawer_rows:
+                    self._state["drawer_states"] = [
+                        {"layer_id": r[0], "is_open": bool(r[1]), "last_updated": r[2]}
+                        for r in drawer_rows
+                    ]
         except Exception:
             with self._state_lock:
                 self._state["health"]["db"] = "error"
@@ -423,6 +435,35 @@ class DashboardNode(Node):
             if n == 0:
                 return {"success": False, "message": f"tool_id={tool_id} 없음"}
             return {"success": True, "message": f"{tool_id} → {status}"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def _db_get_drawer_states(self) -> list[dict]:
+        try:
+            if not self._db_path.exists():
+                return []
+            with sqlite3.connect(str(self._db_path), timeout=2) as conn:
+                rows = conn.execute(
+                    "SELECT layer_id, is_open, last_updated FROM drawers ORDER BY layer_id"
+                ).fetchall()
+            return [{"layer_id": r[0], "is_open": bool(r[1]), "last_updated": r[2]} for r in rows]
+        except Exception:
+            return []
+
+    def _db_reset_drawer_states(self) -> dict:
+        try:
+            if not self._db_path.exists():
+                return {"success": False, "message": "DB 파일 없음"}
+            with sqlite3.connect(str(self._db_path), timeout=5) as conn:
+                conn.execute(
+                    "UPDATE drawers SET is_open=0, last_updated=strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+                )
+                conn.execute(
+                    "INSERT INTO system_events(event_type, track, severity, notes) "
+                    "VALUES ('boot','A','info','dashboard: 서랍 상태 닫힘으로 초기화')"
+                )
+                conn.commit()
+            return {"success": True, "message": "서랍 상태가 닫힘으로 초기화됐습니다."}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -673,6 +714,14 @@ class DashboardNode(Node):
         @app.get("/api/scan/results")
         def api_scan_results():
             return self._scan_results()
+
+        @app.get("/api/drawer/states")
+        def api_drawer_states():
+            return {"drawers": self._db_get_drawer_states()}
+
+        @app.post("/action/db_reset_drawer")
+        def action_db_reset_drawer():
+            return self._db_reset_drawer_states()
 
         @app.post("/action/db_reset_all")
         def action_db_reset_all():
