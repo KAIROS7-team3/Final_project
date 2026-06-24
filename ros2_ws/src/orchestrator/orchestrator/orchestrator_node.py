@@ -5,7 +5,9 @@ Track A/B 전용.
 """
 from __future__ import annotations
 
+import os
 import threading
+import yaml
 
 import py_trees
 import rclpy
@@ -39,6 +41,25 @@ _QOS_ROBOT_STATUS = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABL
 _QOS_GRIPPER_POSE = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.BEST_EFFORT)
 
 _MAX_PENDING_S7_LOGS = 16
+
+
+def _load_tool_layer_map() -> dict[str, int]:
+    """toolbox.yaml tools[].slot_layer (1-indexed) 를 {tool_id: layer} 딕셔너리로 반환."""
+    candidates = [
+        os.environ.get("FINAL_PROJECT_ROOT", ""),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".."),
+    ]
+    for base in candidates:
+        path = os.path.join(base, "config", "toolbox.yaml")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            return {
+                t["tool_id"]: int(t.get("slot_layer", 1))
+                for t in cfg.get("tools", [])
+                if "tool_id" in t
+            }
+    return {}
 _UPDATE_STATUS_TIMEOUT_S = 5.0
 
 
@@ -83,10 +104,14 @@ class OrchestratorNode(Node):
             callback_group=self._normal_cbg,
         )
 
-        # ── BT 서브트리 조립 (클라이언트 주입) ───────────────────────────
+        # 공구별 층 맵 — toolbox.yaml slot_layer (1-indexed, 1=1층, 2=2층)
+        self._tool_layer_map: dict[str, int] = _load_tool_layer_map()
+        self.get_logger().info(f"[OrchestratorNode] tool_layer_map={self._tool_layer_map}")
+
+        # ── BT 서브트리 공용 kwargs (layer_id는 _tick_bt에서 공구별 동적 결정) ─
         # on_pick/on_place: action feedback(phase="pick"/"place")에 맞춰
         # DB 상태를 물리적 집기/놓기 시점에 즉시 전이시킨다 (BT 완료 대기 X).
-        self._fetch_tree = build_fetch_subtree(
+        self._fetch_tree_kwargs = dict(
             feasibility_client=self._feasibility_cli,
             execute_phase_client=self._exec_phase_cli,
             publish_status_fn=self._publish_status,
@@ -94,10 +119,9 @@ class OrchestratorNode(Node):
             log_error_fn=self._log_error_event,
             on_pick=self._on_fetch_pick,
             on_place=self._on_fetch_place,
-            layer_id=1,
             max_fetch_attempts=3,
         )
-        self._return_tree = build_return_subtree(
+        self._return_tree_kwargs = dict(
             feasibility_client=self._feasibility_cli,
             execute_phase_client=self._exec_phase_cli,
             publish_status_fn=self._publish_status,
@@ -105,11 +129,8 @@ class OrchestratorNode(Node):
             log_error_fn=self._log_error_event,
             on_pick=self._on_return_pick,
             on_place=self._on_return_place,
-            layer_id=1,
             max_return_attempts=2,
         )
-        self._fetch_tree.setup(timeout=5)
-        self._return_tree.setup(timeout=5)
 
         # ── 스캔 공유 버퍼 (CollectAndSave BT 노드와 공유) ───────────────
         self._scan_pose_buf: list[dict] = []
@@ -220,9 +241,15 @@ class OrchestratorNode(Node):
             return
         try:
             if intent_type == "fetch":
-                tree = self._fetch_tree
+                layer = self._tool_layer_map.get(tool_id, 1)
+                self.get_logger().info(f"[OrchestratorNode] fetch layer={layer} (tool_id={tool_id})")
+                tree = build_fetch_subtree(**self._fetch_tree_kwargs, layer_id=layer)
+                tree.setup(timeout=5)
             elif intent_type == "return":
-                tree = self._return_tree
+                layer = self._tool_layer_map.get(tool_id, 1)
+                self.get_logger().info(f"[OrchestratorNode] return layer={layer} (tool_id={tool_id})")
+                tree = build_return_subtree(**self._return_tree_kwargs, layer_id=layer)
+                tree.setup(timeout=5)
             elif intent_type == "scan":
                 layer = int(tool_id) if tool_id in ("1", "2") else 1
                 tree = self._scan_tree_l1 if layer == 1 else self._scan_tree_l2

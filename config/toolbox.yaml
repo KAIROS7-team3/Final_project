@@ -89,7 +89,8 @@ tools:
   notes: 실측 2026-06-15 (H_jig=3mm H_obj=5mm → grasp_h=11mm)
   return_z_mm: 45.65
   staging_pickup_z_mm: -29.06
-  staging_place_z_mm: -27.0
+  staging_place_z_mm: -20.0
+  slot_layer: 1
   tool_id: screwdriver
 - aliases:
   - 커터
@@ -112,7 +113,8 @@ tools:
   notes: 실측 2026-06-15 (H_jig=4mm H_obj=15mm → grasp_h=23mm)
   return_z_mm: 102.87
   staging_pickup_z_mm: -29.06
-  staging_place_z_mm: -27.0
+  staging_place_z_mm: -20.0
+  slot_layer: 2
   tool_id: utility_knife
 - aliases:
   - 라쳇
@@ -135,7 +137,8 @@ tools:
   notes: 실측 2026-06-15 (H_jig=13mm H_obj=15mm → grasp_h=41mm)
   return_z_mm: 100.32
   staging_pickup_z_mm: -29.06
-  staging_place_z_mm: -27.0
+  staging_place_z_mm: -20.0
+  slot_layer: 2
   tool_id: ratchet_wrench
 - aliases:
   - 멕가이버
@@ -158,7 +161,8 @@ tools:
   notes: 실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)
   return_z_mm: 52.59
   staging_pickup_z_mm: -29.06
-  staging_place_z_mm: -27.0
+  staging_place_z_mm: -20.0
+  slot_layer: 1
   tool_id: multi_tool
 - aliases:
   - 스패너
@@ -182,7 +186,8 @@ tools:
   notes: 임의값 — 실측 후 갱신
   return_z_mm: 56.4
   staging_pickup_z_mm: -9.12
-  staging_place_z_mm: -27.0
+  staging_place_z_mm: -20.0
+  slot_layer: 1
   tool_id: spanner_16mm
 - aliases:
   - 복스
@@ -208,6 +213,7 @@ tools:
   return_z_mm: 119.69
   staging_pickup_z_mm: -29.06
   staging_place_z_mm: -0.12
+  slot_layer: 2
   tool_id: socket_19mm
 vision_motion:
   gripper_cam_scan:

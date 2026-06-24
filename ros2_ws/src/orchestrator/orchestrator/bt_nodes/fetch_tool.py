@@ -54,7 +54,7 @@ def build_fetch_subtree(
         goal = ExecutePhase.Goal()
         goal.phase = "open_drawer"
         goal.tool_id = tool_id
-        goal.layer_id = layer_id
+        goal.layer_id = layer_id - 1  # UI 1-indexed → toolbox_motion 0-indexed
         return goal
 
     def _build_fetch_goal(tool_id: str) -> ExecutePhase.Goal:
@@ -68,7 +68,7 @@ def build_fetch_subtree(
         goal = ExecutePhase.Goal()
         goal.phase = "close_drawer"
         goal.tool_id = tool_id
-        goal.layer_id = layer_id
+        goal.layer_id = layer_id - 1  # UI 1-indexed → toolbox_motion 0-indexed
         return goal
 
     def _on_fetch_feedback(phase: str) -> None:

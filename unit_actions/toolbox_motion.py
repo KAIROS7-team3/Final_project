@@ -543,33 +543,31 @@ def fixed_fetch_seq() -> list[Step]:
     공구함 지그가 고정이므로 toolbox.yaml per-tool grasp_pose_base(XY) + grasp_z_mm(Z) 사용.
 
     ① JOINT_HOME
-    ② grip(0)               — 완전 개방
-    ③ GRIP_RELEASE           — 파지 준비 개방 (pulse=450)
-    ④ MOVE_L_SLOT_XY         — grasp_pose_base XY + approach_z_mm 이동
-    ⑤ MOVE_L_SLOT_XYZ_FETCH  — grasp_pose_base XY + grasp_z_mm 하강 (비전-free)
-    ⑥ GRIP_TOOL (pick)
-    ⑦ MOVE_L_SLOT_XY         — approach_z_mm 상승 (④와 동일)
-    ⑧ MoveL → SOCKET_BOTTOM_XY         (staging 위)
-    ⑨ MOVE_L_STAGING_PLACE             (per-tool staging_place_z_mm 하강, XY/ori는 SOCKET_BOTTOM 동일)
-    ⑩ GRIP_RELEASE (place)
-    ⑪ MoveL → SOCKET_BOTTOM_XY         (staging 위 복귀)
-    ⑫ JOINT_HOME
+    ② GRIP_RELEASE           — 파지 준비 개방 (pulse=450)
+    ③ MOVE_L_SLOT_XY         — grasp_pose_base XY + approach_z_mm 이동
+    ④ MOVE_L_SLOT_XYZ_FETCH  — grasp_pose_base XY + grasp_z_mm 하강 (비전-free)
+    ⑤ GRIP_TOOL (pick)
+    ⑥ MOVE_L_SLOT_XY         — approach_z_mm 상승 (③와 동일)
+    ⑦ MoveL → SOCKET_BOTTOM_XY         (staging 위)
+    ⑧ MOVE_L_STAGING_PLACE             (per-tool staging_place_z_mm 하강, XY/ori는 SOCKET_BOTTOM 동일)
+    ⑨ GRIP_RELEASE (place)
+    ⑩ MoveL → SOCKET_BOTTOM_XY         (staging 위 복귀)
+    ⑪ JOINT_HOME
 
     호출 전 팔이 홈 자세에 있어야 함.
     """
     return [
         JOINT_HOME(),                                  # ①
-        grip(0),                                       # ② 완전 개방
-        GRIP_RELEASE(),                                # ③ 파지 준비 개방
-        Step(kind=StepKind.MOVE_L_SLOT_XY),            # ④ slot 위 (approach_z)
-        Step(kind=StepKind.MOVE_L_SLOT_XYZ_FETCH),     # ⑤ slot 하강 (grasp_z_mm, 비전-free)
-        marked(GRIP_TOOL(), "pick"),                   # ⑥
-        Step(kind=StepKind.MOVE_L_SLOT_XY),            # ⑦ approach_z 상승
-        ml_abs(SOCKET_BOTTOM_XY),                      # ⑧ staging 위
-        Step(kind=StepKind.MOVE_L_STAGING_PLACE),      # ⑨ staging 하강 (per-tool z)
-        marked(GRIP_RELEASE(), "place"),               # ⑩
-        ml_abs(SOCKET_BOTTOM_XY),                      # ⑪ staging 위 복귀
-        JOINT_HOME(),                                  # ⑫
+        GRIP_RELEASE(),                                # ② 파지 준비 개방
+        Step(kind=StepKind.MOVE_L_SLOT_XY),            # ③ slot 위 (approach_z)
+        Step(kind=StepKind.MOVE_L_SLOT_XYZ_FETCH),     # ④ slot 하강 (grasp_z_mm, 비전-free)
+        marked(GRIP_TOOL(), "pick"),                   # ⑤
+        Step(kind=StepKind.MOVE_L_SLOT_XY),            # ⑥ approach_z 상승
+        ml_abs(SOCKET_BOTTOM_XY),                      # ⑦ staging 위
+        Step(kind=StepKind.MOVE_L_STAGING_PLACE),      # ⑧ staging 하강 (per-tool z)
+        marked(GRIP_RELEASE(), "place"),               # ⑨
+        ml_abs(SOCKET_BOTTOM_XY),                      # ⑩ staging 위 복귀
+        JOINT_HOME(),                                  # ⑪
     ]
 
 

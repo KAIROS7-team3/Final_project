@@ -94,7 +94,7 @@ class FaultHandlerNode(py_trees.behaviour.Behaviour):
         goal = ExecutePhase.Goal()
         goal.phase = phase
         goal.tool_id = ""
-        goal.layer_id = layer_id
+        goal.layer_id = layer_id - 1  # UI 1-indexed → toolbox_motion 0-indexed
 
         done = threading.Event()
 
