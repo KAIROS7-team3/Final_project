@@ -155,7 +155,7 @@ tools:
     x: 0.26128
     y: 0.33282
     z: 0.04959
-  grasp_z_mm: 51.59
+  grasp_z_mm: 50.00
   grip_stroke: 738
   mass_kg: 0.18
   notes: 실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)
@@ -203,8 +203,8 @@ tools:
   display_name: 복스 소켓 19mm
   grasp_approach: top
   grasp_pose_base:
-    x: 0.25303
-    y: 0.34305
+    x: 0.26303
+    y: 0.35305
     z: 0.11669
   grasp_z_mm: 118.69
   grip_stroke: 738
