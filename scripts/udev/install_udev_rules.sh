@@ -20,5 +20,7 @@ udevadm control --reload-rules
 udevadm trigger
 
 echo ""
-echo "완료. RealSense D455f 재연결 후 ls -l /dev/realsense 로 확인."
-echo "gripper / plc 심링크는 VID/PID 기입 후 재실행 필요."
+echo "완료. 각 장치 재연결 후 아래로 확인:"
+echo "  ls -l /dev/realsense   # RealSense D455f"
+echo "  ls -l /dev/plc         # PLC XBC-DR14E (CH340, VID=1a86 PID=7523)"
+echo "  ls -l /dev/gripper     # 그리퍼 — VID/PID 미기입 시 심링크 미생성"

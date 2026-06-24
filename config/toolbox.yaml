@@ -155,7 +155,7 @@ tools:
     x: 0.26128
     y: 0.33282
     z: 0.04959
-  grasp_z_mm: 50.00
+  grasp_z_mm: 45.00
   grip_stroke: 738
   mass_kg: 0.18
   notes: 실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)

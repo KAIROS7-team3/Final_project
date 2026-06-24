@@ -189,7 +189,9 @@ class ExecutePhaseServer(Node):
                 f"[TAS] phase={phase} tool_id={tool_id!r} layer_id={layer_id}"
             )
             self._engine.set_tcp()
-            self._set_plc("moving")
+            # PLC 상태 관리는 orchestrator BT(SetMoving)가 전담한다.
+            # 여기서 _set_plc를 호출하면 phase 완료마다 M0100 reset이 발생해
+            # 다음 phase 시작 전 P040~P044가 순간 꺼지는 문제가 생긴다.
 
             steps = self._resolve_phase(phase, tool_id, layer_id)
             if steps is None:
@@ -219,14 +221,12 @@ class ExecutePhaseServer(Node):
                 goal_handle.succeed()
                 result.success = True
                 result.message = f"{phase} 완료"
-                self._set_plc("idle")
                 self.get_logger().info(f"[TAS] {phase} 완료: tool_id={tool_id!r}")
             else:
                 self._engine.stop_motion()
                 goal_handle.abort()
                 result.success = False
                 result.message = f"{phase} 실패"
-                self._set_plc("error")
                 self.get_logger().error(f"[TAS] {phase} 실패: tool_id={tool_id!r}")
 
         except Exception as exc:
@@ -234,7 +234,6 @@ class ExecutePhaseServer(Node):
             goal_handle.abort()
             result.success = False
             result.message = str(exc)
-            self._set_plc("error")
         finally:
             self._action_lock.release()
 

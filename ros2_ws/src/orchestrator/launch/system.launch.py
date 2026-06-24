@@ -9,18 +9,18 @@ demo_trigger 같은 수동 주입 도구는 포함하지 않는다 — 입력은
   # virtual (에뮬레이터, 음성 없이 기본 기동):
   ros2 launch orchestrator system.launch.py
 
-  # real (실물):
+  # real (실물, PLC USB 연결 시 /dev/plc 심링크 자동 사용):
   ros2 launch orchestrator system.launch.py mode:=real robot_ip:=110.120.1.38
 
   # 음성 포함:
   ros2 launch orchestrator system.launch.py mode:=real robot_ip:=110.120.1.38 voice:=true
 
-  # PLC LED 포함:
-  ros2 launch orchestrator system.launch.py mode:=real robot_ip:=110.120.1.38 plc:=true
+  # PLC 비활성화 (PLC 미연결 시):
+  ros2 launch orchestrator system.launch.py mode:=real robot_ip:=110.120.1.38 plc:=false
 
   # 전체:
   ros2 launch orchestrator system.launch.py mode:=real robot_ip:=110.120.1.38 \\
-    voice:=true plc:=true plc_port:=/dev/ttyUSB0 dashboard:=true
+    voice:=true dashboard:=true
 
 시작 순서:
   0s  — Doosan bringup (DSR + gripper_node)
@@ -64,12 +64,12 @@ def generate_launch_description() -> LaunchDescription:
             description="음성 노드 활성화 (whisper + rule_intent)"
         ),
         DeclareLaunchArgument(
-            "plc", default_value="false",
-            description="PLC 노드 활성화"
+            "plc", default_value="true",
+            description="PLC 노드 활성화 (PLC 미연결 시 false)"
         ),
         DeclareLaunchArgument(
-            "plc_port", default_value="/dev/ttyUSB0",
-            description="PLC 시리얼 포트"
+            "plc_port", default_value="/dev/plc",
+            description="PLC 시리얼 포트 (udev 심링크 — scripts/udev/99-robot.rules)"
         ),
         DeclareLaunchArgument(
             "dashboard", default_value="true",
