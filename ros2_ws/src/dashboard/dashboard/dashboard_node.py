@@ -53,7 +53,7 @@ except ImportError:
     _VISION_OK = False
 
 try:
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
     from fastapi.responses import HTMLResponse, StreamingResponse
     import uvicorn
     _FASTAPI_OK = True
@@ -70,6 +70,7 @@ _CAM_TOPICS: dict[str, str] = {
     "top":               "/d455f/color/image_raw",
     "gripper_annotated": "/vision/debug/gripper/annotated",
     "gripper_mask":      "/vision/debug/gripper/mask",
+    "gripper_marker":    "/vision/debug/gripper_marker",
     "top_annotated":     "/vision/debug/top_view/annotated",
     "top_mask":          "/vision/debug/top_view/mask",
 }
@@ -164,7 +165,9 @@ class DashboardNode(Node):
             2: self.create_client(Trigger, "/tool_action_server/close_toolbox_l2"),
         }
 
-        self._scan_procs: dict[int, subprocess.Popen] = {}   # layer_id → proc
+        self._scan_states: dict[int, str] = {}   # layer_id → 상태 문자열
+        self._scan_layer_running: int | None = None   # 현재 스캔 중인 layer
+        self._prev_is_moving: bool = False
         self._config_dir = Path("config")
 
         # ── 타이머 ───────────────────────────────────────────────────────
@@ -235,8 +238,15 @@ class DashboardNode(Node):
 
     def _on_robot_status(self, msg: RobotStatus) -> None:
         with self._state_lock:
+            prev = self._prev_is_moving
             self._state["is_moving"] = msg.is_moving
             self._state["health"]["robot"] = "ok"
+            self._prev_is_moving = msg.is_moving
+        # is_moving True→False 전환: 스캔 중이었으면 완료로 표시
+        if prev and not msg.is_moving and self._scan_layer_running is not None:
+            layer = self._scan_layer_running
+            self._scan_layer_running = None
+            self._scan_states[layer] = "완료 — 결과 파일 확인"
 
     def _on_plc_state(self, msg: String) -> None:
         with self._state_lock:
@@ -363,13 +373,9 @@ class DashboardNode(Node):
             return {"success": False, "message": str(e)}
 
     def _scan_status(self, layer_id: int) -> dict:
-        proc = self._scan_procs.get(layer_id)
-        if proc is None:
-            return {"running": False, "status": "미실행"}
-        rc = proc.poll()
-        if rc is None:
-            return {"running": True,  "status": f"실행 중 (pid={proc.pid})"}
-        return {"running": False, "status": f"완료 (exit={rc})"}
+        status = self._scan_states.get(layer_id, "미실행")
+        running = self._scan_layer_running == layer_id
+        return {"running": running, "status": status}
 
     def _scan_results(self) -> list[dict]:
         """config/ 폴더의 toolbox_scan_*.yaml 파일 목록 반환."""
@@ -420,6 +426,39 @@ class DashboardNode(Node):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    def _get_scan_pose_config(self) -> dict:
+        import yaml
+        cfg_path = "/home/kg/assistant/config/toolbox.yaml"
+        try:
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f)
+            gc = cfg.get("vision_motion", {}).get("gripper_cam_scan", {})
+            return {
+                "ok": True,
+                "fetch_j_deg": gc.get("fetch_j_deg", []),
+                "return_j_deg": gc.get("return_j_deg", []),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _set_scan_pose_config(self, data: dict) -> dict:
+        import yaml
+        cfg_path = "/home/kg/assistant/config/toolbox.yaml"
+        try:
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f)
+            vm = cfg.setdefault("vision_motion", {})
+            gc = vm.setdefault("gripper_cam_scan", {})
+            if "fetch_j_deg" in data:
+                gc["fetch_j_deg"] = [float(v) for v in data["fetch_j_deg"]]
+            if "return_j_deg" in data:
+                gc["return_j_deg"] = [float(v) for v in data["return_j_deg"]]
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False)
+            return {"ok": True, "message": "scan pose 저장 완료 — 다음 이동 명령부터 즉시 반영됩니다"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def _plc_reset(self) -> dict:
         msg = Bool()
         msg.data = True
@@ -454,7 +493,7 @@ class DashboardNode(Node):
             return self._frames.get(name, b"")
 
     def _build_app(self):
-        from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+        from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
         from fastapi.responses import HTMLResponse, StreamingResponse
 
         app = FastAPI(title="Robot Demo Dashboard")
@@ -498,6 +537,11 @@ class DashboardNode(Node):
             return StreamingResponse(_mjpeg_gen("gripper_mask"),
                                      media_type="multipart/x-mixed-replace; boundary=frame")
 
+        @app.get("/cam/gripper_marker")
+        async def cam_gripper_marker():
+            return StreamingResponse(_mjpeg_gen("gripper_marker"),
+                                     media_type="multipart/x-mixed-replace; boundary=frame")
+
         @app.get("/cam/top_annotated")
         async def cam_top_annotated():
             return StreamingResponse(_mjpeg_gen("top_annotated"),
@@ -535,9 +579,15 @@ class DashboardNode(Node):
             self._pub_intent("return", tool_id)
             return {"ok": True, "message": f"return {tool_id} 전송"}
 
+        @app.post("/action/stage_pick_test")
+        async def action_stage_pick_test(tool_id: str = "socket_19mm"):
+            self._pub_intent("stage_pick_test", tool_id)
+            return {"ok": True, "message": f"stage_pick_test {tool_id} 전송"}
+
         @app.post("/action/home")
         def action_home():
-            return self._call_trigger(self._home_cli, timeout=60.0)
+            self._pub_intent("home", "")
+            return {"ok": True, "message": "home 명령 전송"}
 
         @app.post("/action/estop")
         def action_estop():
@@ -592,8 +642,29 @@ class DashboardNode(Node):
 
         @app.post("/action/scan")
         def action_scan(layer_id: int = 1):
+            self._scan_states[layer_id] = "실행 중"
+            self._scan_layer_running = layer_id
+            self._prev_is_moving = False  # 다음 True→False 전환을 정확히 감지하기 위해 초기화
             self._pub_intent("scan", str(layer_id))
             return {"ok": True, "message": f"{layer_id}층 스캔 명령 전송 (orchestrator BT 처리)"}
+
+        @app.post("/action/scan_pose")
+        async def action_scan_pose(request: Request):
+            pose_type = request.query_params.get("type", "fetch")
+            if pose_type not in ("fetch", "return"):
+                pose_type = "fetch"
+            self._pub_intent(f"scan_pose_{pose_type}", "")
+            label = "공구 집기" if pose_type == "fetch" else "반납"
+            return {"ok": True, "message": f"스캔 자세 이동 ({label}) 명령 전송"}
+
+        @app.get("/api/config/scan_pose")
+        def api_get_scan_pose():
+            return self._get_scan_pose_config()
+
+        @app.post("/api/config/scan_pose")
+        async def api_set_scan_pose(request: Request):
+            data = await request.json()
+            return self._set_scan_pose_config(data)
 
         @app.get("/api/scan/status")
         def api_scan_status(layer_id: int = 1):

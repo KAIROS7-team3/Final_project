@@ -40,6 +40,7 @@ class FaultHandlerNode(py_trees.behaviour.Behaviour):
         set_plc_fn: Callable[[str], None],
         log_error_fn: Callable[[str, str], None],
         layer_id: int = 1,
+        close_phase: str = "close_drawer",
     ) -> None:
         super().__init__(name=name)
         self._client = execute_phase_client
@@ -47,6 +48,7 @@ class FaultHandlerNode(py_trees.behaviour.Behaviour):
         self._set_plc_fn = set_plc_fn
         self._log_error_fn = log_error_fn
         self._layer_id = layer_id
+        self._close_phase = close_phase
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
             key=KEY_ACTIVE_TOOL_ID, access=py_trees.common.Access.READ
@@ -69,7 +71,7 @@ class FaultHandlerNode(py_trees.behaviour.Behaviour):
             self.logger.error(f"[{self.name}] PLC error 설정 실패: {exc}")
 
         # 3. close_drawer 복구 (best-effort)
-        self._run_phase("close_drawer", self._layer_id, timeout=30.0)
+        self._run_phase(self._close_phase, self._layer_id, timeout=30.0)
 
         # 4. home 복귀 (best-effort)
         self._run_phase("home", 0, timeout=30.0)

@@ -76,6 +76,19 @@
   #toast { position: fixed; bottom: 20px; right: 20px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; display: none; max-width: 300px; z-index: 999; font-size: 13px; }
   .section-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
   select.btn { cursor: pointer; }
+  /* 운영/테스트 탭 */
+  #tab-ops { padding: 24px; }
+  #tab-ops .card { padding: 24px; }
+  #tab-ops .card-title { font-size: 13px; margin-bottom: 18px; }
+  .ops-section { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+  .ops-section-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .ops-section-sub { font-size: 12px; color: var(--text2); }
+  .joint-wrap { display: flex; flex-direction: column; gap: 8px; }
+  .joint-label { font-size: 13px; color: var(--text2); font-weight: 600; text-align: center; }
+  .joint-input { width: 100%; padding: 14px 6px; background: var(--bg2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 18px; font-weight: 600; text-align: center; }
+  .joint-input:focus { outline: none; border-color: var(--blue); }
+  .ops-btn-lg { padding: 14px 28px; font-size: 15px; }
+  .ops-btn-md { padding: 11px 22px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -107,6 +120,7 @@
         <button class="cam-mode-btn active" onclick="setCamMode('gripper','gripper',this)">원본</button>
         <button class="cam-mode-btn"        onclick="setCamMode('gripper','gripper_annotated',this)">검출</button>
         <button class="cam-mode-btn"        onclick="setCamMode('gripper','gripper_mask',this)">마스크</button>
+        <button class="cam-mode-btn"        onclick="setCamMode('gripper','gripper_marker',this)">파지점</button>
       </div>
       <div class="cam-wrap" id="cam-gripper-wrap">
         <img id="cam-gripper" class="cam-img" src="/cam/gripper" alt="gripper"
@@ -255,41 +269,110 @@
 
 <!-- ═══════════════════ 운영/테스트 탭 ═══════════════════ -->
 <div id="tab-ops" class="tab-content">
-  <div class="grid" style="max-width:1100px;grid-template-columns:1fr 1fr">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
 
-    <!-- ── 공구함 스캔 ─────────────────────────────────── -->
+    <!-- ── 공구함 스캔 ── full width ───────────────────── -->
     <div class="card" style="grid-column:span 2">
-      <div class="card-title">공구함 스캔 (서랍 → 그리퍼캠 XY 수집)</div>
-      <div class="btn-row" style="margin-bottom:12px">
-        <button class="btn btn-blue"  onclick="startScan(1)" id="scan-btn-1">📷 1층 스캔</button>
-        <button class="btn btn-blue"  onclick="startScan(2)" id="scan-btn-2">📷 2층 스캔</button>
-        <span id="scan-status-1" style="font-size:12px;color:var(--text2)"></span>
-        <span id="scan-status-2" style="font-size:12px;color:var(--text2)"></span>
+      <div class="card-title">공구함 스캔 — 서랍 열기 → 스캔 자세 → 그리퍼캠 XY 수집 → 홈</div>
+      <div class="btn-row" style="margin-bottom:16px;gap:16px">
+        <button class="btn btn-blue ops-btn-lg" onclick="startScan(1)" id="scan-btn-1">📷 1층 스캔</button>
+        <button class="btn btn-blue ops-btn-lg" onclick="startScan(2)" id="scan-btn-2">📷 2층 스캔</button>
+        <span id="scan-status-1" style="font-size:13px;color:var(--text2)"></span>
+        <span id="scan-status-2" style="font-size:13px;color:var(--text2)"></span>
       </div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:12px">
+      <div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:16px">
         ※ tool_action_server + yolo_node(gripper) + gripper_marker_scan_node 가 실행 중이어야 합니다.<br>
-        완료 시 config/toolbox_scan_YYYYMMDD_*.yaml 에 결과가 저장됩니다.
+        완료 시 <code style="background:var(--bg3);padding:1px 5px;border-radius:3px">config/toolbox_scan_YYYYMMDD_*.yaml</code> 에 결과가 저장됩니다.
       </div>
-      <div class="card-title" style="margin-top:4px">스캔 결과 파일</div>
-      <div id="scan-results-list" style="font-size:12px;color:var(--text2)">로딩 중...</div>
-      <button class="btn btn-gray" style="margin-top:8px;padding:4px 12px;font-size:12px" onclick="loadScanResults()">새로고침</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:600;color:var(--text2)">스캔 결과 파일</div>
+        <button class="btn btn-gray" style="padding:6px 16px;font-size:12px" onclick="loadScanResults()">새로고침</button>
+      </div>
+      <div id="scan-results-list" style="font-size:13px;color:var(--text2)">로딩 중...</div>
+    </div>
+
+    <!-- ── 스캔 자세 편집 ── full width ─────────────────── -->
+    <div class="card" style="grid-column:span 2">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px">
+        <div class="card-title" style="margin-bottom:0">스캔 자세 편집</div>
+        <span style="font-size:12px;color:var(--text2)">config/toolbox.yaml · gripper_cam_scan · 단위: deg · 저장 즉시 반영 (다음 이동 명령부터)</span>
+        <div style="margin-left:auto;display:flex;gap:10px">
+          <button class="btn btn-gray ops-btn-md" onclick="loadScanPose()">📥 불러오기</button>
+          <button class="btn btn-blue ops-btn-md" onclick="saveScanPose()">💾 저장</button>
+        </div>
+      </div>
+
+      <!-- fetch_j_deg -->
+      <div class="ops-section" style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div>
+            <div class="ops-section-title">fetch_j_deg</div>
+            <div class="ops-section-sub">공구 집기 스캔 자세 — 그리퍼캠이 공구함 1·2층을 내려다보는 포즈</div>
+          </div>
+          <button class="btn btn-gray ops-btn-md" onclick="goScanPose('fetch')" id="scan-pose-fetch-btn">
+            🎯 이 자세로 이동
+          </button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:16px" id="fetch-j-inputs"></div>
+      </div>
+
+      <!-- return_j_deg -->
+      <div class="ops-section" style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div>
+            <div class="ops-section-title">return_j_deg</div>
+            <div class="ops-section-sub">반납 스캔 자세 — 스테이징 에어리어 위에서 반납 공구를 내려다보는 포즈</div>
+          </div>
+          <button class="btn btn-gray ops-btn-md" onclick="goScanPose('return')" id="scan-pose-return-btn">
+            🔄 이 자세로 이동
+          </button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:16px" id="return-j-inputs"></div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px">
+        <span id="scan-pose-save-msg" style="font-size:13px;color:var(--text2)"></span>
+      </div>
+    </div>
+
+    <!-- ── Stage Pick 테스트 ──────────────────────────── -->
+    <div class="card" style="grid-column:span 2">
+      <div class="card-title">Stage Pick 테스트 — 서랍 없이 스캔 → Stage에서 파지만</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">
+        서랍 열기/닫기·슬롯 반납 없이 그리퍼캠 스캔 후 Stage 위 공구를 파지합니다. 캘리브레이션·파지점 확인용.
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <select id="stage-pick-tool-select" class="btn btn-gray" style="padding:9px 10px">
+          <option value="socket_19mm">socket_19mm</option>
+          <option value="screwdriver">screwdriver</option>
+          <option value="ratchet_wrench">ratchet_wrench</option>
+          <option value="spanner_16mm">spanner_16mm</option>
+          <option value="multi_tool">multi_tool</option>
+          <option value="utility_knife">utility_knife</option>
+        </select>
+        <button class="btn btn-blue ops-btn-md" onclick="doStagePick()" id="stage-pick-btn">
+          🤏 Stage Pick
+        </button>
+        <span id="stage-pick-status" style="font-size:13px;color:var(--text2)"></span>
+      </div>
     </div>
 
     <!-- ── DB 운영 ─────────────────────────────────────── -->
     <div class="card">
       <div class="card-title">DB 운영</div>
 
-      <div style="margin-bottom:10px">
-        <div style="font-size:11px;color:var(--text2);margin-bottom:6px">전체 초기화 — 모든 공구를 in_slot으로 리셋</div>
-        <button class="btn btn-gray" onclick="dbResetAll()" style="border-color:var(--red);color:var(--red)">
+      <div style="margin-bottom:16px">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px">전체 초기화 — 모든 공구를 in_slot으로 리셋</div>
+        <button class="btn btn-gray" onclick="dbResetAll()"
+          style="border-color:var(--red);color:var(--red);padding:11px 22px;font-size:14px">
           ⚠ 전체 in_slot 초기화
         </button>
       </div>
 
       <hr class="section-divider">
 
-      <div style="margin-bottom:8px;font-size:11px;color:var(--text2)">개별 공구 상태 변경</div>
-      <div class="btn-row" style="margin-bottom:8px">
+      <div style="margin-bottom:12px;font-size:13px;color:var(--text2)">개별 공구 상태 변경</div>
+      <div class="btn-row" style="gap:10px">
         <select id="db-tool-select" class="btn btn-gray" style="flex:1;min-width:150px">
           <option value="socket_19mm">socket_19mm</option>
           <option value="screwdriver">screwdriver</option>
@@ -313,16 +396,18 @@
     <div class="card">
       <div class="card-title">PLC / 시스템</div>
 
-      <div style="margin-bottom:10px">
-        <div style="font-size:11px;color:var(--text2);margin-bottom:6px">PLC 리셋 (/plc_reset 토픽 발행)</div>
-        <button class="btn btn-gray" onclick="plcReset()">🔄 PLC 리셋</button>
+      <div style="margin-bottom:16px">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:10px">PLC 리셋 (/plc_reset 토픽 발행)</div>
+        <button class="btn btn-gray" onclick="plcReset()" style="padding:11px 22px;font-size:14px">🔄 PLC 리셋</button>
       </div>
 
       <hr class="section-divider">
 
-      <div style="font-size:11px;color:var(--text2);margin-bottom:6px">실행 중인 ROS2 노드</div>
-      <button class="btn btn-gray" style="margin-bottom:8px;padding:4px 12px;font-size:12px" onclick="loadNodes()">새로고침</button>
-      <div id="nodes-list" style="font-size:12px;color:var(--text2);line-height:1.8">—</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:13px;color:var(--text2)">실행 중인 ROS2 노드</div>
+        <button class="btn btn-gray" style="padding:6px 16px;font-size:12px" onclick="loadNodes()">새로고침</button>
+      </div>
+      <div id="nodes-list" style="font-size:13px;color:var(--text2);line-height:2">—</div>
     </div>
 
   </div>
@@ -514,6 +599,25 @@ async function doEstop() {
   doAction('estop');
 }
 
+async function doStagePick() {
+  const toolId = document.getElementById('stage-pick-tool-select').value;
+  const btn = document.getElementById('stage-pick-btn');
+  const status = document.getElementById('stage-pick-status');
+  btn.disabled = true;
+  status.textContent = '실행 중...';
+  try {
+    const r = await fetch(`/action/stage_pick_test?tool_id=${encodeURIComponent(toolId)}`, { method: 'POST' });
+    const j = await r.json();
+    status.textContent = j.message ?? (j.ok ? '완료' : '실패');
+    toast(status.textContent, !j.ok && !j.success);
+  } catch (e) {
+    status.textContent = '오류: ' + e.message;
+    toast(status.textContent, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function doDrawer(action) {
   const layerId = document.getElementById('drawer-layer-select').value;
   try {
@@ -594,6 +698,70 @@ async function loadLogs() {
 // 운영/테스트 탭
 // ────────────────────────────────────────────────────────────────────────────
 let scanPollTimer = null;
+
+async function goScanPose(type = 'fetch') {
+  const btnId = type === 'fetch' ? 'scan-pose-fetch-btn' : 'scan-pose-return-btn';
+  const btn = document.getElementById(btnId);
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`/action/scan_pose?type=${type}`, { method: 'POST' });
+    const j = await r.json();
+    toast(j.message ?? (j.ok ? '스캔 자세 이동 명령 전송' : '실패'), !j.ok);
+  } catch(e) { toast('스캔 자세 이동 오류: ' + e.message, true); }
+  finally { if (btn) setTimeout(() => { btn.disabled = false; }, 2000); }
+}
+
+function _buildJointInputs(containerId, values) {
+  const c = document.getElementById(containerId);
+  c.innerHTML = '';
+  const labels = ['J1','J2','J3','J4','J5','J6'];
+  for (let i = 0; i < 6; i++) {
+    const wrap = document.createElement('div');
+    wrap.className = 'joint-wrap';
+    const lbl = document.createElement('div');
+    lbl.className = 'joint-label';
+    lbl.textContent = labels[i];
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.step = '0.01';
+    inp.className = 'joint-input';
+    inp.value = values[i] !== undefined ? Number(values[i]).toFixed(2) : '0.00';
+    wrap.appendChild(lbl);
+    wrap.appendChild(inp);
+    c.appendChild(wrap);
+  }
+}
+
+function _readJointInputs(containerId) {
+  return Array.from(document.getElementById(containerId).querySelectorAll('input'))
+    .map(inp => parseFloat(inp.value));
+}
+
+async function loadScanPose() {
+  try {
+    const j = await (await fetch('/api/config/scan_pose')).json();
+    if (!j.ok) { toast('불러오기 실패: ' + j.error, true); return; }
+    _buildJointInputs('fetch-j-inputs', j.fetch_j_deg || Array(6).fill(0));
+    _buildJointInputs('return-j-inputs', j.return_j_deg || Array(6).fill(0));
+    document.getElementById('scan-pose-save-msg').textContent = '현재 값 로드 완료';
+  } catch(e) { toast('스캔 자세 로드 오류: ' + e.message, true); }
+}
+
+async function saveScanPose() {
+  const fetch_j = _readJointInputs('fetch-j-inputs');
+  const return_j = _readJointInputs('return-j-inputs');
+  try {
+    const r = await fetch('/api/config/scan_pose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fetch_j_deg: fetch_j, return_j_deg: return_j }),
+    });
+    const j = await r.json();
+    const msg = j.message ?? (j.ok ? '저장 완료' : j.error);
+    document.getElementById('scan-pose-save-msg').textContent = msg;
+    toast(msg, !j.ok);
+  } catch(e) { toast('저장 오류: ' + e.message, true); }
+}
 
 async function startScan(layerId) {
   const btn = document.getElementById(`scan-btn-${layerId}`);

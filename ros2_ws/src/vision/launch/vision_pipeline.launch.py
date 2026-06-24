@@ -29,6 +29,16 @@ def generate_launch_description() -> LaunchDescription:
         default_value="/dev/video2",
         description="C270 그리퍼 캠 V4L2 디바이스 경로",
     )
+    top_view_device_arg = DeclareLaunchArgument(
+        "top_view_device",
+        default_value="",
+        description="탑뷰 YOLO device 오버라이드 (예: cpu, cuda). 빈 값이면 vision.yaml 설정 사용",
+    )
+    gripper_device_arg = DeclareLaunchArgument(
+        "gripper_device",
+        default_value="",
+        description="그리퍼 YOLO device 오버라이드 (예: cpu, cuda). 빈 값이면 vision.yaml 설정 사용",
+    )
 
     c270_node = Node(
         package="v4l2_camera",
@@ -66,7 +76,7 @@ def generate_launch_description() -> LaunchDescription:
         executable="yolo_node",
         name="yolo_node_top_view",
         output="screen",
-        parameters=[{"camera_type": "top_view"}],
+        parameters=[{"camera_type": "top_view", "device": LaunchConfiguration("top_view_device")}],
     )
 
     yolo_node_gripper = Node(
@@ -74,7 +84,7 @@ def generate_launch_description() -> LaunchDescription:
         executable="yolo_node",
         name="yolo_node_gripper",
         output="screen",
-        parameters=[{"camera_type": "gripper"}],
+        parameters=[{"camera_type": "gripper", "device": LaunchConfiguration("gripper_device")}],
     )
 
     pose_node = Node(
@@ -98,9 +108,21 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
     )
 
+    # gripper_marker_scan_node: yolo_node_gripper 마스크 + ArUco 마커로
+    # /vision/tool_gripper_pose (PoseStamped, base_link frame) 발행.
+    # 스캔 BT의 CollectAndSave가 이 토픽을 소비한다.
+    gripper_marker_scan = Node(
+        package="vision",
+        executable="gripper_marker_scan_node",
+        name="gripper_marker_scan_node",
+        output="screen",
+    )
+
     return LaunchDescription([
         debug_arg,
         c270_device_arg,
+        top_view_device_arg,
+        gripper_device_arg,
         c270_node,
         realsense_launch,
         yolo_node_top_view,
@@ -108,4 +130,5 @@ def generate_launch_description() -> LaunchDescription:
         pose_node,
         tracker_node,
         context_builder,
+        gripper_marker_scan,
     ])

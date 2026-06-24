@@ -13,7 +13,7 @@ yolo:
   gripper_model_path: ros2_ws/src/vision/model_library/gripper_model/v1/weights/best.pt
   confidence_threshold: 0.70   # 수락 기준: 공구 분류 정확도 ≥ 95% (docs/conventions.md)
   iou_threshold: 0.45
-  device: "cpu"                # "cuda" | "cpu" (GPU 없을 시 cpu로 변경)
+  device: "cuda"                # "cuda" | "cpu" (GPU 없을 시 cpu로 변경)
   input_size: 640              # YOLO 입력 해상도 (px)
 
   # 6종 공구 클래스 — 탑뷰/그리퍼 모델 공통 (학습 시 인덱스 순서와 반드시 일치)

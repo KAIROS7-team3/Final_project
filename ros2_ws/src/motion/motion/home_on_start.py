@@ -18,7 +18,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import Bool
-from dsr_msgs2.srv import MoveJoint, ConfigCreateTcp, SetCurrentTcp, ConfigCreateTool, SetCurrentTool
+from dsr_msgs2.srv import MoveJoint, ConfigCreateTcp, SetCurrentTcp, ConfigCreateTool, SetCurrentTool, SetRobotMode
 
 # DSR 네이티브 단위: degree (MoveJoint 서비스 직접 전달용)
 JOINT_HOME_DEG = [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]
@@ -102,6 +102,7 @@ class HomeOnStart(Node):
         self._cb = ReentrantCallbackGroup()
         p = f'/{ns}'
 
+        self._set_mode_cli    = self.create_client(SetRobotMode,     f'{p}/system/set_robot_mode',  callback_group=self._cb)
         self._create_tcp_cli  = self.create_client(ConfigCreateTcp,  f'{p}/tcp/config_create_tcp',  callback_group=self._cb)
         self._set_tcp_cli     = self.create_client(SetCurrentTcp,    f'{p}/tcp/set_current_tcp',    callback_group=self._cb)
         self._create_tool_cli = self.create_client(ConfigCreateTool, f'{p}/tool/config_create_tool', callback_group=self._cb)
@@ -149,70 +150,98 @@ class HomeOnStart(Node):
 
         rclpy.shutdown()
 
+    def _set_robot_mode(self, mode: int) -> bool:
+        """DSR 로봇 모드 전환. 0=MANUAL, 1=AUTONOMOUS. TCP/Tool 설정은 MANUAL 필요."""
+        if not self._set_mode_cli.wait_for_service(timeout_sec=3.0):
+            self.get_logger().warn(f'[home] set_robot_mode 서비스 미준비 — 건너뜀 (target={mode})')
+            return False
+        req = SetRobotMode.Request()
+        req.robot_mode = mode
+        fut = self._set_mode_cli.call_async(req)
+        rclpy.spin_until_future_complete(self, fut, timeout_sec=3.0)
+        res = fut.result()
+        if res is None or not res.success:
+            self.get_logger().warn(f'[home] set_robot_mode 실패 (target={mode})')
+            return False
+        mode_name = {0: 'MANUAL', 1: 'AUTONOMOUS'}.get(mode, str(mode))
+        self.get_logger().info(f'[home] 로봇 모드: {mode_name}')
+        return True
+
     def _setup_tcp(self) -> bool:
-        if self._create_tcp_cli.wait_for_service(timeout_sec=5.0):
-            req = ConfigCreateTcp.Request()
+        # config_create_tcp / set_current_tcp 는 MANUAL 모드에서만 동작
+        self._set_robot_mode(0)
+        try:
+            if self._create_tcp_cli.wait_for_service(timeout_sec=5.0):
+                req = ConfigCreateTcp.Request()
+                req.name = self._tcp_name
+                req.pos  = [float(v) for v in self._tcp_offset]
+                fut = self._create_tcp_cli.call_async(req)
+                rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+                res = fut.result()
+                if res is None or not res.success:
+                    # 이미 등록된 경우 실패 반환 — set_current_tcp 로 활성화 계속 시도
+                    self.get_logger().warn(f'[home] TCP 등록 실패 (이미 등록됐을 수 있음): {self._tcp_name}')
+                else:
+                    self.get_logger().info(f'[home] TCP 등록: {self._tcp_name} offset={self._tcp_offset}')
+            else:
+                self.get_logger().warn('[home] config_create_tcp 서비스 미준비 — 건너뜀')
+
+            if not self._set_tcp_cli.wait_for_service(timeout_sec=10.0):
+                self.get_logger().error('[home] set_current_tcp 서비스 없음 — TCP 활성화 실패')
+                return False
+
+            req = SetCurrentTcp.Request()
             req.name = self._tcp_name
-            req.pos  = [float(v) for v in self._tcp_offset]
-            fut = self._create_tcp_cli.call_async(req)
+            fut = self._set_tcp_cli.call_async(req)
             rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
             res = fut.result()
             if res is None or not res.success:
-                self.get_logger().error(f'[home] TCP 등록 실패: {self._tcp_name}')
+                self.get_logger().error(f'[home] TCP 활성화 실패: {self._tcp_name}')
                 return False
-            self.get_logger().info(f'[home] TCP 등록: {self._tcp_name} offset={self._tcp_offset}')
-        else:
-            self.get_logger().warn('[home] config_create_tcp 서비스 미준비 — 건너뜀')
-
-        if not self._set_tcp_cli.wait_for_service(timeout_sec=10.0):
-            self.get_logger().error('[home] set_current_tcp 서비스 없음 — TCP 활성화 실패')
-            return False
-
-        req = SetCurrentTcp.Request()
-        req.name = self._tcp_name
-        fut = self._set_tcp_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
-        res = fut.result()
-        if res is None or not res.success:
-            self.get_logger().error(f'[home] TCP 활성화 실패: {self._tcp_name}')
-            return False
-        self.get_logger().info(f'[home] TCP 활성화: {self._tcp_name}')
-        return True
+            self.get_logger().info(f'[home] TCP 활성화: {self._tcp_name}')
+            return True
+        finally:
+            self._set_robot_mode(1)  # 모션 명령을 위해 AUTONOMOUS 복구
 
     def _setup_tool(self) -> bool:
-        if self._create_tool_cli.wait_for_service(timeout_sec=5.0):
-            req = ConfigCreateTool.Request()
-            req.name    = self._tool_name
-            req.weight  = self._tool_weight
-            req.cog     = [float(v) for v in self._tool_cog]
-            req.inertia = [float(v) for v in self._tool_inertia]
-            fut = self._create_tool_cli.call_async(req)
+        # config_create_tool / set_current_tool 도 MANUAL 모드 필요
+        self._set_robot_mode(0)
+        try:
+            if self._create_tool_cli.wait_for_service(timeout_sec=5.0):
+                req = ConfigCreateTool.Request()
+                req.name    = self._tool_name
+                req.weight  = self._tool_weight
+                req.cog     = [float(v) for v in self._tool_cog]
+                req.inertia = [float(v) for v in self._tool_inertia]
+                fut = self._create_tool_cli.call_async(req)
+                rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
+                res = fut.result()
+                if res is None or not res.success:
+                    self.get_logger().warn(f'[home] Tool 등록 실패 (이미 등록됐을 수 있음): {self._tool_name}')
+                else:
+                    self.get_logger().info(
+                        f'[home] Tool 등록: {self._tool_name} '
+                        f'weight={self._tool_weight}kg cog={self._tool_cog}mm'
+                    )
+            else:
+                self.get_logger().warn('[home] config_create_tool 서비스 미준비 — 건너뜀')
+
+            if not self._set_tool_cli.wait_for_service(timeout_sec=10.0):
+                self.get_logger().error('[home] set_current_tool 서비스 없음 — payload 활성화 실패')
+                return False
+
+            req = SetCurrentTool.Request()
+            req.name = self._tool_name
+            fut = self._set_tool_cli.call_async(req)
             rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
             res = fut.result()
             if res is None or not res.success:
-                self.get_logger().error(f'[home] Tool 등록 실패: {self._tool_name}')
+                self.get_logger().error(f'[home] Tool 활성화 실패: {self._tool_name}')
                 return False
-            self.get_logger().info(
-                f'[home] Tool 등록: {self._tool_name} '
-                f'weight={self._tool_weight}kg cog={self._tool_cog}mm'
-            )
-        else:
-            self.get_logger().warn('[home] config_create_tool 서비스 미준비 — 건너뜀')
-
-        if not self._set_tool_cli.wait_for_service(timeout_sec=10.0):
-            self.get_logger().error('[home] set_current_tool 서비스 없음 — payload 활성화 실패')
-            return False
-
-        req = SetCurrentTool.Request()
-        req.name = self._tool_name
-        fut = self._set_tool_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, fut, timeout_sec=5.0)
-        res = fut.result()
-        if res is None or not res.success:
-            self.get_logger().error(f'[home] Tool 활성화 실패: {self._tool_name}')
-            return False
-        self.get_logger().info(f'[home] Tool 활성화: {self._tool_name}')
-        return True
+            self.get_logger().info(f'[home] Tool 활성화: {self._tool_name}')
+            return True
+        finally:
+            self._set_robot_mode(1)  # AUTONOMOUS 복구
 
     def _move_home(self) -> None:
         if not self._movej_cli.wait_for_service(timeout_sec=15.0):

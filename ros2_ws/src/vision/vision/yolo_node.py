@@ -69,7 +69,8 @@ class YoloNode(Node):
 
         self._conf: float = yolo_cfg["confidence_threshold"]
         self._iou: float = yolo_cfg["iou_threshold"]
-        self._device: str = yolo_cfg["device"]
+        device_override = self.declare_parameter("device", "").value
+        self._device: str = device_override if device_override else yolo_cfg["device"]
         self._class_names: list[str] = yolo_cfg["class_names"]
         self._publish_debug: bool = debug_cfg["publish_annotated_image"]
         self._camera_type: str = camera_type
@@ -180,12 +181,22 @@ class YoloNode(Node):
         det_array = self._build_detection_array(msg, results[0])
         self._det_pub.publish(det_array)
 
-        if self._gripper_mask_pub is not None:
-            best_mask = self._build_best_mask(rgb, results[0])
-            if best_mask is not None:
-                mask_msg = self._mono_to_imgmsg(best_mask)
-                mask_msg.header = msg.header
-                self._gripper_mask_pub.publish(mask_msg)
+        if self._gripper_mask_pub is not None and results[0].boxes is not None and results[0].masks is not None:
+            _h, _w = rgb.shape[:2]
+            for _i in range(len(results[0].boxes.cls)):
+                if _i >= len(results[0].masks.xy):
+                    continue
+                _xy = results[0].masks.xy[_i]
+                if len(_xy) == 0:
+                    continue
+                _mask = np.zeros((_h, _w), dtype=np.uint8)
+                cv2.fillPoly(_mask, [_xy.astype(np.int32).reshape((-1, 1, 2))], 255)
+                _cls_idx = int(results[0].boxes.cls[_i].item())
+                _class_id = results[0].names.get(_cls_idx, "") if results[0].names else ""
+                _mask_msg = self._mono_to_imgmsg(_mask)
+                _mask_msg.header.stamp = msg.header.stamp
+                _mask_msg.header.frame_id = _class_id
+                self._gripper_mask_pub.publish(_mask_msg)
 
         if self._debug_pub is not None:
             annotated = results[0].plot()
@@ -266,21 +277,25 @@ class YoloNode(Node):
 
         return array
 
-    def _build_best_mask(self, img: np.ndarray, result) -> np.ndarray | None:
-        """최고 신뢰도 검출의 이진 마스크(mono8) 반환. 마스크 없으면 None."""
+    def _build_best_mask(
+        self, img: np.ndarray, result
+    ) -> tuple[np.ndarray, str] | tuple[None, None]:
+        """최고 신뢰도 검출의 이진 마스크(mono8)와 class_id 반환. 마스크 없으면 (None, None)."""
         if result.boxes is None or result.masks is None:
-            return None
+            return None, None
         best_i = int(result.boxes.conf.argmax().item())
         if best_i >= len(result.masks.xy):
-            return None
+            return None, None
         xy = result.masks.xy[best_i]
         if len(xy) == 0:
-            return None
+            return None, None
         h, w = img.shape[:2]
         mask = np.zeros((h, w), dtype=np.uint8)
         pts = xy.astype(np.int32).reshape((-1, 1, 2))
         cv2.fillPoly(mask, [pts], 255)
-        return mask
+        cls_idx = int(result.boxes.cls[best_i].item())
+        class_id = result.names.get(cls_idx, "") if result.names else ""
+        return mask, class_id
 
     def _build_mask_image(self, img: np.ndarray, result) -> np.ndarray:
         """마스크 윤곽선 + 무게중심점을 원본 이미지에 오버레이해서 반환."""

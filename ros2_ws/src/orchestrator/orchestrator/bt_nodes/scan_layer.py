@@ -30,8 +30,8 @@ from orchestrator.bt_nodes.set_moving import SetMoving
 from orchestrator.blackboard import KEY_ACTIVE_TOOL_ID
 
 _CONFIG_DIR = Path("config")
-_MIN_SAMPLES = 3
-_COLLECT_SEC = 5.0
+_MIN_SAMPLES = 1   # scan_pose는 고정 자세이므로 1샘플로 충분; 3은 ~10s 공백 환경에서 20s 창에도 미달
+_COLLECT_SEC = 20.0  # ArUco 검출 공백이 최대 ~10s이므로 5s는 전체 창이 공백에 걸릴 수 있음
 
 
 class CollectAndSave(py_trees.behaviour.Behaviour):
@@ -69,6 +69,8 @@ class CollectAndSave(py_trees.behaviour.Behaviour):
 
         with self._buf_lock:
             buf_copy = list(self._pose_buf)
+
+        self.logger.info(f"[CollectAndSave] 수집 완료: {len(buf_copy)}개 샘플 (layer={self._layer_id})")
 
         if not buf_copy:
             self.logger.warning("[CollectAndSave] 수집된 데이터 없음 — vision 노드 확인 필요")
@@ -142,9 +144,9 @@ def build_scan_subtree(
 
     def _open_goal(_tool_id: str) -> ExecutePhase.Goal:
         g = ExecutePhase.Goal()
-        g.phase = "open_drawer"
+        g.phase = "open_drawer_scan"   # v2: ArUco 마커가 보이는 각도까지 서랍을 당김
         g.tool_id = ""
-        g.layer_id = layer_id
+        g.layer_id = layer_id - 1  # UI 1-indexed → toolbox_motion 0-indexed
         return g
 
     def _scan_goal(_tool_id: str) -> ExecutePhase.Goal:
@@ -163,9 +165,9 @@ def build_scan_subtree(
 
     def _close_goal(_tool_id: str) -> ExecutePhase.Goal:
         g = ExecutePhase.Goal()
-        g.phase = "close_drawer"
+        g.phase = "close_drawer_scan"  # v2: 스캔 후 복귀 경로
         g.tool_id = ""
-        g.layer_id = layer_id
+        g.layer_id = layer_id - 1  # UI 1-indexed → toolbox_motion 0-indexed
         return g
 
     main_seq = py_trees.composites.Sequence(f"ScanLayer_main_l{layer_id}", memory=True)
@@ -206,7 +208,8 @@ def build_scan_subtree(
             publish_status_fn=publish_status_fn,
             set_plc_fn=set_plc_fn,
             log_error_fn=log_error_fn,
-            layer_id=layer_id,
+            layer_id=layer_id - 1,  # UI 1-indexed → toolbox_motion 0-indexed
+            close_phase="close_drawer_scan",  # 스캔용 v2 복귀 경로
         ),
     ])
 

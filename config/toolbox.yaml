@@ -1,232 +1,241 @@
----
-# 공구함 물리 구조 + 공구 카탈로그
-#
-# 랜덤 배치 정책: 공구는 고정 슬롯 없이 층(layer) 안에 자유 배치.
-# 실제 위치는 부팅·작업 전 스캔(reconciliation) 시 YOLO 검출로 결정되어 DB에 기록.
-# toolbox.yaml은 물리 구조(크기·층수)와 공구 기하 정보만 관리.
-#
-# ── 공구 현황 추적 방식 ──────────────────────────────────────────────────
-# D455f 스캔은 작업 세션당 2회만 수행한다.
-#   [스캔 ①] 작업 시작 전: 서랍(layer 0 → layer 1) 순서로 개방 후 YOLOv11s 검출
-#             → DB 초기 스냅샷 기록 (공구 존재 여부 + 대략적 위치)
-#   [스캔 ②] 작업 종료 후: 동일 방식으로 재스캔 → DB 최종 상태 확인
-#
-# 스캔 사이(작업 중간) 공구 현황 변화는 스캔 없이 이벤트로 추적한다.
-#   - fetch/return 작업 수행 시 발생하는 ROS 토픽·액션 결과를 DB에 반영
-#   - (미구현) UI는 DB를 폴링하여 공구함 현황을 실시간 시각화
-#
-# robot_poses.yaml scan_layer_0 / scan_layer_1 참조
-#
-# 참조: docs/architecture.md, docs/frames.md, .claude/rules/safety.md S-9
-# 단위: m + quaternion (REP-103, E-1)
-# ─────────────────────────────────────────────────────────────────────────
-
-schema:
-  version: 4   # v3 → v4: per-tool return_z_mm / staging_pickup_z_mm 추가
-  toolbox:
-    required: [origin, slot_size, grid_layers, grid_rows, grid_cols, orientation]
-  aruco:
-    required: [marker_id, marker_size_m, marker_to_origin]
-  tools:
-    required: [tool_id, dimensions]
-    optional: [display_name, aliases, mass_kg, grasp_approach, notes]
-
-# 공구함 자체 위치/크기 (운영자가 공구함을 옮기면 이 값만 갱신)
-toolbox:
-  origin: {x: 0.300, y: -0.200, z: 0.037}  # layer 0 기준 좌상단 모서리 — TCP 직접교시 실측 37.13mm (2026-06-15)
-  orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-  slot_size: {x: 0.060, y: 0.060}  # 슬롯 격자 한 칸 (참조용 — 공구는 격자 무관하게 놓임)
-  grid_layers: 2    # 서랍 수 (스캔 횟수와 일치)
-  grid_rows: 1
-  grid_cols: 3
-  # 층간 높이 [m] — TCP 직접교시 실측 (윗층 92.7mm - 아랫층 37.13mm = 55.57mm)
-  layer_height_z: 0.056
-  slot_depth_z: 0.040
-
-  # 공구함 외형 치수 — 실측값 (2026-06-15)
-  dimensions:
-    width_m: 0.460    # 가로 (좌우 폭)
-    height_m: 0.250   # 세로 (전면 높이, 상하)
-    depth_m: 0.220    # 깊이 (앞뒤)
-
-# ArUco 마커 (천장 부착) — D455f 탑뷰 ROI 동적 계산 기준점
-# ⚠️ marker_to_origin 오프셋은 마커 부착 후 실측 갱신 필요
 aruco:
-  marker_id: 2            # ArUco DICT_4X4_50 기준 ID (실물 ID 2 부착 확인)
-  marker_size_m: 0.050    # 마커 실제 한 변 길이 (pose 추정용)
-  marker_to_origin:       # 마커 중심 → toolbox.origin 오프셋 (m)
-    x: 0.0                # 실측 후 갱신
-    y: 0.0                # 실측 후 갱신
-    z: -0.120             # 천장 → layer 0 바닥까지 높이 — 실측 후 갱신
-
-# ArUco 마커 (전면 부착) — C270 그리퍼캠 서랍 층수 Z 유도용
-# 마커 중심 기준으로 각 서랍 중심까지 Z 오프셋을 부여해 2D → 유사 depth 변환
+  marker_id: 2
+  marker_size_m: 0.05
+  marker_to_origin:
+    x: 0.0
+    y: 0.0
+    z: -0.12
 aruco_front:
-  marker_id: 0             # ArUco DICT_4X4_50, ID 0 (천장 마커와 동일 ID, 크기로 구분)
-  marker_size_m: 0.050     # 5×5cm (단일 마커 고정 규격)
-
-  # 전면 기준 마커 중심 위치 (2026-06-15 실측)
-  # 기준: 전면 좌하단 = (0, 0), 오른쪽/위쪽 방향이 양수
-  center_from_left_m: 0.235    # (0.215+0.255) / 2
-  center_from_bottom_m: 0.230  # (0.210+0.250) / 2 — 전면 상단 20mm 아래
-
-  # 마커 중심 기준 각 서랍 중심까지 Z 오프셋 (아래 방향 +, 단위 m)
-  # 산출 근거: 전면 높이 250mm / 2층 균등 분할 → 각 층 125mm
-  # 마커 ID = layer ID 규칙: 0=아랫층(1층 서랍), 1=윗층(2층 서랍)
-  #   layer_0(아랫층) 중심: 전면 위에서 187.5mm → 마커(전면 위에서 20mm) 아래 167.5mm
-  #   layer_1(윗층)   중심: 전면 위에서 62.5mm  → 마커 아래 42.5mm
-  # ⚠️ 서랍 칸막이 두께 미반영 — 실제 서랍 개방 후 실측 갱신 권장
+  center_from_bottom_m: 0.23
+  center_from_left_m: 0.235
   layer_z_offset:
-    layer_0: 0.1675   # 아랫층(1층 서랍) 서랍 중심 (m) — 마커 ID 0
-    layer_1: 0.0425   # 윗층(2층 서랍)   서랍 중심 (m) — 마커 ID 1
-
-# 층별 ArUco 마커 중심 BASE 좌표 — 직접교시 실측 2026-06-17 (단위: m)
+    layer_0: 0.1675
+    layer_1: 0.0425
+  marker_id: 0
+  marker_size_m: 0.05
 layer_markers_base:
+  layer_0:
+    x: 0.21
+    y: 0.38717
+    z: 0.03713
   layer_1:
     x: 0.20282
     y: 0.38803
-    z: 0.09270
-  layer_0:
-    x: 0.21000
-    y: 0.38717
-    z: 0.03713
-
-# - grasp_z_mm        : vision_fetch_seq ⑥번 Z값 (tw기준 + 2mm 적용 완료)
-# - staging_pickup_z_mm: vision_return_seq ⑥번 Z값 (staging에서 공구 파지) — ⚠️ 실측 후 갱신
-# - return_z_mm       : vision_return_seq ⑩번 Z값 (slot 반납 하강) — tw z + 3mm
-# - grip_stroke       : 공구 파지 stroke (기본값 650 오버라이드).
-#                       RH-P12-RN raw pulse 0~740 범위, gripper_node에서 클램프.
-# 참고 원본: Downloads/사물함내부_객체별base좌표.tw (BASE 좌표계, mm)
-#
-# 6종 공구 카탈로그 — 물리 치수·그립 정보만 관리.
-# 슬롯 위치(slot_layer/row/col)는 스캔 시 DB에 기록되며 여기서 관리하지 않음.
-# ⚠️ 치수·질량은 임의값. Phase 0 ② 실측 후 확정.
+    z: 0.0927
+schema:
+  aruco:
+    required:
+    - marker_id
+    - marker_size_m
+    - marker_to_origin
+  toolbox:
+    required:
+    - origin
+    - slot_size
+    - grid_layers
+    - grid_rows
+    - grid_cols
+    - orientation
+  tools:
+    optional:
+    - display_name
+    - aliases
+    - mass_kg
+    - grasp_approach
+    - notes
+    required:
+    - tool_id
+    - dimensions
+  version: 4
+toolbox:
+  dimensions:
+    depth_m: 0.22
+    height_m: 0.25
+    width_m: 0.46
+  grid_cols: 3
+  grid_layers: 2
+  grid_rows: 1
+  layer_height_z: 0.056
+  orientation:
+    w: 1.0
+    x: 0.0
+    y: 0.0
+    z: 0.0
+  origin:
+    x: 0.3
+    y: -0.2
+    z: 0.037
+  slot_depth_z: 0.04
+  slot_size:
+    x: 0.06
+    y: 0.06
 tools:
-  - tool_id: screwdriver
-    display_name: "십자 드라이버"
-    aliases: ["십자 드라이버", "드라이버", "screwdriver"]
-    dimensions: {length: 0.180, diameter: 0.011}
-    mass_kg: 0.080
-    grasp_approach: top
-    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
-      x: 0.39242
-      y: 0.26422
-      z: 0.04265
-    grasp_z_mm: 44.65            # fetch Z (tw기준 + 2mm)
-    staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
-    return_z_mm: 45.65          # slot 반납 Z (tw z=42.65 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
-    notes: "실측 2026-06-15 (H_jig=3mm H_obj=5mm → grasp_h=11mm)"
-
-  - tool_id: utility_knife
-    display_name: "커터칼"
-    aliases: ["커터", "커터칼", "utility knife", "knife"]
-    dimensions: {length: 0.160, width: 0.030, height: 0.023}
-    mass_kg: 0.070
-    grasp_approach: top
-    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
-      x: 0.44547
-      y: 0.34787
-      z: 0.09987
-    grasp_z_mm: 101.87            # fetch Z (tw기준 + 2mm)
-    staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
-    return_z_mm: 102.87          # slot 반납 Z (tw z=99.87 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
-    notes: "실측 2026-06-15 (H_jig=4mm H_obj=15mm → grasp_h=23mm)"
-
-  - tool_id: ratchet_wrench
-    display_name: "라쳇 렌치"
-    aliases: ["라쳇", "라쳇 렌치", "ratchet", "ratchet wrench"]
-    dimensions: {length: 0.200, width: 0.040, height: 0.041}
-    mass_kg: 0.250
-    grasp_approach: top
-    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
-      x: 0.39761
-      y: 0.25850
-      z: 0.09732
-    grasp_z_mm: 99.32            # fetch Z (tw기준 + 2mm)
-    staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
-    return_z_mm: 100.32          # slot 반납 Z (tw z=97.32 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
-    notes: "실측 2026-06-15 (H_jig=13mm H_obj=15mm → grasp_h=41mm)"
-
-  - tool_id: multi_tool
-    display_name: "멕가이버"
-    aliases: ["멕가이버", "맥가이버", "multi tool", "multitool"]
-    dimensions: {length: 0.110, width: 0.035, height: 0.034}
-    mass_kg: 0.180
-    grasp_approach: top
-    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
-      x: 0.26128
-      y: 0.33282
-      z: 0.04959
-    grasp_z_mm: 51.59            # fetch Z (tw기준 + 2mm)
-    staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
-    return_z_mm: 52.59          # slot 반납 Z (tw z=49.59 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
-    notes: "실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)"
-
-  - tool_id: spanner_16mm
-    display_name: "스패너 16mm"
-    aliases:
-      ["스패너", "스패너 16mm", "16mm", "spanner", "spanner 16mm"]
-    dimensions: {length: 0.180, width: 0.040, height: 0.012}
-    mass_kg: 0.120
-    grasp_approach: top
-    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
-      x: 0.43720
-      y: 0.34831
-      z: 0.05340
-    grasp_z_mm: 55.4            # fetch Z (tw기준 + 2mm)
-    staging_pickup_z_mm: -9.12  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
-    return_z_mm: 56.4          # slot 반납 Z (tw z=53.4 + 3mm, 임의값)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
-    notes: "임의값 — 실측 후 갱신"
-
-  - tool_id: socket_19mm
-    display_name: "복스 소켓 19mm"
-    aliases:
-      [
-        "복스",
-        "소켓",
-        "복스 소켓",
-        "복스 소켓 19mm",
-        "19mm",
-        "socket",
-        "socket 19mm",
-      ]
-    dimensions: {length: 0.040, diameter: 0.055}
-    mass_kg: 0.090
-    grasp_approach: top
-    grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
-      x: 0.25303
-      y: 0.34305
-      z: 0.11669
-    grasp_z_mm: 118.69            # fetch Z (tw기준 + 2mm)
-    staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
-    return_z_mm: 119.69          # slot 반납 Z (tw z=116.69 + 3mm)
-    grip_stroke: 738             # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
-    notes: "실측 2026-06-15 (H_jig=20mm 추정, H_obj=15mm 노출 → grasp_h=55mm)"
-
-# ── Visual Servoing 모션 파라미터 (E-4: 코드 하드코딩 금지) ────────────────
-# toolbox_seq_runner.py가 __init__에서 이 섹션을 로드. 값 변경 시 재시작 필요.
-# 실기 검증 후 공구별로 분리 예정.
+- aliases:
+  - 십자 드라이버
+  - 드라이버
+  - screwdriver
+  dimensions:
+    diameter: 0.011
+    length: 0.18
+  display_name: 십자 드라이버
+  grasp_approach: top
+  grasp_pose_base:
+    x: 0.39242
+    y: 0.26422
+    z: 0.04265
+  grasp_z_mm: 44.65
+  grip_stroke: 738
+  mass_kg: 0.08
+  notes: 실측 2026-06-15 (H_jig=3mm H_obj=5mm → grasp_h=11mm)
+  return_z_mm: 45.65
+  staging_pickup_z_mm: -29.06
+  tool_id: screwdriver
+- aliases:
+  - 커터
+  - 커터칼
+  - utility knife
+  - knife
+  dimensions:
+    height: 0.023
+    length: 0.16
+    width: 0.03
+  display_name: 커터칼
+  grasp_approach: top
+  grasp_pose_base:
+    x: 0.44547
+    y: 0.34787
+    z: 0.09987
+  grasp_z_mm: 101.87
+  grip_stroke: 738
+  mass_kg: 0.07
+  notes: 실측 2026-06-15 (H_jig=4mm H_obj=15mm → grasp_h=23mm)
+  return_z_mm: 102.87
+  staging_pickup_z_mm: -29.06
+  tool_id: utility_knife
+- aliases:
+  - 라쳇
+  - 라쳇 렌치
+  - ratchet
+  - ratchet wrench
+  dimensions:
+    height: 0.041
+    length: 0.2
+    width: 0.04
+  display_name: 라쳇 렌치
+  grasp_approach: top
+  grasp_pose_base:
+    x: 0.39761
+    y: 0.2585
+    z: 0.09732
+  grasp_z_mm: 99.32
+  grip_stroke: 738
+  mass_kg: 0.25
+  notes: 실측 2026-06-15 (H_jig=13mm H_obj=15mm → grasp_h=41mm)
+  return_z_mm: 100.32
+  staging_pickup_z_mm: -29.06
+  tool_id: ratchet_wrench
+- aliases:
+  - 멕가이버
+  - 맥가이버
+  - multi tool
+  - multitool
+  dimensions:
+    height: 0.034
+    length: 0.11
+    width: 0.035
+  display_name: 멕가이버
+  grasp_approach: top
+  grasp_pose_base:
+    x: 0.26128
+    y: 0.33282
+    z: 0.04959
+  grasp_z_mm: 51.59
+  grip_stroke: 738
+  mass_kg: 0.18
+  notes: 실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)
+  return_z_mm: 52.59
+  staging_pickup_z_mm: -29.06
+  tool_id: multi_tool
+- aliases:
+  - 스패너
+  - 스패너 16mm
+  - 16mm
+  - spanner
+  - spanner 16mm
+  dimensions:
+    height: 0.012
+    length: 0.18
+    width: 0.04
+  display_name: 스패너 16mm
+  grasp_approach: top
+  grasp_pose_base:
+    x: 0.4372
+    y: 0.34831
+    z: 0.0534
+  grasp_z_mm: 55.4
+  grip_stroke: 738
+  mass_kg: 0.12
+  notes: 임의값 — 실측 후 갱신
+  return_z_mm: 56.4
+  staging_pickup_z_mm: -9.12
+  tool_id: spanner_16mm
+- aliases:
+  - 복스
+  - 소켓
+  - 복스 소켓
+  - 복스 소켓 19mm
+  - 19mm
+  - socket
+  - socket 19mm
+  dimensions:
+    diameter: 0.055
+    length: 0.04
+  display_name: 복스 소켓 19mm
+  grasp_approach: top
+  grasp_pose_base:
+    x: 0.25303
+    y: 0.34305
+    z: 0.11669
+  grasp_z_mm: 118.69
+  grip_stroke: 738
+  mass_kg: 0.09
+  notes: 실측 2026-06-15 (H_jig=20mm 추정, H_obj=15mm 노출 → grasp_h=55mm)
+  return_z_mm: 119.69
+  staging_pickup_z_mm: -29.06
+  tool_id: socket_19mm
 vision_motion:
-  tool_approach_z_mm: 234.0                    # 공구 위 대기 높이 (mm, DSR BASE)
-  tool_approach_ori: [180.0, 180.0, 90.0]    # approach 자세 [rx,ry,rz] (deg)
-  tool_descent_ori: [180.0, 180.0, 90.0]     # 하강 자세 [rx,ry,rz] (deg)
-  # 비전 좌표 허용 범위 (DSR BASE 좌표계, mm) — S-5 소프트 workspace 리밋
-  # ⚠️ 실제 비전 좌표 수신 후 실측값으로 갱신 필요
-  workspace_limits:
-    x: [50.0, 800.0]
-    y: [-600.0, 600.0]
-    z: [-31.0, 700.0]
-  # 그리퍼 캠 스캔 자세 — vision_fetch_seq ③ / vision_return_seq ③ 에서 사용
-  # 단위: deg (sequence_engine이 로드해 mj_abs Step에 주입)
   gripper_cam_scan:
-    fetch_j_deg: [-30.1, 15.5, 74.7, 20.9, 101.2, -27.8]     # 공구함 바라보는 자세
-    return_j_deg: [-24.60, 32.49, 50.78, 22.42, 105.63, -19.92]  # staging 바라보는 자세
-
-# 수락 기준 (docs/conventions.md):
-# - 공구 분류 정확도 ≥ 95% (실험실 조명)
-# - 스캔 후 DB 갱신까지 지연 ≤ 1s
+    fetch_j_deg:
+    - 26.2
+    - 18.04
+    - 35.57
+    - 25.49
+    - 111.91
+    - 42.14
+    return_j_deg:
+    - -24.6
+    - 32.49
+    - 50.78
+    - 22.42
+    - 105.63
+    - -15.92
+  tool_approach_ori:
+  - 180.0
+  - 180.0
+  - 90.0
+  tool_approach_z_mm: 234.0
+  gripper_scan_settle_sec: 2.0  # 스캔 자세 도달 후 EMA 안정화 대기 시간 (초)
+  tool_descent_ori:
+  - 180.0
+  - 180.0
+  - 90.0
+  workspace_limits:
+    x:
+    - 50.0
+    - 800.0
+    y:
+    - -600.0
+    - 600.0
+    z:
+    - -31.0
+    - 700.0

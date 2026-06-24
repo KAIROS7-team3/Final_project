@@ -226,6 +226,18 @@ class OrchestratorNode(Node):
             elif intent_type == "scan":
                 layer = int(tool_id) if tool_id in ("1", "2") else 1
                 tree = self._scan_tree_l1 if layer == 1 else self._scan_tree_l2
+            elif intent_type == "home":
+                self._run_home_intent()
+                return
+            elif intent_type in ("scan_pose", "scan_pose_fetch"):
+                self._run_single_phase_intent("scan_pose_fetch", timeout=30.0)
+                return
+            elif intent_type == "scan_pose_return":
+                self._run_single_phase_intent("scan_pose_return", timeout=30.0)
+                return
+            elif intent_type == "stage_pick_test":
+                self._run_single_phase_intent("stage_pick_test", tool_id=tool_id, timeout=60.0)
+                return
             else:
                 self.get_logger().warning(
                     f"[OrchestratorNode] 알 수 없는 intent: {intent_type}"
@@ -235,7 +247,9 @@ class OrchestratorNode(Node):
             self.get_logger().info(
                 f"[OrchestratorNode] BT tick 시작: intent={intent_type} tool_id={tool_id}"
             )
-            status = tree.tick_once()
+            tree.tick_once()
+            # tick_once()는 void — 루트 노드 status에서 실제 결과 읽기
+            status = getattr(tree, 'root', tree).status
 
             if status == py_trees.common.Status.SUCCESS:
                 self.get_logger().info(
@@ -276,6 +290,45 @@ class OrchestratorNode(Node):
         self._dispatch_update_status(
             self._active_tool_id, "return", "in_slot", "return place - 슬롯에 반납"
         )
+
+    def _run_home_intent(self) -> None:
+        """home intent: is_moving True → ExecutePhase(home) → is_moving False."""
+        self._run_single_phase_intent("home", timeout=60.0)
+
+    def _run_single_phase_intent(self, phase: str, tool_id: str = "", timeout: float = 60.0) -> None:
+        """단일 phase ExecutePhase 목표를 is_moving 게이팅과 함께 실행."""
+        self._publish_status(True)
+        try:
+            goal = ExecutePhase.Goal()
+            goal.phase = phase
+            goal.tool_id = tool_id
+            goal.layer_id = 0
+
+            done = threading.Event()
+            result_holder: list = []
+
+            def _on_goal(fut):
+                gh = fut.result()
+                if not gh.accepted:
+                    result_holder.append(None)
+                    done.set()
+                    return
+                gh.get_result_async().add_done_callback(
+                    lambda f: (result_holder.append(f.result()), done.set())
+                )
+
+            self._exec_phase_cli.send_goal_async(goal).add_done_callback(_on_goal)
+            if not done.wait(timeout=timeout):
+                self.get_logger().error(f"[OrchestratorNode] {phase} 타임아웃")
+                return
+            if result_holder and result_holder[0] and result_holder[0].result.success:
+                self.get_logger().info(f"[OrchestratorNode] {phase} 완료")
+            else:
+                self.get_logger().error(f"[OrchestratorNode] {phase} 실패")
+        except Exception as exc:
+            self.get_logger().error(f"[OrchestratorNode] {phase} 예외: {exc}")
+        finally:
+            self._publish_status(False)
 
     def _dispatch_update_status(
         self, tool_id: str, event_type: str, new_status: str, notes: str
@@ -379,17 +432,29 @@ class OrchestratorNode(Node):
         )
 
     def _on_gripper_pose(self, msg: PoseStamped) -> None:
-        """스캔 중 그리퍼캠 XY를 버퍼에 누적. CollectAndSave BT 노드가 소비한다."""
-        det = self._latest_gripper_det
-        if det is None or not det.detections:
-            return
-        pose_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        if abs(pose_stamp - self._latest_gripper_det_stamp) > 0.15:
-            return  # 타임스탬프 슬롭 초과 — 페어 스킵
-        best = max(det.detections, key=lambda d: d.results[0].hypothesis.score)
-        tool_id = best.results[0].hypothesis.class_id
-        if not tool_id:
-            return
+        """스캔 중 그리퍼캠 XY를 버퍼에 누적. CollectAndSave BT 노드가 소비한다.
+
+        gripper_marker_scan_node가 frame_id="tool:<tool_id>" 형식으로 발행하면
+        해당 값을 직접 사용해 공구별 pose를 정확히 그룹핑한다.
+        구 형식(base_link frame_id)은 detection 캐시에서 best 공구 ID를 추출한다.
+        """
+        frame_id = msg.header.frame_id
+        if frame_id.startswith("tool:"):
+            tool_id = frame_id[5:]
+            if not tool_id:
+                return
+        else:
+            det = self._latest_gripper_det
+            if det is None or not det.detections:
+                return
+            pose_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+            if abs(pose_stamp - self._latest_gripper_det_stamp) > 0.15:
+                return  # 타임스탬프 슬롭 초과 — 페어 스킵
+            best = max(det.detections, key=lambda d: d.results[0].hypothesis.score)
+            tool_id = best.results[0].hypothesis.class_id
+            if not tool_id:
+                return
+
         entry = {
             "tool_id": tool_id,
             "x": msg.pose.position.x,
@@ -415,7 +480,7 @@ class OrchestratorNode(Node):
             future.add_done_callback(self._on_log_event_done)
         except Exception as exc:
             self.get_logger().warning(
-                "[OrchestratorNode] S-7 rejection log dispatch failed: %s", exc
+                f"[OrchestratorNode] S-7 rejection log dispatch failed: {exc}"
             )
 
     def _on_log_event_done(self, future) -> None:
@@ -425,12 +490,12 @@ class OrchestratorNode(Node):
             result = future.result()
         except Exception as exc:
             self.get_logger().warning(
-                "[OrchestratorNode] S-7 rejection log call failed: %s", exc
+                f"[OrchestratorNode] S-7 rejection log call failed: {exc}"
             )
             return
         if not result.success:
             self.get_logger().warning(
-                "[OrchestratorNode] S-7 rejection log rejected: %s", result.message
+                f"[OrchestratorNode] S-7 rejection log rejected: {result.message}"
             )
 
 

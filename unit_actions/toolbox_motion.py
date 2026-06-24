@@ -485,9 +485,11 @@ def scan_layer_seq(scan_j_deg: list | None = None) -> list[Step]:
 
     BT에서 open_drawer → scan_pose → (오케스트레이터가 데이터 수집) → home → close_drawer
     순서로 사용. 이 함수는 스캔 자세 이동만 담당한다.
+
+    grip(0): pulse=0 = 완전 개방 — 그리퍼 손가락이 카메라 시야에 들어가지 않도록 완전히 열어둠.
     """
     _scan = scan_j_deg if scan_j_deg is not None else VISION_FETCH_SCAN_J_DEG
-    return [mj_abs(_scan)]
+    return [grip(0), mj_abs(_scan)]
 
 
 def vision_fetch_seq(scan_j_deg: list | None = None) -> list[Step]:
@@ -628,9 +630,41 @@ def vision_return_seq(scan_j_deg: list | None = None) -> list[Step]:
         Step(kind=StepKind.MOVE_L_TOP_XY),          # ⑧ 그리퍼 캠 XY + 고정 Z 상승
         Step(kind=StepKind.MOVE_L_SLOT_XY),         # ⑨ grasp_pose_base XY + 고정 Z (slot 위)
         Step(kind=StepKind.MOVE_L_SLOT_XYZ),        # ⑩ grasp_pose_base XY + return_z_mm 하강
-        marked(GRIP_RELEASE(), "place"),            # ⑪
+        marked(GRIP_RELEASE(), "place"),            # ⑪ 파지 준비 개방 (pulse=450) — slot 반납 해제
+        Step(kind=StepKind.WAIT, sec=1.0),          # ⑪-1 그리퍼 물리 개방 대기 (timeout_sec=0.0 fire-and-forget 보정)
         Step(kind=StepKind.MOVE_L_SLOT_XY),         # ⑫ grasp_pose_base XY + 고정 Z 상승
         JOINT_HOME(),                               # ⑬
+    ]
+
+
+def stage_pick_test_seq(scan_j_deg: list | None = None) -> list[Step]:
+    """Stage pick 단독 테스트 시퀀스 (서랍 조작·슬롯 반납 없음).
+
+    그리퍼캠으로 stage 위 공구를 인식 후 파지만 수행. 테스트·캘리브레이션 전용.
+
+    ① JOINT_HOME
+    ② grip(0)        — 완전 개방
+    ③ MoveJ → scan_j_deg
+    ④ WAIT_VISION_RETURN_XY
+    ④-1 GRIP_RELEASE — 파지 준비
+    ⑤ MOVE_L_TOP_XY
+    ⑥ MOVE_L_STAGING_XYZ
+    ⑦ GRIP_TOOL
+    ⑧ MOVE_L_TOP_XY
+    ⑨ JOINT_HOME
+    """
+    _scan = scan_j_deg if scan_j_deg is not None else VISION_RETURN_SCAN_J_DEG
+    return [
+        JOINT_HOME(),
+        grip(0),
+        mj_abs(_scan),
+        Step(kind=StepKind.WAIT_VISION_RETURN_XY),
+        GRIP_RELEASE(),
+        Step(kind=StepKind.MOVE_L_TOP_XY),
+        Step(kind=StepKind.MOVE_L_STAGING_XYZ),
+        marked(GRIP_TOOL(), "pick"),
+        Step(kind=StepKind.MOVE_L_TOP_XY),
+        JOINT_HOME(),
     ]
 
 

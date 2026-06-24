@@ -7,8 +7,8 @@ transformation:
     z: 0.9665831468813888
     w: 0.01830162826357165
   translation:
-    x: 9.088485935019892e-05
-    y: 0.044299210481224115
+    x: 0.020  # +20mm empirical X correction 2026-06-24 (+20)
+    y: 0.13429921048122412   # +90mm empirical Y correction 2026-06-23
     z: -0.07388288702640008
 metadata:
   calibration_date: '2026-06-16'

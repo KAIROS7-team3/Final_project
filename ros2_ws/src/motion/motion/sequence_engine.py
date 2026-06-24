@@ -19,14 +19,13 @@ import threading
 import time
 from typing import Callable, Optional
 
-import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy, qos_profile_sensor_data
 from std_msgs.msg import Bool
 from geometry_msgs.msg import PointStamped, PoseStamped
 from dsr_msgs2.srv import MoveLine, MoveJoint, MoveStop
-from dsr_msgs2.srv import SetCurrentTcp, ConfigCreateTcp
+from dsr_msgs2.srv import SetCurrentTcp, ConfigCreateTcp, SetRobotMode
 from dsr_msgs2.srv import GetCurrentPosx
 from interfaces.srv import GripperSetPosition
 
@@ -136,6 +135,9 @@ class SequenceEngine:
 
         # fetch 스캔 자세에서 찍은 공구 좌표 (XY + rz) — PoseStamped
         self._latest_tool_gripper: ToolPose = ToolPose()
+        # WAIT_VISION 시점에 고정 캡처 — MOVE_L_TOP_XY / STAGING_XYZ가 동일 pose 사용
+        self._staged_gripper_pose: ToolPose = ToolPose()
+        self._latest_gripper_is_top: bool = False  # _top 클래스 pose 수신 여부 (우선순위 추적용)
         self._tool_gripper_lock: threading.Lock = threading.Lock()
 
         # VS (slot 반납): 탑뷰 slot 위치 XY
@@ -148,6 +150,7 @@ class SequenceEngine:
         self._stop_cli = None
         self._set_tcp_cli = None
         self._create_tcp_cli = None
+        self._set_mode_cli = None
         self._gripper_cli = None
         self._get_posx_cli = None
         self._estop_sub = None
@@ -190,7 +193,9 @@ class SequenceEngine:
         if self._stop_cli is not None and self._stop_cli.service_is_ready():
             try:
                 fut = self._stop_cli.call_async(MoveStop.Request())
-                rclpy.spin_until_future_complete(self._node, fut, timeout_sec=0.2)
+                _done = threading.Event()
+                fut.add_done_callback(lambda _: _done.set())
+                _done.wait(timeout=0.2)
                 self._node.get_logger().info('[engine] 시퀀스 실패 — DSR move_stop 전송')
                 time.sleep(0.3)  # DSR 감속 완료 대기 — HIL 실측 후 조정
             except Exception as e:
@@ -213,9 +218,10 @@ class SequenceEngine:
             with open(cfg_path, encoding='utf-8') as f:
                 cfg = yaml.safe_load(f)
             vm = cfg.get('vision_motion', {})
-            self._tool_approach_z_mm: float = float(vm.get('tool_approach_z_mm', 234.0))
-            self._tool_approach_ori: list   = list(vm.get('tool_approach_ori', [180.0, 180.0, 90.0]))
-            self._tool_descent_ori: list    = list(vm.get('tool_descent_ori', [180.0, 180.0, 90.0]))
+            self._tool_approach_z_mm: float    = float(vm.get('tool_approach_z_mm', 234.0))
+            self._tool_approach_ori: list      = list(vm.get('tool_approach_ori', [180.0, 180.0, 90.0]))
+            self._tool_descent_ori: list       = list(vm.get('tool_descent_ori', [180.0, 180.0, 90.0]))
+            self._gripper_scan_settle_sec: float = float(vm.get('gripper_scan_settle_sec', 2.0))
             lim = vm.get('workspace_limits', {})
             x = lim.get('x', [50.0, 800.0])
             y = lim.get('y', [-600.0, 600.0])
@@ -273,9 +279,10 @@ class SequenceEngine:
             self._config_valid = True
         except Exception as e:
             self._node.get_logger().error(f'[engine] toolbox.yaml 로드 실패: {e} — 기본값 사용')
-            self._tool_approach_z_mm = 234.0
-            self._tool_approach_ori  = [180.0, 180.0, 90.0]
-            self._tool_descent_ori   = [180.0, 180.0, 90.0]
+            self._tool_approach_z_mm     = 234.0
+            self._tool_approach_ori      = [180.0, 180.0, 90.0]
+            self._tool_descent_ori       = [180.0, 180.0, 90.0]
+            self._gripper_scan_settle_sec = 2.0
             self._vis_x_min, self._vis_x_max = 50.0, 800.0
             self._vis_y_min, self._vis_y_max = -600.0, 600.0
             self._vis_z_min, self._vis_z_max = -31.0, 700.0
@@ -295,11 +302,12 @@ class SequenceEngine:
         필수 서비스(move_line/move_joint/set_current_tcp/gripper)가 없으면 RuntimeError.
         """
         p = f'/{self._robot_ns}'
-        self._movel_cli      = self._node.create_client(MoveLine,           f'{p}/motion/move_line',       callback_group=self._cb_group)
-        self._movej_cli      = self._node.create_client(MoveJoint,          f'{p}/motion/move_joint',      callback_group=self._cb_group)
-        self._stop_cli       = self._node.create_client(MoveStop,           f'{p}/motion/move_stop',       callback_group=self._cb_group)
-        self._set_tcp_cli    = self._node.create_client(SetCurrentTcp,      f'{p}/tcp/set_current_tcp',    callback_group=self._cb_group)
-        self._create_tcp_cli = self._node.create_client(ConfigCreateTcp,    f'{p}/tcp/config_create_tcp',  callback_group=self._cb_group)
+        self._movel_cli      = self._node.create_client(MoveLine,           f'{p}/motion/move_line',         callback_group=self._cb_group)
+        self._movej_cli      = self._node.create_client(MoveJoint,          f'{p}/motion/move_joint',        callback_group=self._cb_group)
+        self._stop_cli       = self._node.create_client(MoveStop,           f'{p}/motion/move_stop',         callback_group=self._cb_group)
+        self._set_tcp_cli    = self._node.create_client(SetCurrentTcp,      f'{p}/tcp/set_current_tcp',      callback_group=self._cb_group)
+        self._create_tcp_cli = self._node.create_client(ConfigCreateTcp,    f'{p}/tcp/config_create_tcp',    callback_group=self._cb_group)
+        self._set_mode_cli   = self._node.create_client(SetRobotMode,       f'{p}/system/set_robot_mode',    callback_group=self._cb_group)
         self._gripper_cli    = self._node.create_client(GripperSetPosition, '/gripper/set_position',       callback_group=self._cb_group)
         # VS: 현재 EE 포즈 조회 (DSR BASE 좌표계)
         self._get_posx_cli   = self._node.create_client(GetCurrentPosx,     f'{p}/aux_control/get_current_posx', callback_group=self._cb_group)
@@ -376,6 +384,19 @@ class SequenceEngine:
 
     def _on_tool_gripper_pose(self, msg: PoseStamped) -> None:
         """그리퍼 캠 공구 좌표 수신 (/vision/tool_gripper_pose) — fetch/return 공통."""
+        # frame_id = "tool:{class_id}" 형식에서 감지된 클래스 추출 후 필터링.
+        # socket_19mm_top 처럼 _top/_side 접미사 변형도 tool_id 기준으로 허용.
+        frame_id = msg.header.frame_id
+        is_top = False
+        if frame_id.startswith("tool:"):
+            detected_class = frame_id[len("tool:"):]
+            current_tool = self._tool_id
+            if current_tool and not detected_class.startswith(current_tool):
+                return
+            is_top = detected_class.endswith("_top")
+            # _top pose가 이미 캐시에 있으면 side view는 무시
+            if not is_top and self._latest_gripper_is_top:
+                return
         q = msg.pose.orientation
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
@@ -393,6 +414,7 @@ class SequenceEngine:
                 rz=rz,
                 valid=True,
             )
+            self._latest_gripper_is_top = is_top
 
     def _on_slot_top_pose(self, msg: PointStamped) -> None:
         """탑뷰 D455f slot 위치 수신 — ⑧ MOVE_L_SLOT_XY 에서 rough XY 로 사용."""
@@ -487,16 +509,44 @@ class SequenceEngine:
 
     # ── TCP 설정 ──────────────────────────────────────────────────────────
 
+    def _switch_robot_mode(self, mode: int) -> bool:
+        """DSR 로봇 모드 전환. 0=MANUAL, 1=AUTONOMOUS."""
+        if self._set_mode_cli is None or not self._set_mode_cli.service_is_ready():
+            self._node.get_logger().warn(f'[engine] set_robot_mode 서비스 미준비 — 건너뜀 (target={mode})')
+            return False
+        req = SetRobotMode.Request()
+        req.robot_mode = mode
+        fut = self._set_mode_cli.call_async(req)
+        _done = threading.Event()
+        fut.add_done_callback(lambda _: _done.set())
+        _done.wait(timeout=3.0)
+        res = fut.result()
+        if res is None or not res.success:
+            self._node.get_logger().warn(f'[engine] set_robot_mode 실패 (target={mode})')
+            return False
+        mode_name = {0: 'MANUAL', 1: 'AUTONOMOUS'}.get(mode, str(mode))
+        self._node.get_logger().info(f'[engine] 로봇 모드: {mode_name}')
+        return True
+
     def set_tcp(self) -> bool:
         name = self._tcp_name
+        # config_create_tcp / set_current_tcp 는 MANUAL 모드에서만 동작
+        self._switch_robot_mode(0)
         try:
             if self._create_tcp_cli.service_is_ready():
                 create_req = ConfigCreateTcp.Request()
                 create_req.name = name
                 create_req.pos  = [0.0, 0.0, 160.0, 0.0, 0.0, 0.0]
                 fut = self._create_tcp_cli.call_async(create_req)
-                rclpy.spin_until_future_complete(self._node, fut, timeout_sec=5.0)
-                self._node.get_logger().info(f'[engine] TCP 등록 완료: {name} pos=[0,0,160,0,0,0]')
+                _done = threading.Event()
+                fut.add_done_callback(lambda _: _done.set())
+                _done.wait(timeout=5.0)
+                res = fut.result()
+                if res is None or not getattr(res, 'success', True):
+                    # 이미 등록된 경우 실패 반환 — set_current_tcp 로 활성화 계속 시도
+                    self._node.get_logger().warn(f'[engine] TCP 등록 실패 (이미 등록됐을 수 있음): {name}')
+                else:
+                    self._node.get_logger().info(f'[engine] TCP 등록 완료: {name} pos=[0,0,160,0,0,0]')
             else:
                 self._node.get_logger().warn('[engine] config_create_tcp 서비스 미준비 — 건너뜀')
 
@@ -508,27 +558,22 @@ class SequenceEngine:
             set_req = SetCurrentTcp.Request()
             set_req.name = name
             fut = self._set_tcp_cli.call_async(set_req)
-            rclpy.spin_until_future_complete(self._node, fut, timeout_sec=5.0)
+            _done = threading.Event()
+            fut.add_done_callback(lambda _: _done.set())
+            _done.wait(timeout=5.0)
             res = fut.result()
             if res is None or not getattr(res, 'success', True):
                 msg = getattr(res, 'message', 'timeout')
-                if self._mode == 'virtual':
-                    # virtual 모드: home_on_start가 이미 TCP를 설정했으므로 non-fatal
-                    self._node.get_logger().warn(
-                        f'[engine] set_current_tcp 응답 실패 (virtual — 무시): name={name} msg={msg}'
-                    )
-                else:
-                    self._node.get_logger().error(
-                        f'[engine] set_current_tcp 응답 실패: name={name} msg={msg}'
-                    )
-                    return False
-            else:
-                self._node.get_logger().info(f'[engine] TCP 활성화 완료: {name}')
+                self._node.get_logger().error(f'[engine] set_current_tcp 응답 실패: name={name} msg={msg}')
+                return False
+            self._node.get_logger().info(f'[engine] TCP 활성화 완료: {name}')
             return True
 
         except Exception as e:
             self._node.get_logger().error(f'[engine] TCP 설정 예외: {e}')
             return False
+        finally:
+            self._switch_robot_mode(1)  # 모션 명령을 위해 AUTONOMOUS 복구
 
     # ── DSR 서비스 호출 ───────────────────────────────────────────────────
 
@@ -548,13 +593,15 @@ class SequenceEngine:
         fut = self._movel_cli.call_async(req)
         _POLL = 0.1
         _TIMEOUT = 30.0
-        # wall-clock 측정: spin_until_future_complete이 executor 경합으로 _POLL보다
-        # 길게 블로킹될 수 있어 카운터(elapsed += _POLL)는 실제 시간을 과소추정한다.
+        _done = threading.Event()
+        fut.add_done_callback(lambda _: _done.set())
         t_start = time.monotonic()
-        while not fut.done() and (time.monotonic() - t_start) < _TIMEOUT:
-            rclpy.spin_until_future_complete(self._node, fut, timeout_sec=_POLL)
+        while not _done.wait(timeout=_POLL):
             if self._estop_triggered:
                 self._node.get_logger().error('  move_line E-stop 감지 — 이동 중단')
+                return False
+            if (time.monotonic() - t_start) >= _TIMEOUT:
+                self._node.get_logger().error(f'  move_line timeout ({_TIMEOUT:.0f}s) — 서비스 무응답: pos={step.pose}')
                 return False
         res = fut.result()
         if res is None:
@@ -578,12 +625,15 @@ class SequenceEngine:
         fut = self._movej_cli.call_async(req)
         _POLL = 0.1
         _TIMEOUT = 20.0
-        # wall-clock 측정 (이유: _movel 동일).
+        _done = threading.Event()
+        fut.add_done_callback(lambda _: _done.set())
         t_start = time.monotonic()
-        while not fut.done() and (time.monotonic() - t_start) < _TIMEOUT:
-            rclpy.spin_until_future_complete(self._node, fut, timeout_sec=_POLL)
+        while not _done.wait(timeout=_POLL):
             if self._estop_triggered:
                 self._node.get_logger().error('  move_joint E-stop 감지 — 이동 중단')
+                return False
+            if (time.monotonic() - t_start) >= _TIMEOUT:
+                self._node.get_logger().error(f'  move_joint timeout ({_TIMEOUT:.0f}s) — 서비스 무응답: pos={step.pose}')
                 return False
         res = fut.result()
         if res is None:
@@ -608,7 +658,9 @@ class SequenceEngine:
         req.timeout_sec = 0.0
 
         fut = self._gripper_cli.call_async(req)
-        rclpy.spin_until_future_complete(self._node, fut, timeout_sec=5.0)
+        _done = threading.Event()
+        fut.add_done_callback(lambda _: _done.set())
+        _done.wait(timeout=5.0)
         res = fut.result()
         if res is None or not res.success:
             msg = res.message if res else 'timeout'
@@ -673,18 +725,41 @@ class SequenceEngine:
 
     # ── 공구 접근 VS (vision_fetch) ───────────────────────────────────────────
 
-    def _exec_wait_vision_gripper_xy(self, label: str, timeout_sec: float = 5.0) -> bool:
-        """fetch/return ④: 캐시 초기화 후 /vision/tool_gripper_pose 신규 수신 대기."""
+    def _exec_wait_vision_gripper_xy(self, label: str, timeout_sec: float = 15.0) -> bool:
+        """fetch/return ④: 캐시 초기화 후 EMA 안정화 대기 → /vision/tool_gripper_pose 신규 수신.
+
+        스캔 자세 도달 직후 카메라 진동과 EMA 미수렴으로 인한 좌표 불안정을
+        방지하기 위해 settle_sec 동안 프레임을 수집 후 캐시 리셋, 안정화된 다음
+        프레임을 최종 좌표로 사용한다 (config/toolbox.yaml gripper_scan_settle_sec).
+        """
+        settle_sec = self._gripper_scan_settle_sec
+
+        # 초기 캐시 클리어
         with self._tool_gripper_lock:
             self._latest_tool_gripper = ToolPose(valid=False)
+            self._latest_gripper_is_top = False
+
+        # EMA 안정화 대기 — 이 기간 동안 vision node가 프레임 누적, EMA 수렴
+        if settle_sec > 0.0:
+            self._node.get_logger().info(
+                f'  [WAIT_{label}] EMA 안정화 대기 {settle_sec:.1f}s (gripper_scan_settle_sec)...'
+            )
+            time.sleep(settle_sec)
+            # 안정화 구간 누적된 캐시 버리고 새 프레임 대기
+            with self._tool_gripper_lock:
+                self._latest_tool_gripper = ToolPose(valid=False)
+                self._latest_gripper_is_top = False
+
         self._node.get_logger().info(f'  [WAIT_{label}] 그리퍼 캠 좌표 대기 중...')
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
             with self._tool_gripper_lock:
                 if self._latest_tool_gripper.valid:
                     p = self._latest_tool_gripper
+                    # 이후 MOVE_L_TOP_XY / STAGING_XYZ가 같은 pose를 사용하도록 고정 캡처
+                    self._staged_gripper_pose = ToolPose(**vars(p))
                     self._node.get_logger().info(
-                        f'  [WAIT_{label}] 수신 완료 → ({p.x:.1f}, {p.y:.1f}) mm rz={p.rz:.1f}°'
+                        f'  [WAIT_{label}] 수신 완료 → ({p.x:.1f}, {p.y:.1f}) mm rz={p.rz:.1f}° (staged)'
                     )
                     return True
             time.sleep(0.05)
@@ -695,8 +770,8 @@ class SequenceEngine:
 
     def _exec_move_l_top_xy(self) -> bool:
         """fetch ⑤⑧ / return ⑤⑧: 그리퍼 캠 XY + rz + approach_z 로 이동."""
-        with self._tool_gripper_lock:
-            pose = ToolPose(**vars(self._latest_tool_gripper))
+        # WAIT_VISION에서 캡처한 고정 pose 사용 — 새 프레임으로 rz가 덮어써지는 것 방지
+        pose = self._staged_gripper_pose
 
         if not pose.valid:
             self._node.get_logger().error('  [TOP_XY] 그리퍼 캠 좌표 미수신 (/vision/tool_gripper_pose)')
@@ -798,8 +873,8 @@ class SequenceEngine:
 
     def _exec_move_l_staging_xyz_return(self) -> bool:
         """return ⑥: 그리퍼 캠 XY + rz + staging_pickup_z_mm 로 staging 파지 하강."""
-        with self._tool_gripper_lock:
-            pose = ToolPose(**vars(self._latest_tool_gripper))
+        # WAIT_VISION에서 캡처한 고정 pose 사용 — TOP_XY와 동일 rz 보장
+        pose = self._staged_gripper_pose
         if not pose.valid:
             self._node.get_logger().error('  [STAGING_XYZ] 그리퍼 캠 좌표 미수신 (/vision/tool_gripper_pose)')
             return False
@@ -931,7 +1006,9 @@ class SequenceEngine:
         req = GetCurrentPosx.Request()
         req.ref = DR_BASE
         fut = self._get_posx_cli.call_async(req)
-        rclpy.spin_until_future_complete(self._node, fut, timeout_sec=2.0)
+        _done = threading.Event()
+        fut.add_done_callback(lambda _: _done.set())
+        _done.wait(timeout=2.0)
         res = fut.result()
         if res is None or not res.success:
             raise RuntimeError('get_current_posx 서비스 실패 — VS 루프 즉시 중단')
@@ -953,7 +1030,9 @@ class SequenceEngine:
         fut = self._movel_cli.call_async(req)
         # S-4: PLC Watchdog(0.5s timeout)은 plc_node 독립 타이머로 운용 — 이 블로킹과 무관.
         # timeout을 0.45s로 제한해 Watchdog 경계 내에서 서비스 무응답을 감지.
-        rclpy.spin_until_future_complete(self._node, fut, timeout_sec=0.45)
+        _done = threading.Event()
+        fut.add_done_callback(lambda _: _done.set())
+        _done.wait(timeout=0.45)
         res = fut.result()
         return res is not None and res.success
 
@@ -971,6 +1050,8 @@ class SequenceEngine:
         req.sync_type  = 0
         fut = self._movel_cli.call_async(req)
         # S-4: PLC Watchdog(0.5s timeout)은 plc_node 독립 타이머로 운용.
-        rclpy.spin_until_future_complete(self._node, fut, timeout_sec=0.45)
+        _done = threading.Event()
+        fut.add_done_callback(lambda _: _done.set())
+        _done.wait(timeout=0.45)
         res = fut.result()
         return res is not None and res.success

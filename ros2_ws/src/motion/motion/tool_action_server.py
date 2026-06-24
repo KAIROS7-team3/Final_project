@@ -45,13 +45,21 @@ from motion.sequence_engine import SequenceEngine
 from unit_actions.toolbox_motion import (
     drawer_close_seq,
     drawer_open_seq,
+    drawer_open_seq_v2,
+    drawer_close_seq_v2,
     scan_layer_seq,
     fixed_fetch_seq,
     home_seq,
     vision_return_seq,
+    stage_pick_test_seq,
 )
 
-_VALID_PHASES = frozenset({"open_drawer", "fetch", "return", "close_drawer", "home", "scan_pose"})
+_VALID_PHASES = frozenset({
+    "open_drawer", "fetch", "return", "close_drawer", "home",
+    "open_drawer_scan", "close_drawer_scan",   # 스캔 전용 v2 서랍 시퀀스
+    "scan_pose", "scan_pose_fetch", "scan_pose_return",
+    "stage_pick_test",
+})
 _DEFAULT_TCP_NAME   = "GripperDA_v1"
 _DEFAULT_CONFIG_PATH = "/home/kg/assistant/config/toolbox.yaml"
 _STANDALONE_LAYER   = 1   # ~/open_toolbox · ~/close_toolbox 기본 layer
@@ -238,17 +246,28 @@ class ExecutePhaseServer(Node):
         self, phase: str, tool_id: str, layer_id: int
     ) -> Optional[list]:
         if phase == "open_drawer":
-            return drawer_open_seq(layer_id)
+            return drawer_open_seq_v2(layer_id)
         if phase == "fetch":
             return fixed_fetch_seq()
         if phase == "return":
             return vision_return_seq(scan_j_deg=self._engine._return_scan_j_deg)
         if phase == "close_drawer":
-            return drawer_close_seq(layer_id)
+            return drawer_close_seq_v2(layer_id)
         if phase == "home":
             return home_seq()
-        if phase == "scan_pose":
+        if phase == "open_drawer_scan":
+            return drawer_open_seq_v2(layer_id)
+        if phase == "close_drawer_scan":
+            return drawer_close_seq_v2(layer_id)
+        if phase in ("scan_pose", "scan_pose_fetch"):
+            self._engine._load_toolbox_config()
             return scan_layer_seq(getattr(self._engine, "_fetch_scan_j_deg", None))
+        if phase == "scan_pose_return":
+            self._engine._load_toolbox_config()
+            return scan_layer_seq(getattr(self._engine, "_return_scan_j_deg", None))
+        if phase == "stage_pick_test":
+            self._engine._load_toolbox_config()
+            return stage_pick_test_seq(scan_j_deg=getattr(self._engine, "_return_scan_j_deg", None))
         return None
 
     # ── 서비스 핸들러 ────────────────────────────────────────────────────────
@@ -287,22 +306,22 @@ class ExecutePhaseServer(Node):
 
     def _on_open_toolbox(self, _req, response: Trigger.Response) -> Trigger.Response:
         return self._run_service_seq(
-            drawer_open_seq(_STANDALONE_LAYER), "open_toolbox_l1", response
+            drawer_open_seq_v2(_STANDALONE_LAYER), "open_toolbox_l1", response
         )
 
     def _on_close_toolbox(self, _req, response: Trigger.Response) -> Trigger.Response:
         return self._run_service_seq(
-            drawer_close_seq(_STANDALONE_LAYER), "close_toolbox_l1", response
+            drawer_close_seq_v2(_STANDALONE_LAYER), "close_toolbox_l1", response
         )
 
     def _on_open_toolbox_l2(self, _req, response: Trigger.Response) -> Trigger.Response:
         return self._run_service_seq(
-            drawer_open_seq(2), "open_toolbox_l2", response
+            drawer_open_seq_v2(1), "open_toolbox_l2", response
         )
 
     def _on_close_toolbox_l2(self, _req, response: Trigger.Response) -> Trigger.Response:
         return self._run_service_seq(
-            drawer_close_seq(2), "close_toolbox_l2", response
+            drawer_close_seq_v2(1), "close_toolbox_l2", response
         )
 
     def _run_service_seq(
