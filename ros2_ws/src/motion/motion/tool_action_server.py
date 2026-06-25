@@ -76,6 +76,14 @@ from unit_actions.toolbox_motion import (
 )
 from unit_actions.visual_servoing import ToolPose  # noqa: E402
 
+# DSR 모션 상수 (핸드오버 직접 DSR 서비스 호출용)
+DR_BASE = 0
+DR_MV_MOD_ABS = 0
+DR_MV_MOD_REL = 1
+
+# 그리퍼 파지력 (TaskWriter SubRoutine 실측) — pulse > PULSE_RELEASE 일 때만 인가
+_GRIP_CURRENT: int = 400
+
 _VALID_PHASES = frozenset({
     "open_drawer", "fetch", "return", "close_drawer", "home",
     "open_drawer_scan", "close_drawer_scan",   # 스캔 전용 v2 서랍 시퀀스
@@ -1066,8 +1074,26 @@ class ExecutePhaseServer(Node):
     def _on_estop(self, _req, response: Trigger.Response) -> Trigger.Response:
         """S-3: E-stop — DSR 즉시 정지 + 래치. 고우선 콜백 그룹에서 실행."""
         self.get_logger().error("[TAS] E-STOP 요청 수신")
+        self._estop_latch.set()
         self._engine.request_stop()
+        self._publish_status(is_moving=False)
         self._set_plc("e_stop")
+
+        # DSR 즉시 정지
+        try:
+            if self._stop_cli.service_is_ready():
+                req = MoveStop.Request()
+                req.stop_type = 0  # 감속 정지
+                self._stop_cli.call_async(req)
+                self.get_logger().error("[TAS] move_stop 요청 완료")
+            else:
+                self.get_logger().error("[TAS] move_stop 서비스 미준비")
+        except Exception as exc:
+            self.get_logger().error(f"[TAS] move_stop 예외: {exc}")
+
+        # DB 로그 (best-effort)
+        self._log_event_async("e_stop", "E-stop 버튼 트리거")
+
         response.success = True
         response.message = "E-stop 래치 활성 — estop_reset 으로만 해제"
         return response
