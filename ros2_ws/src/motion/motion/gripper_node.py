@@ -1510,7 +1510,7 @@ class GripperNode(Node):
             frames.extend(pos_frames)
             ok, err = self._send_cmd_fire_and_forget(frames)
             if not ok:
-                self.get_logger().warning(f"[gripper] inline send failed: {err}", throttle_duration_sec=2.0)
+                self.get_logger().warning(f"[gripper] inline send failed: {err}")
                 return
             self._last_sent_direct_pulse = t_pulse
             self._last_sent_direct_cur = t_cur
@@ -1633,7 +1633,8 @@ class GripperNode(Node):
         #    state stream 활성 + 신선할 때: 위치 도달 또는 파지 전류 감지까지 폴링
         #    settle timeout 후에도 ACK 성공이므로 success=True 유지
         if self._tcp_state_stream_enabled and (time.time() - self._last_state_rx_t) < 2.0:
-            settle_deadline = time.time() + 0.5
+            settle_sec = 2.5 if t_pulse > 450 else 0.8
+            settle_deadline = time.time() + settle_sec
             while time.time() < settle_deadline:
                 time.sleep(0.05)
                 if self._grip_enabled and abs(self._current_hz_cur) > self._grip_threshold:
@@ -1643,7 +1644,8 @@ class GripperNode(Node):
                     self.get_logger().info(f"[gripper] 위치 도달 pos={self._current_hz_pos}")
                     break
         else:
-            # state stream 비활성/만료 — 낙관적 업데이트
+            # state stream 비활성/만료 — 물리 이동 대기 후 낙관적 업데이트
+            time.sleep(2.5 if t_pulse > 450 else 0.8)
             self._current_hz_pos = t_pulse
 
         response.success = True

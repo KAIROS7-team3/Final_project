@@ -8,5 +8,9 @@
 # ROBOTIS RH-P12-RN 그리퍼 (USB→RS-485, Dynamixel Protocol 2.0) — 담당: B
 SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", SYMLINK+="gripper"
 
+# Logitech C270 HD WEBCAM (그리퍼 캠, /dev/c270 고정 심링크)
+# video4linux 서브시스템 + capture 기능 노드만 선택 (metadata 노드 제외)
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="0825", ATTR{index}=="0", SYMLINK+="c270"
+
 # PLC XBC-DR14E (RS-485 Modbus RTU, USB-Serial CH340) — 담당: A
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", GROUP="dialout", MODE="0660", SYMLINK+="plc"

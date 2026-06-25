@@ -38,7 +38,11 @@ from vision_msgs.msg import Detection2DArray
 
 from interfaces.action import ExecutePhase
 
-_DEFAULT_CONFIG = "/home/kg/assistant/config/toolbox.yaml"
+_DEFAULT_CONFIG = str(
+    Path(os.environ.get("FINAL_PROJECT_ROOT", "")) / "config" / "toolbox.yaml"
+    if os.environ.get("FINAL_PROJECT_ROOT")
+    else Path(__file__).resolve().parents[5] / "config" / "toolbox.yaml"
+)
 _SCAN_COLLECT_SEC = 5.0   # 수집 시간 (초)
 _MOVEJ_TIMEOUT    = 15.0  # MOVEJ 대기 타임아웃 (초)
 _MIN_SAMPLES      = 3     # tool_id당 최소 유효 샘플 수

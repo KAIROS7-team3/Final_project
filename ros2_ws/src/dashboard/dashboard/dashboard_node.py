@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
 import subprocess
 import threading
@@ -474,7 +475,11 @@ class DashboardNode(Node):
 
     def _get_scan_pose_config(self) -> dict:
         import yaml
-        cfg_path = "/home/kg/assistant/config/toolbox.yaml"
+        cfg_path = str(
+            Path(os.environ["FINAL_PROJECT_ROOT"]) / "config" / "toolbox.yaml"
+            if os.environ.get("FINAL_PROJECT_ROOT")
+            else Path(__file__).resolve().parents[5] / "config" / "toolbox.yaml"
+        )
         try:
             with open(cfg_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)
@@ -489,7 +494,11 @@ class DashboardNode(Node):
 
     def _set_scan_pose_config(self, data: dict) -> dict:
         import yaml
-        cfg_path = "/home/kg/assistant/config/toolbox.yaml"
+        cfg_path = str(
+            Path(os.environ["FINAL_PROJECT_ROOT"]) / "config" / "toolbox.yaml"
+            if os.environ.get("FINAL_PROJECT_ROOT")
+            else Path(__file__).resolve().parents[5] / "config" / "toolbox.yaml"
+        )
         try:
             with open(cfg_path, encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)

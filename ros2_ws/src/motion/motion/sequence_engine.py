@@ -195,9 +195,9 @@ class SequenceEngine:
                 fut = self._stop_cli.call_async(MoveStop.Request())
                 _done = threading.Event()
                 fut.add_done_callback(lambda _: _done.set())
-                _done.wait(timeout=0.2)
+                _done.wait(timeout=1.0)
                 self._node.get_logger().info('[engine] 시퀀스 실패 — DSR move_stop 전송')
-                time.sleep(0.3)  # DSR 감속 완료 대기 — HIL 실측 후 조정
+                time.sleep(0.5)  # DSR 감속 완료 대기 — HIL 실측 후 조정
             except Exception as e:
                 self._node.get_logger().error(f'[engine] move_stop 실패 (무시): {e}')
         else:
@@ -675,7 +675,9 @@ class SequenceEngine:
             self._node.get_logger().error(f'  gripper set_position 실패: {msg}')
             return False
         self._node.get_logger().info(f'  gripper ok — pos={res.final_position} cur={res.final_current}')
-        time.sleep(0.1)
+        # settle 미완료(final_position이 목표와 크게 다름) 시 물리 이동 완료 대기
+        extra = 1.0 if abs(res.final_position - pulse) > 30 else 0.1
+        time.sleep(extra)
         return True
 
     # ── Visual Servoing ───────────────────────────────────────────────────────

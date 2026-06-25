@@ -28,7 +28,9 @@ phase 매핑:
 
 from __future__ import annotations
 
+import os
 import threading
+from pathlib import Path
 from typing import Optional
 
 import rclpy
@@ -61,7 +63,11 @@ _VALID_PHASES = frozenset({
     "stage_pick_test",
 })
 _DEFAULT_TCP_NAME   = "GripperDA_v1"
-_DEFAULT_CONFIG_PATH = "/home/kg/assistant/config/toolbox.yaml"
+_DEFAULT_CONFIG_PATH = str(
+    Path(os.environ["FINAL_PROJECT_ROOT"]) / "config" / "toolbox.yaml"
+    if os.environ.get("FINAL_PROJECT_ROOT")
+    else Path(__file__).resolve().parents[5] / "config" / "toolbox.yaml"
+)
 _STANDALONE_LAYER   = 1   # ~/open_toolbox · ~/close_toolbox 기본 layer
 
 

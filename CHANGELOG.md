@@ -9,6 +9,15 @@
 ### Added
 - (예정)
 
+### Known Issues / Technical Debt
+
+- **[gripper] GripperCommand action 미사용 — service 경로 단독 운용 (추후 교체 검토)**
+  - 현재 `sequence_engine._grip()`은 `GripperSetPosition` **service**를 호출한다.
+  - `gripper_node`에 `GripperCommand` **action**이 존재하며 20초 대기 루프 + 파지 감지 피드백을 제공하지만, 시퀀스 실행 경로에서 사용되지 않는다.
+  - service 경로는 settle 타임아웃(현재 2.5s) 이후 위치 미확인 상태로 success=True를 반환할 수 있어 파지 실패가 무음 전파될 위험이 있다.
+  - **교체 범위**: `sequence_engine._grip()` → ActionClient 전환, `setup()` 서비스 대기 → action server 대기, 기존 service 경로 호출자(대시보드 standalone) 영향 확인 필요.
+  - **관련 파일**: `ros2_ws/src/motion/motion/sequence_engine.py` `_grip()` / `ros2_ws/src/motion/motion/gripper_node.py` `_execute_callback()`
+
 ---
 
 ## [Phase 0 — 2차 정리] — 2026-05-27
