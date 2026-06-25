@@ -1633,7 +1633,8 @@ class GripperNode(Node):
         #    state stream 활성 + 신선할 때: 위치 도달 또는 파지 전류 감지까지 폴링
         #    settle timeout 후에도 ACK 성공이므로 success=True 유지
         if self._tcp_state_stream_enabled and (time.time() - self._last_state_rx_t) < 2.0:
-            settle_sec = 2.5 if t_pulse > 450 else 0.8
+            # pulse=0(완전 개방)은 450→0 물리 이동이 0.8s로 부족할 수 있으므로 1.5s
+            settle_sec = 2.5 if t_pulse > 450 else (1.5 if t_pulse == 0 else 0.8)
             settle_deadline = time.time() + settle_sec
             while time.time() < settle_deadline:
                 time.sleep(0.05)
@@ -1645,7 +1646,8 @@ class GripperNode(Node):
                     break
         else:
             # state stream 비활성/만료 — 물리 이동 대기 후 낙관적 업데이트
-            time.sleep(2.5 if t_pulse > 450 else 0.8)
+            # pulse=0(완전 개방)은 0.8s로 부족할 수 있으므로 1.5s로 보장
+            time.sleep(2.5 if t_pulse > 450 else (1.5 if t_pulse == 0 else 0.8))
             self._current_hz_pos = t_pulse
 
         response.success = True

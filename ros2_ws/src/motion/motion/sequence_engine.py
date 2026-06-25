@@ -675,8 +675,14 @@ class SequenceEngine:
             self._node.get_logger().error(f'  gripper set_position 실패: {msg}')
             return False
         self._node.get_logger().info(f'  gripper ok — pos={res.final_position} cur={res.final_current}')
-        # settle 미완료(final_position이 목표와 크게 다름) 시 물리 이동 완료 대기
-        extra = 1.0 if abs(res.final_position - pulse) > 30 else 0.1
+        # pulse=0(완전 개방)은 state stream 비활성 시 optimistic final_position=0을 반환하므로
+        # 위치 차이 기반 판단이 부정확하다. 항상 충분한 물리 이동 시간을 보장한다.
+        if pulse == 0:
+            extra = 1.5  # 완전 개방: 스캔 전 그리퍼 손가락이 시야 밖으로 나갈 시간 보장
+        elif abs(res.final_position - pulse) > 30:
+            extra = 1.0  # settle 미완료 — 추가 대기
+        else:
+            extra = 0.1
         time.sleep(extra)
         return True
 
