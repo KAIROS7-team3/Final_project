@@ -471,6 +471,8 @@ class ToolActionServer(Node):
 
         # 1단계: 로봇이 실제로 움직이기 시작할 때까지 대기
         while time.monotonic() < deadline:
+            if self._estop_latch.is_set():
+                return False
             with self._joint_vel_lock:
                 vels = self._joint_velocities
             if vels and max(abs(v) for v in vels) > moving_thresh:
@@ -482,6 +484,8 @@ class ToolActionServer(Node):
 
         # 2단계: 움직임이 멈출 때까지 대기
         while time.monotonic() < deadline:
+            if self._estop_latch.is_set():
+                return False
             with self._joint_vel_lock:
                 vels = self._joint_velocities
             if vels and max(abs(v) for v in vels) < still_thresh:
@@ -539,21 +543,25 @@ class ToolActionServer(Node):
                 result.success = True
                 result.message = f"place_on_hand 완료: {tool_id}"
                 self._set_plc("idle")
+                self._log_event_async("fetch", f"place_on_hand 성공: tool_id={tool_id}")
                 self.get_logger().info(f"[TAS] place_on_hand 완료: tool_id={tool_id}")
             elif goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 result.success = False
                 result.message = "취소됨"
+                self._log_event_async("rejected", f"place_on_hand 취소: tool_id={tool_id}")
             else:
                 goal_handle.abort()
                 result.success = False
                 result.message = f"place_on_hand 실패: {tool_id}"
+                self._log_event_async("error", f"place_on_hand 실패: tool_id={tool_id}")
                 self._set_plc("error")
         except Exception as exc:
             self.get_logger().error(f"[TAS] place_on_hand 예외: {exc}")
             goal_handle.abort()
             result.success = False
             result.message = str(exc)
+            self._log_event_async("error", f"place_on_hand 예외: tool_id={tool_id} err={exc}")
             self._set_plc("error")
         finally:
             self._current_tool_id = ""
@@ -606,20 +614,24 @@ class ToolActionServer(Node):
                 result.success = True
                 result.message = f"place_on_hand_test 완료: {tool_id}"
                 self._set_plc("idle")
+                self._log_event_async("fetch", f"place_on_hand_test 성공: tool_id={tool_id}")
             elif goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 result.success = False
                 result.message = "취소됨"
+                self._log_event_async("rejected", f"place_on_hand_test 취소: tool_id={tool_id}")
             else:
                 goal_handle.abort()
                 result.success = False
                 result.message = f"place_on_hand_test 실패: {tool_id}"
+                self._log_event_async("error", f"place_on_hand_test 실패: tool_id={tool_id}")
                 self._set_plc("error")
         except Exception as exc:
             self.get_logger().error(f"[TAS] place_on_hand_test 예외: {exc}")
             goal_handle.abort()
             result.success = False
             result.message = str(exc)
+            self._log_event_async("error", f"place_on_hand_test 예외: tool_id={tool_id} err={exc}")
             self._set_plc("error")
         finally:
             self._current_tool_id = ""
@@ -879,6 +891,12 @@ class ToolActionServer(Node):
             self.get_logger().error("[TAS] hand_pre_approach 실패")
             return False
         self._wait_motion_complete(timeout=60.0)  # 실제 모션 완료 대기
+
+        # pre_approach 이동 중 손이 치워졌을 수 있으므로 재확인 (S-6)
+        _, ready_after = self._get_hand_state()
+        if not ready_after:
+            self.get_logger().warn("[TAS] pre_approach 후 손 감지 소실 — abort (S-6)")
+            return False
 
         # ── 본 approach: XY 유지, Z만 approach 높이로 하강 ──
         dsr_pos = [x_mm, y_mm, z_mm + approach_h_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
