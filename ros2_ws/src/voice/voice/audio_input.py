@@ -106,15 +106,24 @@ class MicRecorder:
                 )
 
     def _is_speech(self, chunk: np.ndarray) -> bool:
-        """청크가 음성인지 판단한다. Silero 미사용 시 RMS로 fallback."""
+        """청크가 음성인지 판단한다. Silero 미사용 시 RMS로 fallback.
+
+        Silero VAD는 16kHz에서 정확히 512 샘플을 요구한다.
+        CHUNK_SIZE(1024)를 512 단위로 나눠 각 sub-chunk의 최대 확률로 판단한다.
+        """
         if self._silero is not None:
             import torch
-            with torch.no_grad():
-                prob = self._silero(
-                    torch.from_numpy(chunk).unsqueeze(0),
-                    self.config.sample_rate_hz,
-                ).item()
-            return prob > self.config.silero_vad_threshold
+            _SILERO_STEP = 512
+            probs: list[float] = []
+            for i in range(0, len(chunk) - _SILERO_STEP + 1, _SILERO_STEP):
+                sub = chunk[i : i + _SILERO_STEP].copy()  # read-only 방지
+                with torch.no_grad():
+                    p = self._silero(
+                        torch.from_numpy(sub).unsqueeze(0),
+                        self.config.sample_rate_hz,
+                    ).item()
+                probs.append(p)
+            return max(probs, default=0.0) > self.config.silero_vad_threshold
         rms = float(np.sqrt(np.mean(chunk ** 2))) if chunk.size else 0.0
         return rms > self.config.silence_threshold
 
