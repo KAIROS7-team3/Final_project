@@ -54,8 +54,23 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "follow_up_on_wake_word_only",
+                default_value="false",
+                description="(Option C 비활성 시만 사용) 웨이크워드만 발화 시 즉시 후속 녹음",
+            ),
+            DeclareLaunchArgument(
+                "external_followup_control",
                 default_value="true",
-                description="웨이크워드만 발화 시 즉시 후속 녹음을 받아 합침",
+                description="True면 whisper keyword follow-up 비활성 — gemma_intent_node가 담당",
+            ),
+            DeclareLaunchArgument(
+                "followup_max_retries",
+                default_value="2",
+                description="Gemma unknown 시 후속 발화 최대 재시도 횟수",
+            ),
+            DeclareLaunchArgument(
+                "followup_context_timeout",
+                default_value="8.0",
+                description="후속 발화 대기 타임아웃(초) — 초과 시 컨텍스트 초기화",
             ),
             DeclareLaunchArgument("max_utterance_seconds", default_value="4.0"),
             DeclareLaunchArgument("silence_threshold", default_value="0.02"),
@@ -100,6 +115,10 @@ def generate_launch_description() -> LaunchDescription:
                         "whisper_backend": LaunchConfiguration("whisper_backend"),
                         "follow_up_on_wake_word_only": ParameterValue(
                             LaunchConfiguration("follow_up_on_wake_word_only"),
+                            value_type=bool,
+                        ),
+                        "external_followup_control": ParameterValue(
+                            LaunchConfiguration("external_followup_control"),
                             value_type=bool,
                         ),
                         "whisper_device": LaunchConfiguration("whisper_device"),
@@ -181,6 +200,14 @@ def generate_launch_description() -> LaunchDescription:
                         "gemma_warmup": ParameterValue(
                             LaunchConfiguration("gemma_warmup"),
                             value_type=bool,
+                        ),
+                        "followup_max_retries": ParameterValue(
+                            LaunchConfiguration("followup_max_retries"),
+                            value_type=int,
+                        ),
+                        "followup_context_timeout": ParameterValue(
+                            LaunchConfiguration("followup_context_timeout"),
+                            value_type=float,
                         ),
                     },
                 ],

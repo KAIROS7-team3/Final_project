@@ -87,6 +87,10 @@ class WhisperNode(Node):
         self.declare_parameter("follow_up_on_wake_word_only", True)
         self.declare_parameter("wake_words", list(DEFAULT_WAKE_WORDS))
 
+        # True면 whisper_node의 keyword 기반 follow-up을 비활성화한다.
+        # gemma_intent_node가 Gemma 결과에 따라 후속 발화 수집을 직접 제어할 때 사용.
+        self.declare_parameter("external_followup_control", False)
+
         # /robot/status 콜백과 마이크 worker thread가 공유하는 상태다.
         self._is_moving = False
         self._state_lock = threading.Lock()
@@ -265,12 +269,21 @@ class WhisperNode(Node):
     ) -> str:
         """웨이크워드 통과 후 행동 표현이 없으면 후속 발화를 한 번 더 녹음해 합친다.
 
+        external_followup_control=True이면 즉시 반환한다 (gemma_intent_node가 담당).
+
         트리거 조건 (둘 다 커버):
           1. "성현" — 웨이크워드만, 명령 없음
           2. "성현 드라이버" — 웨이크워드 + 공구명, 행동 표현 없음
 
         후속 발화 "반납" 등을 이어 붙여 "성현 드라이버 반납" 형태로 publish한다.
         """
+
+        if (
+            self.get_parameter("external_followup_control")
+            .get_parameter_value()
+            .bool_value
+        ):
+            return transcript
 
         if not (
             self.get_parameter("follow_up_on_wake_word_only")
