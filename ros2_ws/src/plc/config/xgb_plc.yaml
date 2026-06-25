@@ -37,7 +37,7 @@ plc_node:
     # output labels are comma-separated M labels; empty/none/- means reset only.
     # The node resets latched outputs via M0100 before pulsing the mapped coils.
     system_state_names: ["idle", "listening", "inferring", "moving", "e_stop", "error", "watchdog"]
-    system_state_output_labels: ["M0000", "M0001", "M0001", "M0002", "M0003", "M0004", "M0005"]
+    system_state_output_labels: ["M0000", "M0000,M0001", "M0000,M0001", "M0002", "M0003", "M0004", "M0005"]
 
     read_period_s: 1.0
     connect_retry_count: 3
