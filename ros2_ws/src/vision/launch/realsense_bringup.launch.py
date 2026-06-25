@@ -24,7 +24,7 @@ def generate_launch_description() -> LaunchDescription:
             "enable_depth": "true",
             "align_depth.enable": "true",
             "rgb_camera.color_profile": "1280x720x30",
-            "depth_module.depth_profile": "848x480x30",
+            "depth_module.depth_profile": "640x480x30",
             "pointcloud.enable": LaunchConfiguration('pointcloud'),
         }.items(),
     )

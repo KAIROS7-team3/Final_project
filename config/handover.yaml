@@ -1,0 +1,81 @@
+---
+# 핸드오버 파라미터 (hand_node.py + place_on_hand.py)
+#
+# 참조: docs/hand_delivery.md, .claude/rules/safety.md S-6
+# 단위: m / s / Nm (E-1 규칙)
+# 실측 후 갱신 필요 항목: ⚠️ 표시
+
+handover:
+  # ── Phase 1: 탐색 ───────────────────────────────────────────────────────
+  detection_timeout_s: 5.0         # 이 시간 내 손 미감지 → Staging fallback
+
+  # ── Phase 2: 손 자세 검증 ───────────────────────────────────────────────
+  min_detection_score: 0.8         # MediaPipe 신뢰도 임계값 (0.0~1.0)
+  palm_up_threshold: 0.5           # 손바닥 법선 Z성분 (base_link) 임계값
+                                   # 1.0=완전히 위, 0.7≈약 45° 이내
+
+  # 손 펼침 판단 (주먹 감지)
+  finger_extend_ratio: 1.1         # TIP-wrist 거리 > MCP-wrist 거리 × ratio
+  min_fingers_open: 3              # 4개 손가락(검지~새끼) 중 최소 N개 펼침
+
+  # ── Phase 3: 안정성 확인 ────────────────────────────────────────────────
+  stable_frames: 90                # 연속 안정 프레임 수 (@30fps ≈ 3s)
+  stable_threshold_m: 0.02         # 위치 변화 허용 범위 (2cm)
+
+  # lock 후 감지 소실 허용 프레임 (occlusion 대응)
+  # 로봇이 손을 가려도 이 프레임 동안 locked pose 유지
+  lock_keep_s: 3.0                 # 손 소실 후 lock 유지 시간 (초) — 로봇이 가릴 때 허용 범위
+
+  # lock 후 손 이동 처리
+  lock_update_distance_m: 0.03    # 3cm 이상 → lock 위치 업데이트 + 재안정화 (로봇 정지)
+  lock_break_distance_m: 0.15     # 15cm 이상 → full reset (작업 정지)
+  lock_break_z_m: 0.05            # Z축 5cm 이상 단독 변화 → full reset
+
+  # ── Phase 5: 접근 ───────────────────────────────────────────────────────
+  approach_action_scale: 0.2       # DSR velocity scale (0~1.0)
+  approach_height_m: 0.05          # 손바닥 위 대기 높이 (5cm)
+
+  # ⚠️ 손 Z 허용 상한: 0.17m (17cm) 초과 시 DSR 작업공간/조인트 한계로 알람 발생
+  # hand_z > 0.17m 이면 pre_approach Z가 너무 높아져 컨트롤러 연결 끊김 현상 확인됨
+  hand_z_max_m: 0.175              # 손 Z 허용 최대값 (base_link 기준, m) — 초과 시 abort
+  place_z_offset_m: -0.055              # place 시 hand_z 기준 오프셋 (direct: 소켓·스패너·멀티툴)
+  place_z_offset_handle_first_m: -0.065 # handle_first 전용 오프셋 (라쳇·드라이버·칼 — 1cm 더 하강)
+
+  # ── Phase 5: 토크 감지 ──────────────────────────────────────────────────
+  force_torque_abort_nm: 5.0       # ⚠️ 실측 후 조정 — 접촉 감지 joint torque 임계값
+
+  # ── Phase 7: 복귀 ───────────────────────────────────────────────────────
+  lift_height_m: 0.10              # 전달 후 수직 상승 높이
+
+  # ── 깊이 샘플링 ─────────────────────────────────────────────────────────
+  depth_sample_radius_px: 5        # 랜드마크 주변 median depth 샘플링 반경 (픽셀)
+  min_valid_depth_px: 5            # 유효 depth 픽셀 최소 개수
+
+  # ── ROI (손 감지 유효 영역) ──────────────────────────────────────────────
+  # color 1280×720 기준 픽셀 좌표 (realsense_bringup: rgb 1280×720, aligned_depth 동일)
+  # 손목(WRIST) 랜드마크가 ROI 밖이면 즉시 skip → CPU 절감
+  # ⚠️ 실제 작업 위치 확인 후 조정 필요
+  roi_enabled: true
+  roi_x_min: 330
+  roi_x_max: 578
+  roi_y_min: 140
+  roi_y_max: 441
+
+  # ── XY 보정 오프셋 (movel 명령 XY 보정) ────────────────────────────────────
+  # 오버레이 점이 손바닥과 맞는데 TCP가 실제로 다른 곳에 도착할 때 사용
+  # handover_calib.py w/a/s/d 키로 조정 후 저장
+  approach_x_offset_m: 0.0    # +X = 로봇 앞쪽 (m)
+  approach_y_offset_m: 0.0    # +Y = 로봇 왼쪽 (m)
+
+  # ── handle_first 전용: 손바닥 중심 보정 ────────────────────────────────────
+  # palm center가 wrist 포함으로 손목 쪽으로 쏠리는 것을 중지 방향(Y축)으로 보정
+  # tool_length/2 오프셋 적용 전에 먼저 적용됨
+  finger_offset_m: 0.03       # ⚠️ 실측 후 조정 (기본 3cm)
+
+  # ── rz 캘리브레이션 ──────────────────────────────────────────────────────────
+  # 손을 홈자세 그리퍼 방향과 동일하게 향했을 때 hand_viz에서 읽은 Yaw값 기록
+  # rz_robot = (hand_yaw - rz_cal_hand_yaw) * rz_sign + rz_cal_robot_rz
+  # ⚠️ 실측 후 갱신 필요
+  rz_cal_hand_yaw: 77.0      # 홈자세 방향 손일 때 Yaw 측정값 (deg)
+  rz_cal_robot_rz: 8.39      # 홈자세 Doosan rz (deg)
+  rz_sign: -1.0              # 1.0 = 정방향, -1.0 = 부호 반전 (CCW/CW 불일치 시)

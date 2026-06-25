@@ -79,6 +79,7 @@ tools:
     length: 0.18
   display_name: 십자 드라이버
   grasp_approach: top
+  handover_type: handle_first
   grasp_pose_base:
     x: 0.39242
     y: 0.26422
@@ -103,6 +104,7 @@ tools:
     width: 0.03
   display_name: 커터칼
   grasp_approach: top
+  handover_type: handle_first
   grasp_pose_base:
     x: 0.44547
     y: 0.34787
@@ -127,6 +129,7 @@ tools:
     width: 0.04
   display_name: 라쳇 렌치
   grasp_approach: top
+  handover_type: handle_first
   grasp_pose_base:
     x: 0.39761
     y: 0.2585
@@ -151,6 +154,7 @@ tools:
     width: 0.035
   display_name: 멕가이버
   grasp_approach: top
+  handover_type: direct
   grasp_pose_base:
     x: 0.26128
     y: 0.33282
@@ -176,6 +180,7 @@ tools:
     width: 0.04
   display_name: 스패너 16mm
   grasp_approach: top
+  handover_type: direct
   grasp_pose_base:
     x: 0.4372
     y: 0.34831
@@ -202,6 +207,7 @@ tools:
     length: 0.04
   display_name: 복스 소켓 19mm
   grasp_approach: top
+  handover_type: direct
   grasp_pose_base:
     x: 0.26303
     y: 0.35305

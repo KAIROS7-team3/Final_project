@@ -32,6 +32,7 @@ setup(
             'home_on_start = motion.home_on_start:main',
             'tool_action_server = motion.tool_action_server:main',
             'toolbox_scan = motion.toolbox_scan_node:main',
+            'hand_orientation_test = motion.hand_orientation_test:main',
         ],
     },
 )

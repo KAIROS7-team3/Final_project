@@ -9,6 +9,11 @@
 ### Added
 - (예정)
 
+### Changed
+- **S-6 핸드오버 안전 조건** — `v1.0 핸드오버 금지`에서 `조건부 허용`으로 변경 (팀 합의, feat/handover PR #56)
+  - 허용 조건: 속도 0.2 scale 이하, 손 안정성 확인, Force 모니터링(미구현 → TODO), Staging fallback
+  - Force 모니터링은 미구현 상태로 머지됨 — TODO_handover.md 참조, 실물 테스트 후 구현 예정
+
 ### Known Issues / Technical Debt
 
 - **[gripper] GripperCommand action 미사용 — service 경로 단독 운용 (추후 교체 검토)**
