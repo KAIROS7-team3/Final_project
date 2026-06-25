@@ -168,7 +168,7 @@ class OrchestratorNode(Node):
         self._bt_lock = threading.Lock()
         self._pending_s7_logs = 0
         self._s7_log_lock = threading.Lock()  # MTE에서 _pending_s7_logs 보호
-        self._voice_active: bool = False  # /voice/raw_text 수신 이력 여부
+        self._voice_active: bool = True  # 항상 voice 사용; BT 완료 후 listening 복귀
 
         # ── /plc/system_state 발행자 ──────────────────────────────────────
         self._plc_pub = self.create_publisher(String, "/plc/system_state", 1)
@@ -219,8 +219,15 @@ class OrchestratorNode(Node):
         self.get_logger().info(
             "[OrchestratorNode] ready — listening on /voice/intent"
         )
-        # 노드 시작 시 voice 대기 상태로 초기화 (voice가 올라오기 전이라도 무방)
+        # 노드 시작 시 voice 대기 상태로 초기화.
+        # plc_node와 동시 시작이므로 즉시 publish는 유실될 수 있어 2초 후 재발행.
         self._set_plc("listening")
+        self._init_plc_timer = self.create_timer(2.0, self._on_init_plc_timer)
+
+    def _on_init_plc_timer(self) -> None:
+        """plc_node 구독 완료 후 listening 상태를 보장하는 one-shot 타이머."""
+        self._set_plc("listening")
+        self._init_plc_timer.cancel()
 
     def _publish_status(self, is_moving: bool) -> None:
         """is_moving 상태를 /robot/status에 발행한다. (is_moving 발행권 소유)"""
