@@ -43,12 +43,13 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
     )
 
-    hand_viz_node = Node(
-        package="vision",
-        executable="hand_viz_node",
-        name="hand_viz_node",
-        output="screen",
-    )
+    # hand_viz_node는 대시보드 탑뷰 "핸드오버" 탭으로 대체 — 별도 cv2 창 불필요
+    # hand_viz_node = Node(
+    #     package="vision",
+    #     executable="hand_viz_node",
+    #     name="hand_viz_node",
+    #     output="screen",
+    # )
 
     return LaunchDescription([
         flip_arg,
@@ -56,5 +57,5 @@ def generate_launch_description() -> LaunchDescription:
         max_hands_arg,
         mediapipe_node,
         hand_node,
-        hand_viz_node,
+        # hand_viz_node,
     ])
