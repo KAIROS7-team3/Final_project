@@ -41,6 +41,23 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("require_wake_word", default_value="true"),
             DeclareLaunchArgument("max_utterance_seconds", default_value="5.0"),
             DeclareLaunchArgument("silence_threshold", default_value="0.02"),
+            DeclareLaunchArgument(
+                "trailing_silence_seconds",
+                default_value="1.5",
+                description="발화 종료 판단 무음 길이(초). 단어 간 끊김 방지용으로 1.5s 권장.",
+            ),
+            DeclareLaunchArgument(
+                "use_silero_vad",
+                default_value="true",
+                description="True면 RMS 대신 Silero VAD 신경망으로 음성 감지",
+            ),
+            DeclareLaunchArgument("silero_vad_threshold", default_value="0.5"),
+            DeclareLaunchArgument(
+                "use_deepfilter",
+                default_value="true",
+                description="True면 DeepFilterNet 3으로 Gemma 4 추론 전 노이즈 제거",
+            ),
+            DeclareLaunchArgument("deepfilter_device", default_value="cuda"),
             Node(
                 package="voice",
                 executable="gemma4_audio_node",
@@ -79,6 +96,23 @@ def generate_launch_description() -> LaunchDescription:
                             LaunchConfiguration("silence_threshold"),
                             value_type=float,
                         ),
+                        "trailing_silence_seconds": ParameterValue(
+                            LaunchConfiguration("trailing_silence_seconds"),
+                            value_type=float,
+                        ),
+                        "use_silero_vad": ParameterValue(
+                            LaunchConfiguration("use_silero_vad"),
+                            value_type=bool,
+                        ),
+                        "silero_vad_threshold": ParameterValue(
+                            LaunchConfiguration("silero_vad_threshold"),
+                            value_type=float,
+                        ),
+                        "use_deepfilter": ParameterValue(
+                            LaunchConfiguration("use_deepfilter"),
+                            value_type=bool,
+                        ),
+                        "deepfilter_device": LaunchConfiguration("deepfilter_device"),
                     }
                 ],
             ),

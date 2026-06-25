@@ -28,6 +28,7 @@ from voice.audio_input import (
     MicRecorder,
     MicRecorderConfig,
 )
+from voice.noise_filter import DeepFilterEnhancer, DeepFilterLoadError
 from voice.gemma4_audio_intent import (
     Gemma4AudioClassifier,
     Gemma4AudioConfig,
@@ -57,6 +58,16 @@ class Gemma4AudioNode(Node):
         self.declare_parameter("max_utterance_seconds", 5.0)
         self.declare_parameter("silence_threshold", 0.02)
 
+        # Silero VAD — RMS 대신 신경망 기반 음성 감지
+        self.declare_parameter("use_silero_vad", False)
+        self.declare_parameter("silero_vad_threshold", 0.5)
+        # trailing_silence_seconds: 단어 간 짧은 끊김에 잘리지 않도록 1.5s 기본
+        self.declare_parameter("trailing_silence_seconds", 1.5)
+
+        # DeepFilterNet 3 — Gemma 4 추론 전 노이즈 제거
+        self.declare_parameter("use_deepfilter", False)
+        self.declare_parameter("deepfilter_device", "cuda")
+
         self._publisher = self.create_publisher(Intent, "/voice/intent", 1)
         self._feasibility_client = self.create_client(
             CheckToolFeasibility, "/db/CheckToolFeasibility"
@@ -66,9 +77,23 @@ class Gemma4AudioNode(Node):
         self._state_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._worker: threading.Thread | None = None
+        self._deepfilter: DeepFilterEnhancer | None = None
+
+        if self.get_parameter("use_deepfilter").get_parameter_value().bool_value:
+            self._init_deepfilter()
 
         if self.get_parameter("enable_microphone").get_parameter_value().bool_value:
             self._start_worker()
+
+    def _init_deepfilter(self) -> None:
+        device = (
+            self.get_parameter("deepfilter_device").get_parameter_value().string_value
+        )
+        try:
+            self._deepfilter = DeepFilterEnhancer(device=device)
+            self.get_logger().info(f"DeepFilterNet 3 활성화 (device={device})")
+        except DeepFilterLoadError as exc:
+            self.get_logger().error(f"DeepFilterNet 로드 실패 — 비활성화: {exc}")
 
     def _start_worker(self) -> None:
         cfg = Gemma4AudioConfig(
@@ -86,6 +111,14 @@ class Gemma4AudioNode(Node):
             .get_parameter_value().string_value,
         )
 
+        trailing_s = (
+            self.get_parameter("trailing_silence_seconds")
+            .get_parameter_value().double_value
+        )
+        trailing_chunks = max(
+            1, int(trailing_s * SAMPLE_RATE_HZ / 1024)
+        )
+
         try:
             recorder = MicRecorder(
                 MicRecorderConfig(
@@ -93,6 +126,11 @@ class Gemma4AudioNode(Node):
                     max_duration_s=self.get_parameter("max_utterance_seconds")
                     .get_parameter_value().double_value,
                     silence_threshold=self.get_parameter("silence_threshold")
+                    .get_parameter_value().double_value,
+                    trailing_silence_chunks=trailing_chunks,
+                    use_silero_vad=self.get_parameter("use_silero_vad")
+                    .get_parameter_value().bool_value,
+                    silero_vad_threshold=self.get_parameter("silero_vad_threshold")
                     .get_parameter_value().double_value,
                 )
             )
@@ -135,6 +173,13 @@ class Gemma4AudioNode(Node):
                 audio = self._handle_wake_word(audio, recorder)
                 if audio is None:
                     continue
+
+            # DeepFilterNet 3 노이즈 제거 (활성화된 경우)
+            if self._deepfilter is not None:
+                try:
+                    audio = self._deepfilter.enhance(audio)
+                except Exception as exc:
+                    self.get_logger().warning(f"DeepFilter 실패, 원본 사용: {exc}")
 
             try:
                 result = classifier.classify(audio)
