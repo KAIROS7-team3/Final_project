@@ -18,7 +18,7 @@ setup(
         (f"share/{package_name}", ["voice/gemma_prompt.txt"]),
         (
             f"share/{package_name}/config",
-            glob("config/*.yaml"),
+            glob("config/*.yaml") + [str(toolbox_path)],
         ),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
