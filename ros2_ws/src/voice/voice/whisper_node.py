@@ -35,6 +35,8 @@ from voice.transcriber import (
     WhisperLoadError,
     WhisperTranscriber,
 )
+from voice.gemma_intent import _FETCH_KEYWORDS, _RETURN_KEYWORDS
+from voice.wake_word import DEFAULT_WAKE_WORDS, apply_wake_word_gate
 
 
 class WhisperNode(Node):
@@ -51,6 +53,9 @@ class WhisperNode(Node):
 
         # `auto`는 CUDA 사용 가능 시 GPU, 아니면 CPU를 뜻한다.
         self.declare_parameter("whisper_device", "auto")
+
+        # STT 백엔드 선택: "faster" (faster-whisper, VAD 내장) 또는 "openai".
+        self.declare_parameter("whisper_backend", "faster")
 
         # 한국어 단발 명령 정확도를 높이기 위한 Whisper decoding 옵션이다.
         self.declare_parameter("whisper_beam_size", 10)
@@ -76,6 +81,11 @@ class WhisperNode(Node):
 
         # Whisper가 반복 토큰 환각을 냈을 때 publish를 막기 위한 경량 필터다.
         self.declare_parameter("reject_hallucinated_transcripts", True)
+
+        # 웨이크워드만 발화되었을 때 즉시 후속 녹음을 받아 합친다.
+        # 예: "코봇" → 대기 → "스크류드라이버 가져와" → "코봇 스크류드라이버 가져와"
+        self.declare_parameter("follow_up_on_wake_word_only", True)
+        self.declare_parameter("wake_words", list(DEFAULT_WAKE_WORDS))
 
         # /robot/status 콜백과 마이크 worker thread가 공유하는 상태다.
         self._is_moving = False
@@ -164,6 +174,9 @@ class WhisperNode(Node):
             # transcriber는 실제 Whisper 모델을 lazy-load한다.
             transcriber = WhisperTranscriber(
                 WhisperConfig(
+                    backend=self.get_parameter("whisper_backend")
+                    .get_parameter_value()
+                    .string_value,
                     model_size=self.get_parameter("whisper_model_size")
                     .get_parameter_value()
                     .string_value,
@@ -237,7 +250,78 @@ class WhisperNode(Node):
                 time.sleep(0.5)
                 continue
 
+            # 웨이크워드만 말했고 명령이 없으면 즉시 후속 녹음
+            transcript = self._maybe_append_followup(
+                transcript, recorder, transcriber
+            )
+
             self.publish_transcript(transcript)
+
+    def _maybe_append_followup(
+        self,
+        transcript: str,
+        recorder: MicRecorder,
+        transcriber: WhisperTranscriber,
+    ) -> str:
+        """웨이크워드 통과 후 행동 표현이 없으면 후속 발화를 한 번 더 녹음해 합친다.
+
+        트리거 조건 (둘 다 커버):
+          1. "성현" — 웨이크워드만, 명령 없음
+          2. "성현 드라이버" — 웨이크워드 + 공구명, 행동 표현 없음
+
+        후속 발화 "반납" 등을 이어 붙여 "성현 드라이버 반납" 형태로 publish한다.
+        """
+
+        if not (
+            self.get_parameter("follow_up_on_wake_word_only")
+            .get_parameter_value()
+            .bool_value
+        ):
+            return transcript
+
+        wake_words = list(
+            self.get_parameter("wake_words").get_parameter_value().string_array_value
+        )
+        gate = apply_wake_word_gate(transcript, wake_words, require_wake_word=True)
+
+        if not gate.accepted:
+            return transcript
+
+        command = gate.command_text.strip()
+        all_action_keywords = _FETCH_KEYWORDS + _RETURN_KEYWORDS
+        has_action = any(kw in command for kw in all_action_keywords)
+
+        # 행동 표현이 이미 있으면 후속 녹음 불필요
+        if has_action:
+            return transcript
+
+        reason = "웨이크워드만" if not command else f"행동 표현 없음 ({command!r})"
+        self.get_logger().info(
+            f"{reason} — 후속 명령을 말씀해주세요..."
+        )
+
+        try:
+            follow_audio = recorder.record_utterance()
+        except Exception as exc:
+            self.get_logger().warning(f"후속 녹음 실패: {exc}")
+            return transcript
+
+        if follow_audio.size == 0 or self._robot_is_moving():
+            return transcript
+
+        try:
+            follow_text = transcriber.transcribe(follow_audio, SAMPLE_RATE_HZ)
+        except Exception as exc:
+            self.get_logger().error(f"후속 STT 실패: {exc}")
+            return transcript
+
+        if not follow_text.strip():
+            self.get_logger().debug("후속 발화 없음 — 무시")
+            return transcript
+
+        combined = transcript.strip() + " " + follow_text.strip()
+        self.get_logger().info(f"2단계 발화 합침: {combined!r}")
+        return combined
 
     def _should_reject_transcript(self, transcript: str) -> bool:
         """환각성 반복 토큰이 많으면 downstream으로 넘기지 않는다."""

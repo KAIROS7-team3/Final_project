@@ -30,6 +30,11 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             DeclareLaunchArgument("enable_microphone", default_value="true"),
+            DeclareLaunchArgument(
+                "whisper_backend",
+                default_value="faster",
+                description="STT 백엔드: faster (faster-whisper, VAD 내장) 또는 openai",
+            ),
             DeclareLaunchArgument("whisper_device", default_value="auto"),
             DeclareLaunchArgument("whisper_model_size", default_value="small"),
             DeclareLaunchArgument("whisper_beam_size", default_value="10"),
@@ -45,12 +50,12 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "whisper_initial_prompt",
-                default_value=(
-                    "코봇, 코버, 코보, 코부, 고봇, 고버, 고보, 고부, 꼬부, "
-                    "공구함, 두산 로봇, 스테이징, 십자 드라이버, 커터칼, "
-                    "라쳇 렌치, 멕가이버, 스패너 16mm, 복스 소켓 19mm, "
-                    "가져와, 꺼내줘, 반납, 돌려놔, 취소"
-                ),
+                default_value="",
+            ),
+            DeclareLaunchArgument(
+                "follow_up_on_wake_word_only",
+                default_value="true",
+                description="웨이크워드만 발화 시 즉시 후속 녹음을 받아 합침",
             ),
             DeclareLaunchArgument("max_utterance_seconds", default_value="4.0"),
             DeclareLaunchArgument("silence_threshold", default_value="0.02"),
@@ -90,6 +95,11 @@ def generate_launch_description() -> LaunchDescription:
                     {
                         "enable_microphone": ParameterValue(
                             LaunchConfiguration("enable_microphone"),
+                            value_type=bool,
+                        ),
+                        "whisper_backend": LaunchConfiguration("whisper_backend"),
+                        "follow_up_on_wake_word_only": ParameterValue(
+                            LaunchConfiguration("follow_up_on_wake_word_only"),
                             value_type=bool,
                         ),
                         "whisper_device": LaunchConfiguration("whisper_device"),

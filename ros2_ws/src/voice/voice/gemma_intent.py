@@ -27,6 +27,17 @@ except ImportError:  # pragma: no cover - optional dependency guard
 
 VALID_INTENTS = {"fetch", "return", "cancel", "unknown"}
 TOOL_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+# fetch/return 분류에 최소 하나는 있어야 하는 행동 표현 목록.
+# 이 단어가 없으면 모델 출력과 무관하게 unknown으로 처리한다.
+_FETCH_KEYWORDS = (
+    "가져와", "가져다줘", "가져다 줘", "꺼내줘", "꺼내", "줘", "주세요",
+    "빌려줘", "빌려", "달라", "주라",
+)
+_RETURN_KEYWORDS = (
+    "제자리", "반납", "돌려놔", "돌려놓아", "넣어줘", "넣어",
+    "가져다 놔", "가져다놔", "원위치", "돌려",
+)
 CODE_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 DEFAULT_PROMPT_TEMPLATE_PATH = Path(__file__).with_name("gemma_prompt.txt")
 FALLBACK_TOOLBOX_PATH = Path(__file__).resolve().parents[4] / "config" / "toolbox.yaml"
@@ -134,6 +145,12 @@ def _build_tool_alias_map(tool_catalog: tuple[ToolSpec, ...]) -> dict[str, str]:
         for spec in tool_catalog
         for alias in spec.aliases
     }
+
+
+def _has_action_keyword(text: str, intent_type: str) -> bool:
+    """fetch/return 의도에 맞는 행동 표현이 발화에 포함됐는지 확인한다."""
+    keywords = _FETCH_KEYWORDS if intent_type == "fetch" else _RETURN_KEYWORDS
+    return any(kw in text for kw in keywords)
 
 
 def _tool_catalog_lines(tool_catalog: tuple[ToolSpec, ...]) -> str:
@@ -350,11 +367,32 @@ class GemmaIntentClassifier:
                     needs_confirm=True,
                     raw_output=parsed.raw_output,
                 )
+            # 행동 표현이 없으면 공구 이름만 말한 것 — unknown 처리
+            if not _has_action_keyword(raw_text, parsed.intent_type):
+                return GemmaIntentResult(
+                    intent_type="unknown",
+                    tool_id="",
+                    confidence=parsed.confidence,
+                    needs_confirm=True,
+                    raw_output=parsed.raw_output,
+                )
 
         return parsed
 
     def _load_backend(self) -> GemmaBackend:
         """기본 HuggingFace backend를 로드한다."""
+
+        # NumPy 2.0에서 제거된 이름들을 시스템 scipy(<1.11)가 임포트 시 참조한다.
+        # transformers 로딩 전에 alias를 복원해 충돌을 방지한다.
+        import numpy as _np
+        if not hasattr(_np, "Inf"):
+            _np.Inf = _np.inf  # type: ignore[attr-defined]
+        if not hasattr(_np, "NaN"):
+            _np.NaN = float("nan")  # type: ignore[attr-defined]
+        if not hasattr(_np, "asfarray"):
+            _np.asfarray = lambda a, dtype=float: _np.asarray(a, dtype=dtype)  # type: ignore[attr-defined]
+        if not hasattr(_np, "row_stack"):
+            _np.row_stack = _np.vstack  # type: ignore[attr-defined]
 
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -397,8 +435,11 @@ class _TransformersGemmaBackend:
         self._temperature = temperature
         self._torch = torch_module
         self._tokenizer = tokenizer_cls.from_pretrained(model_id)
-        self._model = model_cls.from_pretrained(model_id)
-        self._model.to(device)
+        self._model = model_cls.from_pretrained(
+            model_id,
+            dtype=torch_module.bfloat16,
+            device_map="auto",
+        )
         self._model.eval()
 
     def generate(self, prompt: str) -> str:
