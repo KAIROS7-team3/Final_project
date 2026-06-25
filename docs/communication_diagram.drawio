@@ -1,0 +1,225 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="7uRgl4FnNJopP4lxHZ0x" name="페이지-1">
+    <mxGraphModel dx="808" dy="437" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1080" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="hw_mic" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#7B00D4;fontColor=#ffffff;strokeColor=#AE41D4;fontSize=12;fontStyle=1;" value="🎤 마이크" vertex="1">
+          <mxGeometry height="50" width="120" x="80" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_cam" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#7B00D4;fontColor=#ffffff;strokeColor=#AE41D4;fontSize=12;fontStyle=1;" value="📷 RealSense D455F" vertex="1">
+          <mxGeometry height="50" width="160" x="580" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_plc" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#7B00D4;fontColor=#ffffff;strokeColor=#AE41D4;fontSize=12;fontStyle=1;" value="🔌 PLC XBC-DR14E" vertex="1">
+          <mxGeometry height="50" width="150" x="1540" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_robot" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#7B00D4;fontColor=#ffffff;strokeColor=#AE41D4;fontSize=12;fontStyle=1;" value="🦾 Doosan e0509" vertex="1">
+          <mxGeometry height="50" width="150" x="1200" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="hw_gripper" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#7B00D4;fontColor=#ffffff;strokeColor=#AE41D4;fontSize=12;fontStyle=1;" value="🤏 그리퍼" vertex="1">
+          <mxGeometry height="50" width="120" x="1400" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_voice" parent="1" style="swimlane;startSize=30;fillColor=#001F3F;fontColor=#4FC3F7;strokeColor=#4FC3F7;fontSize=13;fontStyle=1;swimlaneLine=1;" value="📦 voice" vertex="1">
+          <mxGeometry height="220" width="300" x="40" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="n_whisper" parent="pkg_voice" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="whisper_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="n_gemma" parent="pkg_voice" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="gemma_intent_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="n_rule" parent="pkg_voice" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="rule_intent_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="165" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_vision" parent="1" style="swimlane;startSize=30;fillColor=#001F3F;fontColor=#4FC3F7;strokeColor=#4FC3F7;fontSize=13;fontStyle=1;" value="📦 vision" vertex="1">
+          <mxGeometry height="330" width="300" x="500" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="n_camera" parent="pkg_vision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="camera_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="n_yolo" parent="pkg_vision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="yolo_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="105" as="geometry" />
+        </mxCell>
+        <mxCell id="n_marker" parent="pkg_vision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="marker_scan_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="n_tracker" parent="pkg_vision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="tracker_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="215" as="geometry" />
+        </mxCell>
+        <mxCell id="n_ctx" parent="pkg_vision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="context_builder" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_orch" parent="1" style="swimlane;startSize=30;fillColor=#001F3F;fontColor=#4FC3F7;strokeColor=#4FC3F7;fontSize=13;fontStyle=1;" value="📦 orchestrator" vertex="1">
+          <mxGeometry height="165" width="300" x="820" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="n_orc" parent="pkg_orch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="orchestrator_node (BT)" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="n_uas" parent="pkg_orch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="unit_action_server" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="105" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_motion" parent="1" style="swimlane;startSize=30;fillColor=#001F3F;fontColor=#4FC3F7;strokeColor=#4FC3F7;fontSize=13;fontStyle=1;" value="📦 motion" vertex="1">
+          <mxGeometry height="275" width="300" x="1150" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="n_tas" parent="pkg_motion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="tool_action_server" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="n_seq" parent="pkg_motion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="toolbox_seq_runner" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="105" as="geometry" />
+        </mxCell>
+        <mxCell id="n_grp" parent="pkg_motion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="gripper_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="n_home" parent="pkg_motion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="home_on_start" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="215" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_db" parent="1" style="swimlane;startSize=30;fillColor=#001F3F;fontColor=#4FC3F7;strokeColor=#4FC3F7;fontSize=13;fontStyle=1;" value="📦 db" vertex="1">
+          <mxGeometry height="110" width="300" x="820" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="n_dbsvc" parent="pkg_db" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="db_service_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_plc" parent="1" style="swimlane;startSize=30;fillColor=#001F3F;fontColor=#4FC3F7;strokeColor=#4FC3F7;fontSize=13;fontStyle=1;" value="📦 plc" vertex="1">
+          <mxGeometry height="110" width="300" x="1150" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="n_plcnode" parent="pkg_plc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="plc_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_demo" parent="1" style="swimlane;startSize=30;fillColor=#001F3F;fontColor=#4FC3F7;strokeColor=#4FC3F7;fontSize=13;fontStyle=1;" value="📦 demo" vertex="1">
+          <mxGeometry height="110" width="300" x="40" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="n_ui" parent="pkg_demo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="ui_server / demo_trigger" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg_dash" parent="1" style="swimlane;startSize=30;fillColor=#001F3F;fontColor=#4FC3F7;strokeColor=#4FC3F7;fontSize=13;fontStyle=1;" value="📦 dashboard" vertex="1">
+          <mxGeometry height="110" width="300" x="500" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="n_dash" parent="pkg_dash" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#003366;fontColor=#ffffff;strokeColor=#4FC3F7;fontSize=11;" value="dashboard_node" vertex="1">
+          <mxGeometry height="40" width="240" x="30" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mic_whisper" edge="1" parent="1" source="hw_mic" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#AE41D4;fontColor=#ffffff;" target="n_whisper">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cam_camera" edge="1" parent="1" source="hw_cam" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#AE41D4;fontColor=#ffffff;" target="n_camera">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_robot_tas" edge="1" parent="1" source="hw_robot" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#AE41D4;fontColor=#ffffff;" target="n_tas">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gripper_grp" edge="1" parent="1" source="hw_gripper" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#AE41D4;fontColor=#ffffff;" target="n_grp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_plc_plcnode" edge="1" parent="1" source="hw_plc" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#AE41D4;fontColor=#ffffff;" target="n_plcnode">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_whisper_gemma" edge="1" parent="1" source="n_whisper" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_gemma" value="/voice/raw_text">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_whisper_rule" edge="1" parent="1" source="n_whisper" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_rule" value="/voice/raw_text">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gemma_orc" edge="1" parent="1" source="n_gemma" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#61AFEF;fontColor=#61AFEF;fontSize=10;fontStyle=1;" target="n_orc" value="/voice/intent (Intent.msg)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rule_orc" edge="1" parent="1" source="n_rule" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#61AFEF;fontColor=#61AFEF;fontSize=10;fontStyle=1;" target="n_orc" value="/voice/intent (Intent.msg)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_gemma_db" edge="1" parent="1" source="n_gemma" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=10;dashed=1;endArrow=block;startArrow=block;" target="n_dbsvc" value="CheckToolFeasibility [srv]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rule_db" edge="1" parent="1" source="n_rule" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=10;dashed=1;endArrow=block;startArrow=block;" target="n_dbsvc" value="CheckToolFeasibility [srv]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cam_yolo" edge="1" parent="1" source="n_camera" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#888888;" target="n_yolo">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cam_marker" edge="1" parent="1" source="n_camera" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#888888;" target="n_marker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_yolo_tracker" edge="1" parent="1" source="n_yolo" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#888888;" target="n_tracker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tracker_ctx" edge="1" parent="1" source="n_tracker" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#888888;" target="n_ctx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_marker_seq" edge="1" parent="1" source="n_marker" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_seq" value="/vision/marker/map (MarkerMap.msg)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tracker_orc" edge="1" parent="1" source="n_tracker" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_orc" value="/vision/tracked_poses">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ctx_orc" edge="1" parent="1" source="n_ctx" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_orc" value="/vision/scene_context">
+          <mxGeometry relative="1" x="-0.1001" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_orc_db_check" edge="1" parent="1" source="n_orc" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=10;dashed=1;endArrow=block;startArrow=block;" target="n_dbsvc" value="CheckToolFeasibility [srv]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_orc_db_update" edge="1" parent="1" source="n_orc" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=10;dashed=1;" target="n_dbsvc" value="UpdateToolStatus [srv]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_orc_db_log" edge="1" parent="1" source="n_orc" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=10;dashed=1;" target="n_dbsvc" value="LogEvent [srv]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_orc_tas_place" edge="1" parent="1" source="n_orc" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E06C75;fontColor=#E06C75;fontSize=10;fontStyle=1;endArrow=block;endFill=1;" target="n_tas" value="PlaceAtStaging [action]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_orc_tas_return" edge="1" parent="1" source="n_orc" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E06C75;fontColor=#E06C75;fontSize=10;fontStyle=1;endArrow=block;endFill=1;" target="n_tas" value="ReturnToSlot [action]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tas_grp" edge="1" parent="1" source="n_tas" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=10;dashed=1;" target="n_grp" value="GripperSetPosition [srv]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_seq_grp" edge="1" parent="1" source="n_seq" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=10;dashed=1;" target="n_grp" value="GripperSetPosition [srv]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tas_db_log" edge="1" parent="1" source="n_tas" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=10;dashed=1;" target="n_dbsvc" value="LogEvent [srv]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tas_orc_status" edge="1" parent="1" source="n_tas" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_orc" value="/motion/robot_status (RobotStatus.msg)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_plc_ui" edge="1" parent="1" source="n_plcnode" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_ui" value="/plc/status (PLCStatus.msg)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_plc_dash" edge="1" parent="1" source="n_plcnode" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_dash" value="/plc/status (PLCStatus.msg)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_plc_seq_estop" edge="1" parent="1" source="n_plcnode" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E06C75;fontColor=#E06C75;fontSize=10;fontStyle=1;" target="n_seq" value="/plc/e_stop (Bool)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_orc_plc" edge="1" parent="1" source="n_orc" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_plcnode" value="/plc/system_state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tas_plc" edge="1" parent="1" source="n_tas" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#98C379;fontColor=#98C379;fontSize=10;" target="n_plcnode" value="/plc/system_state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ui_orc" edge="1" parent="1" source="n_ui" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#61AFEF;fontColor=#61AFEF;fontSize=10;fontStyle=1;" target="n_orc" value="/voice/intent (Intent.msg)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dash_orc" edge="1" parent="1" source="n_dash" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#61AFEF;fontColor=#61AFEF;fontSize=10;fontStyle=1;" target="n_orc" value="/voice/intent (Intent.msg)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dash_tas" edge="1" parent="1" source="n_dash" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=10;dashed=1;endArrow=block;startArrow=block;" target="n_tas" value="home / estop [Trigger srv]">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="swimlane;startSize=25;fillColor=#2D2D2D;fontColor=#ffffff;strokeColor=#555555;fontSize=12;fontStyle=1;" value="범례" vertex="1">
+          <mxGeometry height="170" width="380" x="40" y="730" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" parent="legend" style="text;html=1;strokeColor=#98C379;fontColor=#98C379;fontSize=11;" value="─── Topic (msg)" vertex="1">
+          <mxGeometry height="25" width="160" x="10" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" parent="legend" style="text;html=1;strokeColor=#E5C07B;fontColor=#E5C07B;fontSize=11;" value="- - - Service (srv, 양방향)" vertex="1">
+          <mxGeometry height="25" width="200" x="10" y="65" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" parent="legend" style="text;html=1;strokeColor=#E06C75;fontColor=#E06C75;fontSize=11;fontStyle=1;" value="━━━ Action (비동기 실행)" vertex="1">
+          <mxGeometry height="25" width="200" x="10" y="95" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4" parent="legend" style="text;html=1;strokeColor=#61AFEF;fontColor=#61AFEF;fontSize=11;fontStyle=1;" value="━━━ /voice/intent (핵심 트리거)" vertex="1">
+          <mxGeometry height="25" width="240" x="10" y="125" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

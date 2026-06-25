@@ -288,6 +288,47 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_return -p tool
 
 ---
 
+## 핸드오버 테스트 (`place_on_hand_test`)
+
+공구함 픽업 앞부분을 건너뛰고 **이미 공구를 쥔 상태에서 손에 전달만** 테스트하는 시퀀스.
+(`handover_place_only_seq` — WAIT_HAND_POSE → APPROACH → PLACE → GRIP(450))
+
+### 실행 순서
+
+**터미널 2 — RealSense 카메라**
+```bash
+source ~/Final_project/ros2_ws/install/setup.bash
+ros2 launch vision realsense_bringup.launch.py
+```
+
+**터미널 3 — 핸드 감지 파이프라인**
+```bash
+source ~/Final_project/ros2_ws/install/setup.bash
+ros2 launch vision hand_detection.launch.py
+```
+
+**터미널 6 — tool_action_server**
+```bash
+source ~/Final_project/ros2_ws/install/setup.bash
+ros2 run motion tool_action_server
+```
+
+### 공구별 명령어
+
+```bash
+# handle_first (라쳇·드라이버·칼) — 손잡이 방향 전달
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'ratchet_wrench'}"
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'screwdriver'}"
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'utility_knife'}"
+
+# direct (소켓·스패너·멀티툴) — 손바닥 중심 전달
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'multi_tool'}"
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'spanner_16mm'}"
+ros2 action send_goal /place_on_hand_test interfaces/action/PlaceOnHand "{tool_id: 'socket_19mm'}"
+```
+
+---
+
 ## TODO
 
 - [x] **virtual 모드 대응**: `mode` 파라미터로 virtual 감지 → DRL/flange 초기화 생략 (에뮬레이터 블로킹 버그 수정)
@@ -302,6 +343,10 @@ ros2 run motion toolbox_seq_runner --ros-args -p sequence:=vision_return -p tool
 - [ ] **spanner_16mm 전체 Z 실측**: grasp_z_mm / staging_pickup_z_mm / return_z_mm 모두 임의값
 - [x] **config/toolbox.yaml workspace_limits z_min**: -31.0mm (2026-06-18 실측 기준 갱신 완료)
 - [ ] **vision_return VS 구현**: return 시퀀스도 VS 방식으로 전환 (staging pick + slot place)
+- [ ] **[safety HIGH] 핸드오버 pre_approach 후 손 재확인**: pre_approach 완료 후 본 approach(Z 하강) 전에 `/hand/ready` 재확인 없음 — 이동 중 손이 치워져도 그대로 하강함. `_move_hand_rz_approach()` 내 pre_approach `_wait_motion_complete` 직후 `_get_hand_state()` 재호출 + False 시 abort 추가 필요 (safety-reviewer Finding 2)
+- [ ] **핸드오버 그리퍼 열기 후 대기**: grip(450) 실행 후 다음 동작(홈 복귀 등) 전 **최소 10초 대기** 필요
+  - 공구를 손에서 실제로 떼어내는 데 시간이 필요 (너무 빠르면 공구 낙하 위험)
+  - `handover_place_only_seq` / `handover_fetch_handle_first_seq` 의 GRIP(450) 직후 `Step(kind=StepKind.WAIT, sec=10.0)` 추가 예정
 
 ---
 

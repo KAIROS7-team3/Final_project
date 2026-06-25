@@ -23,6 +23,9 @@ setup(
             "tracker_node = vision.tracker_node:main",
             "context_builder = vision.context_builder:main",
             "gripper_marker_scan_node = vision.gripper_marker_scan_node:main",
+            "marker_scan_node = vision.marker_scan_node:main",
+            "hand_node = vision.hand_node:main",
+            "hand_viz_node = vision.hand_viz_node:main",
         ],
     },
 )

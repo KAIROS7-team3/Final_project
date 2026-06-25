@@ -6,3 +6,6 @@
 	path = ros2_ws/src/easy_handeye2
 	url = https://github.com/marcoesposito1988/easy_handeye2.git
 	branch = main
+[submodule "ros2_ws/src/Mediapipe-Hand-ROS"]
+	path = ros2_ws/src/Mediapipe-Hand-ROS
+	url = https://github.com/DaeyunJang/Mediapipe-Hand-ROS.git
