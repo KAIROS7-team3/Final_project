@@ -79,17 +79,17 @@ tools:
     length: 0.18
   display_name: 십자 드라이버
   grasp_approach: top
-  handover_type: handle_first
-  grasp_pose_base:
+  handover_type: handle_first  # 날 쪽 파지 → 손잡이를 사람 손 방향으로
+  grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
     x: 0.39242
     y: 0.26422
     z: 0.04265
-  grasp_z_mm: 44.65
-  grip_stroke: 738
+  grasp_z_mm: 44.65      # fetch Z (tw기준 + 2mm)
+  grip_stroke: 738       # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
   mass_kg: 0.08
   notes: 실측 2026-06-15 (H_jig=3mm H_obj=5mm → grasp_h=11mm)
-  return_z_mm: 45.65
-  staging_pickup_z_mm: -29.06
+  return_z_mm: 45.65     # slot 반납 Z (tw z=42.65 + 3mm)
+  staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
   staging_place_z_mm: -20.0
   slot_layer: 1
   tool_id: screwdriver
@@ -104,17 +104,17 @@ tools:
     width: 0.03
   display_name: 커터칼
   grasp_approach: top
-  handover_type: handle_first
-  grasp_pose_base:
+  handover_type: handle_first  # 날 쪽 파지 → 손잡이를 사람 손 방향으로
+  grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
     x: 0.44547
     y: 0.34787
     z: 0.09987
-  grasp_z_mm: 101.87
-  grip_stroke: 738
+  grasp_z_mm: 101.87     # fetch Z (tw기준 + 2mm)
+  grip_stroke: 738       # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
   mass_kg: 0.07
   notes: 실측 2026-06-15 (H_jig=4mm H_obj=15mm → grasp_h=23mm)
-  return_z_mm: 102.87
-  staging_pickup_z_mm: -29.06
+  return_z_mm: 102.87    # slot 반납 Z (tw z=99.87 + 3mm)
+  staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
   staging_place_z_mm: -20.0
   slot_layer: 2
   tool_id: utility_knife
@@ -129,17 +129,17 @@ tools:
     width: 0.04
   display_name: 라쳇 렌치
   grasp_approach: top
-  handover_type: handle_first
-  grasp_pose_base:
+  handover_type: handle_first  # 헤드 쪽 파지 → 손잡이를 사람 손 방향으로
+  grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
     x: 0.39761
     y: 0.2585
     z: 0.09732
-  grasp_z_mm: 99.32
-  grip_stroke: 738
+  grasp_z_mm: 99.32      # fetch Z (tw기준 + 2mm)
+  grip_stroke: 738       # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
   mass_kg: 0.25
   notes: 실측 2026-06-15 (H_jig=13mm H_obj=15mm → grasp_h=41mm)
-  return_z_mm: 100.32
-  staging_pickup_z_mm: -29.06
+  return_z_mm: 100.32    # slot 반납 Z (tw z=97.32 + 3mm)
+  staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
   staging_place_z_mm: -20.0
   slot_layer: 2
   tool_id: ratchet_wrench
@@ -154,17 +154,17 @@ tools:
     width: 0.035
   display_name: 멕가이버
   grasp_approach: top
-  handover_type: direct
-  grasp_pose_base:
+  handover_type: direct        # 방향 무관 — 손바닥 위에 올려놓기
+  grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
     x: 0.26128
     y: 0.33282
     z: 0.04959
-  grasp_z_mm: 45.00
-  grip_stroke: 738
+  grasp_z_mm: 45.00      # fetch Z (tw기준 + 2mm) — 현재 브랜치 실측값
+  grip_stroke: 738       # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
   mass_kg: 0.18
   notes: 실측 2026-06-15 (H_jig=4mm H_obj=26mm → grasp_h=34mm)
-  return_z_mm: 52.59
-  staging_pickup_z_mm: -29.06
+  return_z_mm: 52.59     # slot 반납 Z (tw z=49.59 + 3mm)
+  staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
   staging_place_z_mm: -20.0
   slot_layer: 1
   tool_id: multi_tool
@@ -180,17 +180,17 @@ tools:
     width: 0.04
   display_name: 스패너 16mm
   grasp_approach: top
-  handover_type: direct
-  grasp_pose_base:
+  handover_type: direct        # 양쪽 다 사용부 — 손바닥 위에 올려놓기
+  grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m)
     x: 0.4372
     y: 0.34831
     z: 0.0534
-  grasp_z_mm: 55.4
-  grip_stroke: 738
+  grasp_z_mm: 55.4       # fetch Z (tw기준 + 2mm)
+  grip_stroke: 738       # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
   mass_kg: 0.12
   notes: 임의값 — 실측 후 갱신
-  return_z_mm: 56.4
-  staging_pickup_z_mm: -9.12
+  return_z_mm: 56.4      # slot 반납 Z (tw z=53.4 + 3mm, 임의값)
+  staging_pickup_z_mm: -9.12   # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
   staging_place_z_mm: -20.0
   slot_layer: 1
   tool_id: spanner_16mm
@@ -207,17 +207,17 @@ tools:
     length: 0.04
   display_name: 복스 소켓 19mm
   grasp_approach: top
-  handover_type: direct
-  grasp_pose_base:
+  handover_type: direct        # 원통형, 방향 무관 — 손바닥 위에 올려놓기
+  grasp_pose_base:  # BASE frame 직접교시 실측 2026-06-17 (단위: m) — 현재 브랜치 실측값
     x: 0.26303
     y: 0.35305
     z: 0.11669
-  grasp_z_mm: 118.69
-  grip_stroke: 738
+  grasp_z_mm: 118.69     # fetch Z (tw기준 + 2mm)
+  grip_stroke: 738       # 파지 stroke (기본값 650 오버라이드; 헤더 주석 참조)
   mass_kg: 0.09
   notes: 실측 2026-06-15 (H_jig=20mm 추정, H_obj=15mm 노출 → grasp_h=55mm)
-  return_z_mm: 119.69
-  staging_pickup_z_mm: -29.06
+  return_z_mm: 119.69    # slot 반납 Z (tw z=116.69 + 3mm)
+  staging_pickup_z_mm: -29.06  # staging 파지 Z — 2026-06-18 TCP 직접교시 실측
   staging_place_z_mm: -0.12
   slot_layer: 2
   tool_id: socket_19mm
