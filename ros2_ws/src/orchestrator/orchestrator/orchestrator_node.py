@@ -20,7 +20,7 @@ from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import String
 from vision_msgs.msg import Detection2DArray, Detection3DArray
 
-from interfaces.action import ExecutePhase
+from interfaces.action import ExecutePhase, PlaceOnHand
 from interfaces.msg import Intent, RobotStatus
 from interfaces.srv import CheckToolFeasibility, LogEvent, UpdateDrawerState, UpdateToolStatus
 
@@ -29,7 +29,7 @@ from orchestrator.blackboard import (
     KEY_INTENT,
     KEY_TOOL_POSE,
 )
-from orchestrator.bt_nodes.fetch_tool import build_fetch_subtree
+from orchestrator.bt_nodes.fetch_tool import build_fetch_subtree, build_handover_fetch_subtree
 from orchestrator.bt_nodes.return_tool import build_return_subtree
 from orchestrator.bt_nodes.scan_layer import build_scan_subtree
 
@@ -115,6 +115,12 @@ class OrchestratorNode(Node):
             "execute_phase",
             callback_group=self._normal_cbg,
         )
+        self._place_on_hand_cli = ActionClient(
+            self,
+            PlaceOnHand,
+            "place_on_hand",
+            callback_group=self._normal_cbg,
+        )
 
         # 공구별 층 맵 — toolbox.yaml slot_layer (1-indexed, 1=1층, 2=2층)
         self._tool_layer_map: dict[str, int] = _load_tool_layer_map()
@@ -132,6 +138,16 @@ class OrchestratorNode(Node):
             on_pick=self._on_fetch_pick,
             on_place=self._on_fetch_place,
             max_fetch_attempts=3,
+        )
+        self._handover_fetch_tree_kwargs = dict(
+            feasibility_client=self._feasibility_cli,
+            execute_phase_client=self._exec_phase_cli,
+            place_on_hand_client=self._place_on_hand_cli,
+            publish_status_fn=self._publish_status,
+            set_plc_fn=self._set_plc,
+            log_error_fn=self._log_error_event,
+            on_pick=self._on_fetch_pick,
+            on_place=self._on_fetch_place,
         )
         self._return_tree_kwargs = dict(
             feasibility_client=self._feasibility_cli,
@@ -285,9 +301,9 @@ class OrchestratorNode(Node):
             if intent_type == "fetch":
                 layer = self._tool_layer_map.get(tool_id, 1)
                 layer_0idx = layer - 1
-                self.get_logger().info(f"[OrchestratorNode] fetch layer={layer} (tool_id={tool_id})")
-                tree = build_fetch_subtree(
-                    **self._fetch_tree_kwargs,
+                self.get_logger().info(f"[OrchestratorNode] fetch(handover) layer={layer} (tool_id={tool_id})")
+                tree = build_handover_fetch_subtree(
+                    **self._handover_fetch_tree_kwargs,
                     layer_id=layer,
                     on_open_drawer=lambda: self._dispatch_update_drawer_state(layer_0idx, "open"),
                     on_close_drawer=lambda: self._dispatch_update_drawer_state(layer_0idx, "close"),

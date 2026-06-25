@@ -675,6 +675,27 @@ def handover_place_only_seq(handle_first: bool = False) -> list[Step]:
     ]
 
 
+def handover_abort_to_staging_seq() -> list[Step]:
+    """공구를 이미 쥔 상태에서 staging에 거치하는 시퀀스 (5단계).
+
+    place_on_hand 핸드오버 abort 시 내부 fallback용.
+    로봇이 공구를 파지한 채로 staging area에 내려놓고 HOME 복귀.
+
+    ① MoveL → SOCKET_BOTTOM_XY  (staging 위)
+    ② MOVE_L_STAGING_PLACE       (per-tool staging_place_z_mm 하강)
+    ③ GRIP_RELEASE (place 마커)  — 공구 거치
+    ④ MoveL → SOCKET_BOTTOM_XY  (staging 위 복귀)
+    ⑤ JOINT_HOME
+    """
+    return [
+        ml_abs(SOCKET_BOTTOM_XY),                      # ① staging 위
+        Step(kind=StepKind.MOVE_L_STAGING_PLACE),      # ② staging 하강 (per-tool z)
+        marked(GRIP_RELEASE(), "place"),                # ③ 공구 거치
+        ml_abs(SOCKET_BOTTOM_XY),                      # ④ staging 위 복귀
+        JOINT_HOME(),                                   # ⑤
+    ]
+
+
 def socket_return_seq() -> list[Step]:
     """staging area → 공구함(bottom) 소켓 반납 시퀀스 (TW: box2_socket_drop_ver2).
 

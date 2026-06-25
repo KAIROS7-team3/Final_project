@@ -70,6 +70,7 @@ from unit_actions.toolbox_motion import (
     handover_fetch_seq,
     handover_fetch_handle_first_seq,
     handover_place_only_seq,
+    handover_abort_to_staging_seq,
     home_seq,
     vision_return_seq,
     stage_pick_test_seq,
@@ -559,12 +560,32 @@ class ExecutePhaseServer(Node):
 
             ok = self._run_sequence_handover(steps, goal_handle)
 
+            # 공구를 집은 뒤 핸드오버가 abort됐으면 staging에 거치
+            if not ok and self._grip_taken and not goal_handle.is_cancel_requested:
+                self.get_logger().warn(
+                    f"[TAS] place_on_hand abort: grip_taken=True → staging 거치 시도"
+                )
+                staging_steps = handover_abort_to_staging_seq()
+                ok_staging = self._run_sequence(staging_steps, goal_handle, PlaceOnHand)
+                if ok_staging:
+                    self._grip_taken = False  # staging 완료, 공구 내려놓음
+                    ok = True
+                    result.message = f"place_on_hand staging fallback 완료: {tool_id}"
+                    self._log_event_async("fetch", f"place_on_hand staging fallback: tool_id={tool_id}")
+                    self.get_logger().info(f"[TAS] staging fallback 완료: tool_id={tool_id}")
+                else:
+                    self.get_logger().error(
+                        f"[TAS] staging fallback 실패 — 공구 미거치: tool_id={tool_id}"
+                    )
+
             if ok and not goal_handle.is_cancel_requested:
                 goal_handle.succeed()
                 result.success = True
-                result.message = f"place_on_hand 완료: {tool_id}"
+                if not result.message:
+                    result.message = f"place_on_hand 완료: {tool_id}"
                 self._set_plc("idle")
-                self._log_event_async("fetch", f"place_on_hand 성공: tool_id={tool_id}")
+                if "staging fallback" not in result.message:
+                    self._log_event_async("fetch", f"place_on_hand 성공: tool_id={tool_id}")
                 self.get_logger().info(f"[TAS] place_on_hand 완료: tool_id={tool_id}")
             elif goal_handle.is_cancel_requested:
                 goal_handle.canceled()
