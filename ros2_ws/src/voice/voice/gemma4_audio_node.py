@@ -152,49 +152,63 @@ class Gemma4AudioNode(Node):
         recorder: MicRecorder,
         classifier: Gemma4AudioClassifier,
     ) -> None:
+        require_ww = (
+            self.get_parameter("require_wake_word")
+            .get_parameter_value().bool_value
+        )
         while not self._stop_event.is_set():
-            if self._is_moving_safe():
-                time.sleep(0.1)
-                continue
-
-            audio = recorder.record_utterance()
-            if audio.size == 0 or self._is_moving_safe():
-                continue
-
-            # 웨이크워드가 설정된 경우: 먼저 텍스트 없이 게이트 통과 확인 불가.
-            # 대신 2단계 방식 — 짧은 발화로 웨이크워드를 감지하면 후속 녹음.
-            # require_wake_word=False면 모든 발화를 Gemma에 직접 넘긴다.
-            require_ww = (
-                self.get_parameter("require_wake_word")
-                .get_parameter_value().bool_value
-            )
-
-            if require_ww:
-                audio = self._handle_wake_word(audio, recorder)
-                if audio is None:
+            try:
+                if self._is_moving_safe():
+                    time.sleep(0.1)
                     continue
 
-            # DeepFilterNet 3 노이즈 제거 (활성화된 경우)
-            if self._deepfilter is not None:
-                try:
-                    audio = self._deepfilter.enhance(audio)
-                except Exception as exc:
-                    self.get_logger().warning(f"DeepFilter 실패, 원본 사용: {exc}")
+                self.get_logger().debug("마이크 대기 중...")
+                audio = recorder.record_utterance()
+                if audio.size == 0 or self._is_moving_safe():
+                    continue
 
-            try:
-                result = classifier.classify(audio)
+                if require_ww:
+                    audio = self._handle_wake_word(audio, recorder)
+                    if audio is None:
+                        continue
+
+                # DeepFilterNet 3 노이즈 제거 (활성화된 경우)
+                if self._deepfilter is not None:
+                    try:
+                        audio = self._deepfilter.enhance(audio)
+                    except Exception as exc:
+                        self.get_logger().warning(f"DeepFilter 실패, 원본 사용: {exc}")
+
+                # 너무 짧은 오디오(0.3s 미만)는 소음으로 간주하고 Gemma 호출 생략
+                duration_s = audio.size / SAMPLE_RATE_HZ
+                if duration_s < 0.3:
+                    self.get_logger().debug(f"오디오 너무 짧음({duration_s:.2f}s) — 무시")
+                    continue
+
+                self.get_logger().info(f"오디오 캡처 완료 ({duration_s:.1f}s) — Gemma 분류 중...")
+
+                try:
+                    result = classifier.classify(audio)
+                except Exception as exc:
+                    self.get_logger().error(f"Gemma4 분류 실패: {exc}")
+                    time.sleep(0.5)
+                    continue
+
             except Exception as exc:
-                self.get_logger().error(f"Gemma4 분류 실패: {exc}")
-                time.sleep(0.5)
+                self.get_logger().error(f"_listen_loop 예외 (루프 유지): {exc}")
+                time.sleep(1.0)
+                continue
+
+            if result.intent_type == "unknown":
+                self.get_logger().debug(
+                    f"[unknown] conf={result.confidence:.2f} raw={result.raw_output!r}"
+                )
                 continue
 
             self.get_logger().info(
                 f"intent={result.intent_type} tool={result.tool_id} "
-                f"conf={result.confidence:.2f}"
+                f"conf={result.confidence:.2f} raw={result.raw_output!r}"
             )
-
-            if result.intent_type == "unknown":
-                continue
 
             if result.intent_type == "cancel":
                 self._publish(result.intent_type, result.tool_id, result.confidence, "")

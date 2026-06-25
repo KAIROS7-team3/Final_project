@@ -148,10 +148,16 @@ class MicRecorder:
         )
 
         for _ in range(max_chunks):
-            raw = self._stream.read(
-                self.config.chunk_size,
-                exception_on_overflow=False,
-            )
+            try:
+                raw = self._stream.read(
+                    self.config.chunk_size,
+                    exception_on_overflow=False,
+                )
+            except OSError:
+                # 추론 중 마이크 버퍼 overflow → 스트림 재오픈 후 빈 배열 반환
+                logger.warning("[audio_input] 스트림 overflow — 재오픈")
+                self._reopen_stream()
+                return np.zeros(0, dtype=np.float32)
             chunk = np.frombuffer(raw, dtype=np.float32)
 
             if self._is_speech(chunk):
@@ -172,6 +178,22 @@ class MicRecorder:
         if not chunks:
             return np.zeros(0, dtype=np.float32)
         return np.concatenate(chunks)
+
+    def _reopen_stream(self) -> None:
+        """PyAudio 스트림을 닫고 다시 연다. overflow 복구용."""
+        try:
+            self._stream.stop_stream()
+            self._stream.close()
+        except Exception:
+            pass
+        self._stream = self._pa.open(
+            format=self._pyaudio.paFloat32,
+            channels=1,
+            rate=self.config.sample_rate_hz,
+            input=True,
+            frames_per_buffer=self.config.chunk_size,
+        )
+        logger.info("[audio_input] 스트림 재오픈 완료")
 
     def close(self) -> None:
         """PyAudio stream과 handle을 정리한다."""

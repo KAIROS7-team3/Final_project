@@ -51,7 +51,7 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="true",
                 description="True면 RMS 대신 Silero VAD 신경망으로 음성 감지",
             ),
-            DeclareLaunchArgument("silero_vad_threshold", default_value="0.5"),
+            DeclareLaunchArgument("silero_vad_threshold", default_value="0.6"),
             DeclareLaunchArgument(
                 "use_deepfilter",
                 default_value="true",

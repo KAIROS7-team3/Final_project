@@ -213,12 +213,17 @@ class Gemma4AudioClassifier:
 
     def classify(self, audio: np.ndarray) -> GemmaIntentResult:
         """16kHz float32 오디오를 받아 의도 분류 결과를 반환한다."""
+        import logging
+        _log = logging.getLogger(__name__)
         try:
             raw = self._backend.generate(audio, self._text_prompt)
+            _log.debug("[gemma4_audio] raw output: %s", raw)
             parsed = _parse_output(raw, self._tool_alias_to_id)
-        except GemmaParseError:
+        except GemmaParseError as exc:
+            _log.warning("[gemma4_audio] parse error: %s", exc)
             return _FAIL_CLOSED
-        except Exception:
+        except Exception as exc:
+            _log.error("[gemma4_audio] generate error: %s", exc)
             return _FAIL_CLOSED
 
         if parsed.confidence < self._config.confidence_threshold:

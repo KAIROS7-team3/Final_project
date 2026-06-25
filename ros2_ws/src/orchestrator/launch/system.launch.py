@@ -3,7 +3,7 @@
 Track A 전체 시스템 런치 (프로덕션).
 
 voice→DB Gate→motion→PLC LED 전체 스택을 기동한다.
-demo_trigger 같은 수동 주입 도구는 포함하지 않는다 — 입력은 whisper_node 음성 파이프라인.
+음성 파이프라인은 voice.launch.py (Pipeline 2: Whisper STT + Gemma 의도분류)를 include한다.
 
 실행 예:
   # virtual (에뮬레이터, 음성 없이 기본 기동):
@@ -26,8 +26,8 @@ demo_trigger 같은 수동 주입 도구는 포함하지 않는다 — 입력은
   0s  — Doosan bringup (DSR + gripper_node)
   5s  — db_service_node
   7s  — orchestrator_node, tool_action_server, [plc_node]
-  9s  — [whisper_node, rule_intent_node]  (voice:=true)
-  10s — [dashboard_node]                  (dashboard:=true)
+  9s  — [voice.launch.py: whisper_node + gemma_intent_node]  (voice:=true)
+  10s — [dashboard_node]                                      (dashboard:=true)
 """
 
 from launch import LaunchDescription
@@ -146,19 +146,15 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(plc),
     )
 
-    # ── 9s: 음성 파이프라인 (조건부) ────────────────────────────────────────
-    whisper_node = Node(
-        package="voice",
-        executable="whisper_node",
-        name="whisper_node",
-        output="screen",
-        condition=IfCondition(voice),
-    )
-    rule_intent_node = Node(
-        package="voice",
-        executable="rule_intent_node",
-        name="rule_intent_node",
-        output="screen",
+    # ── 9s: 음성 파이프라인 (조건부) — Pipeline 2: Whisper STT + Gemma 의도분류
+    voice_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare("voice"),
+                "launch",
+                "voice.launch.py",
+            ])
+        ]),
         condition=IfCondition(voice),
     )
 
@@ -180,6 +176,6 @@ def generate_launch_description() -> LaunchDescription:
         bringup,
         TimerAction(period=5.0,  actions=[db_node]),
         TimerAction(period=7.0,  actions=[orchestrator_node, tool_action_server, plc_node]),
-        TimerAction(period=9.0,  actions=[whisper_node, rule_intent_node]),
+        TimerAction(period=9.0,  actions=[voice_launch]),
         TimerAction(period=10.0, actions=[dashboard_node]),
     ])

@@ -7,9 +7,10 @@
 
 규칙:
 - 음성에 아무 말도 없거나 공구 명령이 아니면 unknown.
-- fetch: 공구를 꺼내 달라는 명령. "가져와", "꺼내줘", "줘", "빌려줘" 등.
-- return: 공구를 제자리에 돌려놓으라는 명령. "제자리", "반납", "돌려놔", "넣어줘", "원위치" 등.
-- cancel: 직전 명령 취소.
+- fetch: 공구를 꺼내 달라는 명령. "가져와", "꺼내줘", "줘", "빌려줘", "꺼내", "가져다 줘" 등.
+- return: 공구를 제자리에 돌려놓으라는 명령. "제자리", "반납", "돌려놔", "넣어줘", "원위치", "갖다 놔", "가져다 놔", "갖다줘", "돌려줘", "집어넣어", "다시 넣어" 등.
+  주의: "갖다 놔" / "가져다 놔" 는 return(반납)이다. fetch(가져와)와 혼동하지 말 것.
+- cancel: 직전 명령 취소. "취소", "그만", "됐어" 등.
 - fetch/return은 tool_id 필수. cancel/unknown은 tool_id 빈 문자열.
 - confidence: 0.0~1.0 확신도.
 - tool_id는 아래 공구 카탈로그의 canonical ID만 사용.
@@ -24,7 +25,10 @@ __TOOL_CATALOG__
 음성 내용: "드라이버 제자리"
 {"intent_type":"return","tool_id":"screwdriver","confidence":0.97,"needs_confirm":false}
 
-음성 내용: "드라이버 반납해"
+음성 내용: "드라이버 갖다 놔"
+{"intent_type":"return","tool_id":"screwdriver","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "드라이버 가져다 놔"
 {"intent_type":"return","tool_id":"screwdriver","confidence":0.96,"needs_confirm":false}
 
 음성 내용: "스패너 꺼내줘"
@@ -32,6 +36,45 @@ __TOOL_CATALOG__
 
 음성 내용: "스패너 넣어줘"
 {"intent_type":"return","tool_id":"spanner_16mm","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "스패너 갖다 놔"
+{"intent_type":"return","tool_id":"spanner_16mm","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "소켓 가져와"
+{"intent_type":"fetch","tool_id":"socket_19mm","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "복스 줘"
+{"intent_type":"fetch","tool_id":"socket_19mm","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "소켓 제자리"
+{"intent_type":"return","tool_id":"socket_19mm","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "복스 갖다 놔"
+{"intent_type":"return","tool_id":"socket_19mm","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "커터칼 꺼내줘"
+{"intent_type":"fetch","tool_id":"utility_knife","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "커터 줘"
+{"intent_type":"fetch","tool_id":"utility_knife","confidence":0.95,"needs_confirm":false}
+
+음성 내용: "커터칼 반납해"
+{"intent_type":"return","tool_id":"utility_knife","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "커터 갖다 놔"
+{"intent_type":"return","tool_id":"utility_knife","confidence":0.95,"needs_confirm":false}
+
+음성 내용: "라쳇 가져와"
+{"intent_type":"fetch","tool_id":"ratchet_wrench","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "라쳇 돌려놔"
+{"intent_type":"return","tool_id":"ratchet_wrench","confidence":0.96,"needs_confirm":false}
+
+음성 내용: "멕가이버 줘"
+{"intent_type":"fetch","tool_id":"multi_tool","confidence":0.95,"needs_confirm":false}
+
+음성 내용: "멕가이버 원위치"
+{"intent_type":"return","tool_id":"multi_tool","confidence":0.95,"needs_confirm":false}
 
 음성 내용: "취소"
 {"intent_type":"cancel","tool_id":"","confidence":0.99,"needs_confirm":false}
