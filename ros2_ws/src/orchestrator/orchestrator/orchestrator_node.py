@@ -168,6 +168,7 @@ class OrchestratorNode(Node):
         self._bt_lock = threading.Lock()
         self._pending_s7_logs = 0
         self._s7_log_lock = threading.Lock()  # MTE에서 _pending_s7_logs 보호
+        self._voice_active: bool = False  # /voice/raw_text 수신 이력 여부
 
         # ── /plc/system_state 발행자 ──────────────────────────────────────
         self._plc_pub = self.create_publisher(String, "/plc/system_state", 1)
@@ -206,9 +207,20 @@ class OrchestratorNode(Node):
         self._latest_gripper_det: Detection2DArray | None = None
         self._latest_gripper_det_stamp: float = 0.0
 
+        # /voice/raw_text 수신 → PLC "inferring" (Whisper+Gemma 분류 중)
+        self.create_subscription(
+            String,
+            "/voice/raw_text",
+            self._on_raw_text,
+            _QOS_INTENT,
+            callback_group=self._normal_cbg,
+        )
+
         self.get_logger().info(
             "[OrchestratorNode] ready — listening on /voice/intent"
         )
+        # 노드 시작 시 voice 대기 상태로 초기화 (voice가 올라오기 전이라도 무방)
+        self._set_plc("listening")
 
     def _publish_status(self, is_moving: bool) -> None:
         """is_moving 상태를 /robot/status에 발행한다. (is_moving 발행권 소유)"""
@@ -220,6 +232,12 @@ class OrchestratorNode(Node):
     def _log_error_event(self, tool_id: str, notes: str) -> None:
         """FaultHandler용 DB 에러 이벤트 로그 (동기, 별도 스레드에서 호출됨)."""
         self._call_update_status(tool_id, "error", "error", notes)
+
+    def _on_raw_text(self, msg: String) -> None:
+        """Whisper STT 결과 수신 → PLC inferring (Gemma 분류 직전)."""
+        self._voice_active = True
+        if not self._is_moving:
+            self._set_plc("inferring")
 
     def _on_intent(self, msg: Intent) -> None:
         if self._is_moving:
@@ -237,6 +255,11 @@ class OrchestratorNode(Node):
         self._bb.intent = msg.intent_type
         self._bb.active_tool_id = msg.tool_id
         self._bb.tool_pose = None
+
+        # cancel/unknown은 BT를 실행하지 않으므로 즉시 listening 복귀
+        if msg.intent_type in ("cancel", "unknown"):
+            self._set_plc("listening")
+            return
 
         threading.Thread(
             target=self._tick_bt,
@@ -317,6 +340,8 @@ class OrchestratorNode(Node):
             self._publish_status(False)  # 예외 시 is_moving 안전 해제
         finally:
             self._bt_lock.release()
+            # BT 완료 후 voice가 활성이면 listening으로 복귀, 아니면 idle
+            self._set_plc("listening" if self._voice_active else "idle")
 
     def _on_fetch_pick(self) -> None:
         """fetch: 슬롯에서 공구를 집는 순간 (action feedback phase="pick")."""
