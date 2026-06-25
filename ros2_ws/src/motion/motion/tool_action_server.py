@@ -812,13 +812,20 @@ class ExecutePhaseServer(Node):
 
     # ── 핸드오버 스텝 실행 ──────────────────────────────────────────────────
 
-    def _wait_hand_pose(self) -> bool:
+    def _wait_hand_pose(self, timeout_override: float | None = None) -> bool:
         """WAIT_HAND_POSE: /hand/ready=True 될 때까지 대기. 타임아웃 시 False (staging fallback).
 
+        timeout_override=0: 현재 상태만 즉시 확인 (페치 완료 후 순간 체크용).
         _hand_approach_pos가 설정된 상태(⑪ 접근 직전 재확인)에서는 손 이동 거리도 검사.
         lock_update_distance_m 초과 시 즉시 abort (S-6 손 안정성 확인).
         """
-        timeout = self._h_cfg.get("detection_timeout_s", 5.0)
+        if timeout_override == 0.0:
+            pose, ready = self._get_hand_state()
+            if pose is not None and ready:
+                return True
+            self.get_logger().warn("[TAS] WAIT_HAND_POSE 즉시 체크: 손 미감지 — staging fallback")
+            return False
+        timeout = timeout_override if timeout_override is not None else self._h_cfg.get("detection_timeout_s", 5.0)
         threshold_mm = self._h_cfg.get("lock_update_distance_m", 0.03) * 1000.0
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -1210,7 +1217,7 @@ class ExecutePhaseServer(Node):
         elif step.kind == StepKind.MOVE_L_TOOL_XYZ:
             return self._exec_move_l_tool_xyz()
         elif step.kind == StepKind.WAIT_HAND_POSE:
-            return self._wait_hand_pose()
+            return self._wait_hand_pose(timeout_override=step.sec)
         elif step.kind == StepKind.MOVE_L_HAND_RZ_APPROACH:
             return self._move_hand_rz_approach(handle_first=False)
         elif step.kind == StepKind.MOVE_L_HAND_PLACE:

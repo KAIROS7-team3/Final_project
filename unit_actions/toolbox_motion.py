@@ -577,87 +577,74 @@ def fixed_fetch_seq() -> list[Step]:
 
 
 def handover_fetch_seq() -> list[Step]:
-    """그리퍼 캠 XY로 공구를 집은 뒤 사람 손에 직접 전달하는 시퀀스 (13단계).
+    """고정좌표로 공구를 집은 뒤 사람 손에 직접 전달하는 시퀀스 (9단계, direct).
 
-    vision_fetch_seq ②~⑨ (슬롯 파지) + place_on_hand ⑩~⑬ (핸드오버).
+    fixed_fetch_seq ①~⑥ (슬롯 파지) + place_on_hand ⑦~⑨ (핸드오버).
+    슬롯 이동 중 백그라운드로 /hand/ready 구독이 갱신되므로
+    ⑤ WAIT_HAND_POSE(sec=0)는 슬롯 집기 완료 시점의 상태를 즉시 확인하고,
+    미감지 시 블로킹 없이 바로 abort → staging fallback.
 
-    ① WAIT_HAND_POSE        — 손 사전 확인 (없으면 즉시 abort → staging fallback)
-    ② JOINT_HOME
-    ③ grip(0)              — 완전 개방
-    ④ MoveJ → VISION_FETCH_SCAN_J_DEG  (그리퍼 캠 스캔 자세)
-    ⑤ WAIT_VISION_TOP_XY   — 비전 좌표 수신 대기
-    ⑤-1 GRIP_RELEASE        — 파지 준비 개방 (pulse=450)
-    ⑥ MOVE_L_TOP_XY        — 그리퍼 캠 XY + APPROACH_Z
-    ⑦ MOVE_L_TOOL_XYZ      — grasp_z_mm 하강 (pick 마커)
-    ⑧ GRIP_TOOL             — 공구 파지
-    ⑨ MOVE_L_TOP_XY        — 상승
-    ⑩ MOVE_L_HAND_RZ_APPROACH — 손 yaw→rz 변환 후 손바닥 위 approach_height 이동
-    ⑪ MOVE_L_HAND_PLACE     — Z 수직 하강 (손바닥 높이)
-    ⑫ grip(450)             — 그리퍼 열기 (공구 놓음, place 마커)
-    ⑬ JOINT_HOME            — 홈 복귀
+    ① JOINT_HOME
+    ② GRIP_RELEASE          — 파지 준비 개방 (pulse=450)
+    ③ MOVE_L_SLOT_XY        — grasp_pose_base XY + approach_z_mm 이동
+    ④ MOVE_L_SLOT_XYZ_FETCH — grasp_pose_base XY + grasp_z_mm 하강 (비전-free)
+    ⑤ GRIP_TOOL (pick)
+    ⑥ MOVE_L_SLOT_XY        — approach_z_mm 상승
+    ⑦ WAIT_HAND_POSE(sec=0) — 즉시 체크: 손 없으면 abort → staging fallback
+    ⑧ MOVE_L_HAND_RZ_APPROACH — 손 yaw→rz 변환 후 손바닥 위 접근
+    ⑨ MOVE_L_HAND_PLACE     — Z 수직 하강
+    ⑩ grip(450) (place)     — 그리퍼 열기 (공구 놓음)
+    ⑪ JOINT_HOME
 
     호출 전 팔이 홈 자세에 있어야 함.
-    runner가 WAIT_HAND_POSE 단계에서 staging fallback 여부를 결정한다.
     """
     return [
-        Step(kind=StepKind.WAIT_HAND_POSE),              # ① 손 사전 확인 (없으면 즉시 abort)
-        JOINT_HOME(),                                    # ②
-        grip(0),                                         # ③ 완전 개방
-        mj_abs(VISION_FETCH_SCAN_J_DEG),                 # ④ 그리퍼 캠 스캔 자세
-        Step(kind=StepKind.WAIT_VISION_TOP_XY),          # ⑤ 비전 좌표 수신 대기
-        GRIP_RELEASE(),                                  # ⑤-1 파지 준비 개방 (pulse=450)
-        Step(kind=StepKind.MOVE_L_TOP_XY),               # ⑥ 그리퍼 캠 XY + APPROACH_Z
-        marked(Step(kind=StepKind.MOVE_L_TOOL_XYZ), "pick"),  # ⑦ grasp_z_mm 하강 (pick 마커)
-        GRIP_TOOL(),                                     # ⑧ 공구 파지
-        Step(kind=StepKind.MOVE_L_TOP_XY),               # ⑨ 상승
-        Step(kind=StepKind.MOVE_L_HAND_RZ_APPROACH),    # ⑩ rz 변환 + 손바닥 위 접근
-        Step(kind=StepKind.MOVE_L_HAND_PLACE),           # ⑪ Z 수직 하강
-        marked(grip(450), "place"),                      # ⑫ 그리퍼 열기 450 (place 마커)
-        JOINT_HOME(),                                    # ⑬ 홈 복귀
+        JOINT_HOME(),                                          # ①
+        GRIP_RELEASE(),                                        # ② 파지 준비 개방
+        Step(kind=StepKind.MOVE_L_SLOT_XY),                   # ③ slot 위 (approach_z)
+        Step(kind=StepKind.MOVE_L_SLOT_XYZ_FETCH),            # ④ slot 하강 (grasp_z_mm)
+        marked(GRIP_TOOL(), "pick"),                           # ⑤
+        Step(kind=StepKind.MOVE_L_SLOT_XY),                   # ⑥ approach_z 상승
+        Step(kind=StepKind.WAIT_HAND_POSE, sec=0.0),          # ⑦ 즉시 체크 (슬롯 이동 중 갱신된 상태)
+        Step(kind=StepKind.MOVE_L_HAND_RZ_APPROACH),          # ⑧ rz 변환 + 손바닥 위 접근
+        Step(kind=StepKind.MOVE_L_HAND_PLACE),                # ⑨ Z 수직 하강
+        marked(grip(450), "place"),                            # ⑩ 그리퍼 열기 (공구 놓음)
+        JOINT_HOME(),                                          # ⑪
     ]
 
 
 def handover_fetch_handle_first_seq() -> list[Step]:
-    """손잡이를 사람 손 방향으로 전달하는 핸드오버 시퀀스 (13단계).
+    """고정좌표로 공구를 집은 뒤 손잡이를 사람 손 방향으로 전달하는 시퀀스 (handle_first).
 
     handover_type=handle_first 공구(드라이버·커터칼·라쳇렌치)용.
+    handover_fetch_seq와 동일하되 ⑧⑨가 HANDLE 변형:
+      전달 위치 = hand_pos + finger_dir_base × (tool_length / 2) Y+ 오프셋
+      → 손잡이가 손바닥 중심에 자연스럽게 위치.
 
-    direct와의 차이:
-      ⑩ 전달 위치 = hand_pos + finger_dir_base × (tool_length / 2)  [Y+ 오프셋]
-         → 로봇이 손 중심보다 손가락 방향 바깥쪽에서 접근
-         → 손잡이가 손바닥 중심에 자연스럽게 위치
-      runner가 toolbox.yaml dimensions.length 를 읽어 오프셋 계산.
-
-    ① WAIT_HAND_POSE                   — 손 사전 확인 (없으면 즉시 abort → staging fallback)
-    ② JOINT_HOME
-    ③ grip(0)                          — 완전 개방
-    ④ MoveJ → VISION_FETCH_SCAN_J_DEG
-    ⑤ WAIT_VISION_TOP_XY               — 비전 좌표 수신 대기
-    ⑤-1 GRIP_RELEASE                    — 파지 준비 개방 (pulse=450)
-    ⑥ MOVE_L_TOP_XY
-    ⑦ MOVE_L_TOOL_XYZ                  — grasp_z_mm 하강 (pick 마커)
-    ⑧ GRIP_TOOL                        — 공구 파지
-    ⑨ MOVE_L_TOP_XY                    — 상승
-    ⑩ MOVE_L_HAND_RZ_APPROACH_HANDLE   — rz 변환 + finger_dir * tool_length/2 Y+ 오프셋 위치 접근
-    ⑪ MOVE_L_HAND_PLACE_HANDLE         — 오프셋 위치에서 Z 수직 하강
-    ⑫ grip(450)                        — 그리퍼 열기 (place 마커)
-    ⑬ JOINT_HOME                       — 복귀
+    ① JOINT_HOME
+    ② GRIP_RELEASE
+    ③ MOVE_L_SLOT_XY
+    ④ MOVE_L_SLOT_XYZ_FETCH
+    ⑤ GRIP_TOOL (pick)
+    ⑥ MOVE_L_SLOT_XY
+    ⑦ WAIT_HAND_POSE(sec=0) — 즉시 체크: 손 없으면 abort → staging fallback
+    ⑧ MOVE_L_HAND_RZ_APPROACH_HANDLE — rz + finger_dir Y+ 오프셋 접근
+    ⑨ MOVE_L_HAND_PLACE_HANDLE       — 오프셋 위치 Z 하강
+    ⑩ grip(450) (place)
+    ⑪ JOINT_HOME
     """
     return [
-        Step(kind=StepKind.WAIT_HAND_POSE),                        # ① 손 사전 확인 (없으면 즉시 abort)
-        JOINT_HOME(),                                              # ②
-        grip(0),                                                   # ③ 완전 개방
-        mj_abs(VISION_FETCH_SCAN_J_DEG),                           # ④ 그리퍼 캠 스캔 자세
-        Step(kind=StepKind.WAIT_VISION_TOP_XY),                    # ⑤ 비전 좌표 수신 대기
-        GRIP_RELEASE(),                                            # ⑤-1 파지 준비 개방 (pulse=450)
-        Step(kind=StepKind.MOVE_L_TOP_XY),                         # ⑥ 그리퍼 캠 XY + APPROACH_Z
-        marked(Step(kind=StepKind.MOVE_L_TOOL_XYZ), "pick"),       # ⑦ grasp_z_mm 하강 (pick 마커)
-        GRIP_TOOL(),                                               # ⑧ 공구 파지
-        Step(kind=StepKind.MOVE_L_TOP_XY),                         # ⑨ 상승
-        Step(kind=StepKind.MOVE_L_HAND_RZ_APPROACH_HANDLE),        # ⑩ rz + Y+ 오프셋 접근
-        Step(kind=StepKind.MOVE_L_HAND_PLACE_HANDLE),              # ⑪ 오프셋 위치 Z 하강
-        marked(grip(450), "place"),                                # ⑫ 그리퍼 열기 450 (place 마커)
-        JOINT_HOME(),                                              # ⑬ 복귀
+        JOINT_HOME(),                                              # ①
+        GRIP_RELEASE(),                                            # ②
+        Step(kind=StepKind.MOVE_L_SLOT_XY),                       # ③
+        Step(kind=StepKind.MOVE_L_SLOT_XYZ_FETCH),                # ④
+        marked(GRIP_TOOL(), "pick"),                               # ⑤
+        Step(kind=StepKind.MOVE_L_SLOT_XY),                       # ⑥
+        Step(kind=StepKind.WAIT_HAND_POSE, sec=0.0),              # ⑦ 즉시 체크
+        Step(kind=StepKind.MOVE_L_HAND_RZ_APPROACH_HANDLE),       # ⑧ rz + Y+ 오프셋 접근
+        Step(kind=StepKind.MOVE_L_HAND_PLACE_HANDLE),             # ⑨ 오프셋 위치 Z 하강
+        marked(grip(450), "place"),                                # ⑩ 그리퍼 열기
+        JOINT_HOME(),                                              # ⑪
     ]
 
 
