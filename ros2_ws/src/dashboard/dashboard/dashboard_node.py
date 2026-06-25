@@ -32,11 +32,18 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
+from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import Image as ImgMsg, JointState
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
 from interfaces.msg import Intent, RobotStatus
+
+try:
+    from handpose_interfaces.msg import Hands as HandsMsgType
+    _HANDS_OK = True
+except ImportError:
+    _HANDS_OK = False
 
 try:
     import cv2
@@ -75,6 +82,37 @@ _CAM_TOPICS: dict[str, str] = {
     "top_annotated":     "/vision/debug/top_view/annotated",
     "top_mask":          "/vision/debug/top_view/mask",
 }
+# hand_overlay는 top 프레임 위에 hand 감지 정보를 합성해 생성 (구독 토픽 아님)
+_HAND_CONNECTIONS = [
+    (0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),
+    (0,9),(9,10),(10,11),(11,12),(0,13),(13,14),(14,15),(15,16),
+    (0,17),(17,18),(18,19),(19,20),(5,9),(9,13),(13,17),
+]
+
+
+def _load_hand_overlay_cfg() -> dict:
+    """handover.yaml에서 ROI 설정 로드. 실패 시 기본값."""
+    candidates = []
+    env_root = os.environ.get("FINAL_PROJECT_ROOT")
+    if env_root:
+        candidates.append(Path(env_root))
+    candidates.append(Path(__file__).resolve().parents[5])
+    for base in candidates:
+        p = base / "config" / "handover.yaml"
+        if p.exists():
+            try:
+                import yaml
+                cfg = yaml.safe_load(p.read_text()).get("handover", {})
+                return {
+                    "roi_enabled": cfg.get("roi_enabled", True),
+                    "roi": (
+                        int(cfg.get("roi_x_min", 330)), int(cfg.get("roi_x_max", 578)),
+                        int(cfg.get("roi_y_min", 140)), int(cfg.get("roi_y_max", 441)),
+                    ),
+                }
+            except Exception:
+                pass
+    return {"roi_enabled": True, "roi": (330, 578, 140, 441)}
 
 
 def _make_placeholder() -> bytes:
@@ -113,6 +151,8 @@ class DashboardNode(Node):
                 {"layer_id": 0, "is_open": False, "last_updated": None},
                 {"layer_id": 1, "is_open": False, "last_updated": None},
             ],
+            "hand_ready": False,
+            "hand_pose": None,
         }
         self._state_lock = threading.Lock()
         self._gripper_history: deque[float] = deque(maxlen=_GRIPPER_CURRENT_MAXLEN)
@@ -122,9 +162,18 @@ class DashboardNode(Node):
 
         # ── 카메라 프레임 저장 ────────────────────────────────────────────
         _ph = _make_placeholder()
-        self._frames: dict[str, bytes] = {k: _ph for k in _CAM_TOPICS}
-        self._frame_times: dict[str, float] = {k: 0.0 for k in _CAM_TOPICS}
+        _all_cam_keys = list(_CAM_TOPICS.keys()) + ["hand_overlay"]
+        self._frames: dict[str, bytes] = {k: _ph for k in _all_cam_keys}
+        self._frame_times: dict[str, float] = {k: 0.0 for k in _all_cam_keys}
         self._frames_lock = threading.Lock()
+
+        # ── 핸드오버 hand 감지 상태 ──────────────────────────────────────
+        self._hand_lock = threading.Lock()
+        self._hand_ready: bool = False
+        self._hand_pose: PoseStamped | None = None
+        self._hand_locked_pose: PoseStamped | None = None
+        self._hand_landmarks: list[list] = []  # list of [x,y,z] * 21
+        self._hand_overlay_cfg = _load_hand_overlay_cfg()
 
         # ── ROS2 구독 — 카메라 이미지 ────────────────────────────────────
         for name, topic in _CAM_TOPICS.items():
@@ -132,6 +181,15 @@ class DashboardNode(Node):
                 ImgMsg, topic,
                 lambda msg, _n=name: self._on_image(msg, _n),
                 qos_profile_sensor_data,
+            )
+
+        # ── ROS2 구독 — hand 감지 ────────────────────────────────────────
+        qos_be_hand = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.BEST_EFFORT)
+        self.create_subscription(Bool, "/hand/ready", self._on_hand_ready, qos_be_hand)
+        self.create_subscription(PoseStamped, "/hand/pose", self._on_hand_pose_msg, qos_be_hand)
+        if _HANDS_OK:
+            self.create_subscription(
+                HandsMsgType, "/hands/detections", self._on_hands_det, qos_be_hand
             )
 
         # ── ROS2 구독 — 시스템 상태 ───────────────────────────────────────
@@ -217,8 +275,97 @@ class DashboardNode(Node):
             with self._frames_lock:
                 self._frames[name] = buf.tobytes()
                 self._frame_times[name] = time.monotonic()
+            if name == "top":
+                self._update_hand_overlay(frame)
         except Exception as exc:
             self.get_logger().debug(f"[Dashboard] {name} 변환 실패: {exc}")
+
+    # ── Hand 감지 콜백 ────────────────────────────────────────────────────────
+
+    def _on_hand_ready(self, msg: Bool) -> None:
+        with self._hand_lock:
+            if msg.data and not self._hand_ready:
+                self._hand_locked_pose = self._hand_pose
+            elif not msg.data:
+                self._hand_locked_pose = None
+            self._hand_ready = msg.data
+        with self._state_lock:
+            self._state["hand_ready"] = msg.data
+
+    def _on_hand_pose_msg(self, msg: PoseStamped) -> None:
+        with self._hand_lock:
+            self._hand_pose = msg
+        with self._state_lock:
+            p = msg.pose.position
+            self._state["hand_pose"] = {
+                "x": round(p.x * 1000, 1),
+                "y": round(p.y * 1000, 1),
+                "z": round(p.z * 1000, 1),
+            }
+
+    def _on_hands_det(self, msg) -> None:
+        with self._hand_lock:
+            self._hand_landmarks = [list(h.landmarks_canon) for h in msg.hands]
+
+    # ── Hand overlay 합성 ─────────────────────────────────────────────────────
+
+    def _update_hand_overlay(self, frame) -> None:
+        if not _CV2_OK:
+            return
+        try:
+            import numpy as np
+            img = frame.copy()
+            with self._hand_lock:
+                ready = self._hand_ready
+                landmarks_list = list(self._hand_landmarks)
+                locked_pose = self._hand_locked_pose
+
+            # 랜드마크 스켈레톤
+            line_color = (0, 255, 0) if ready else (0, 200, 255)
+            tip_indices = {4, 8, 12, 16, 20}
+            for lm_flat in landmarks_list:
+                pts = np.array(lm_flat, dtype=np.float32).reshape(-1, 3)
+                if len(pts) < 21:
+                    continue
+                for a, b in _HAND_CONNECTIONS:
+                    x1, y1 = int(pts[a][0]), int(pts[a][1])
+                    x2, y2 = int(pts[b][0]), int(pts[b][1])
+                    cv2.line(img, (x1, y1), (x2, y2), line_color, 1)
+                for i, (x, y, _) in enumerate(pts):
+                    c = (0, 100, 255) if i in tip_indices else (255, 255, 255)
+                    cv2.circle(img, (int(x), int(y)), 5 if i in tip_indices else 3, c, -1)
+
+            # ROI 박스
+            cfg = self._hand_overlay_cfg
+            x_min, x_max, y_min, y_max = cfg["roi"]
+            if cfg["roi_enabled"]:
+                roi_color = (0, 255, 0) if ready else (0, 165, 255)
+                cv2.rectangle(img, (x_min, y_min), (x_max, y_max), roi_color, 2)
+                cv2.putText(img, "READY" if ready else "WAITING",
+                            (x_min + 4, y_min - 6),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, roi_color, 1)
+
+            # LOCK / WAITING 좌상단 배지
+            label_color = (0, 255, 0) if ready else (0, 165, 255)
+            label = "LOCK" if ready else "WAITING"
+            cv2.putText(img, label, (10, 28),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, label_color, 2)
+
+            # lock 위치 마커 (locked_pose가 있을 때만)
+            if ready and locked_pose is not None:
+                # 픽셀 좌표 직접 사용 가능하면 좋지만 3D 역투영 없이
+                # 위치를 텍스트로 표시
+                p = locked_pose.pose.position
+                pos_txt = f"x={p.x*1000:.0f} y={p.y*1000:.0f} z={p.z*1000:.0f}mm"
+                cv2.putText(img, pos_txt, (10, 52),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 0), 1)
+
+            _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 72])
+            with self._frames_lock:
+                self._frames["hand_overlay"] = buf.tobytes()
+                self._frame_times["hand_overlay"] = time.monotonic()
+        except Exception as exc:
+            self.get_logger().debug(f"[Dashboard] hand_overlay 생성 실패: {exc}")
 
     # ── 검출 콜백 ────────────────────────────────────────────────────────────
 
@@ -605,6 +752,11 @@ class DashboardNode(Node):
         @app.get("/cam/top_mask")
         async def cam_top_mask():
             return StreamingResponse(_mjpeg_gen("top_mask"),
+                                     media_type="multipart/x-mixed-replace; boundary=frame")
+
+        @app.get("/cam/hand_overlay")
+        async def cam_hand_overlay():
+            return StreamingResponse(_mjpeg_gen("hand_overlay"),
                                      media_type="multipart/x-mixed-replace; boundary=frame")
 
         @app.websocket("/ws")

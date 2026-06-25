@@ -135,11 +135,15 @@
         <button class="cam-mode-btn active" onclick="setCamMode('top','top',this)">원본</button>
         <button class="cam-mode-btn"        onclick="setCamMode('top','top_annotated',this)">검출</button>
         <button class="cam-mode-btn"        onclick="setCamMode('top','top_mask',this)">마스크</button>
+        <button class="cam-mode-btn"        onclick="setCamMode('top','hand_overlay',this)">핸드오버</button>
       </div>
       <div class="cam-wrap" id="cam-top-wrap">
         <img id="cam-top" class="cam-img" src="/cam/top" alt="top"
              onerror="handleCamErr('cam-top')">
         <div id="cam-top-offline" class="cam-offline" style="display:none">NO SIGNAL</div>
+        <div id="hand-status-badge" style="display:none;position:absolute;top:6px;right:6px;
+             padding:3px 10px;border-radius:4px;font-size:12px;font-weight:700;
+             letter-spacing:.5px;pointer-events:none;"></div>
       </div>
     </div>
 
@@ -582,6 +586,28 @@ function updateState(s) {
     chart.update('none');
     const cur = s.gripper_history[s.gripper_history.length - 1];
     document.getElementById('current-val').textContent = cur.toFixed(0) + ' mA';
+  }
+
+  // 핸드오버 손 감지 배지 (탑뷰 위 오버레이)
+  const badge = document.getElementById('hand-status-badge');
+  if (badge) {
+    const topImg = document.getElementById('cam-top');
+    const isHandOverlay = topImg && topImg.src && topImg.src.includes('hand_overlay');
+    if (isHandOverlay) {
+      badge.style.display = 'block';
+      if (s.hand_ready) {
+        badge.style.background = 'rgba(0,200,80,.85)';
+        badge.style.color = '#fff';
+        const p = s.hand_pose;
+        badge.textContent = p ? `LOCK  x=${p.x} y=${p.y} z=${p.z}mm` : 'LOCK';
+      } else {
+        badge.style.background = 'rgba(200,120,0,.75)';
+        badge.style.color = '#fff';
+        badge.textContent = 'WAITING';
+      }
+    } else {
+      badge.style.display = 'none';
+    }
   }
 }
 
