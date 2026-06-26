@@ -41,6 +41,7 @@ class FaultHandlerNode(py_trees.behaviour.Behaviour):
         log_error_fn: Callable[[str, str], None],
         layer_id: int = 1,
         close_phase: str = "close_drawer",
+        on_close_drawer: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(name=name)
         self._client = execute_phase_client
@@ -49,6 +50,7 @@ class FaultHandlerNode(py_trees.behaviour.Behaviour):
         self._log_error_fn = log_error_fn
         self._layer_id = layer_id
         self._close_phase = close_phase
+        self._on_close_drawer = on_close_drawer
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
             key=KEY_ACTIVE_TOOL_ID, access=py_trees.common.Access.READ
@@ -72,6 +74,11 @@ class FaultHandlerNode(py_trees.behaviour.Behaviour):
 
         # 3. close_drawer 복구 (best-effort)
         self._run_phase(self._close_phase, self._layer_id, timeout=30.0)
+        if self._on_close_drawer is not None:
+            try:
+                self._on_close_drawer()
+            except Exception as exc:
+                self.logger.error(f"[{self.name}] on_close_drawer 콜백 실패: {exc}")
 
         # 4. home 복귀 (best-effort)
         self._run_phase("home", 0, timeout=30.0)

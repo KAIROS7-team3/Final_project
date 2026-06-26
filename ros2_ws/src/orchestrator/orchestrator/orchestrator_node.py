@@ -17,7 +17,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from vision_msgs.msg import Detection2DArray, Detection3DArray
 
 from interfaces.action import ExecutePhase, PlaceOnHand
@@ -184,7 +184,7 @@ class OrchestratorNode(Node):
         self._bt_lock = threading.Lock()
         self._pending_s7_logs = 0
         self._s7_log_lock = threading.Lock()  # MTE에서 _pending_s7_logs 보호
-        self._voice_active: bool = True  # 항상 voice 사용; BT 완료 후 listening 복귀
+        self._voice_active: bool = True  # /voice/mic_active 토픽으로 런타임 제어
 
         # ── /plc/system_state 발행자 ──────────────────────────────────────
         self._plc_pub = self.create_publisher(String, "/plc/system_state", 1)
@@ -228,6 +228,14 @@ class OrchestratorNode(Node):
             String,
             "/voice/raw_text",
             self._on_raw_text,
+            _QOS_INTENT,
+            callback_group=self._normal_cbg,
+        )
+        # 대시보드 마이크 on/off → PLC 노란불 제어 (이동 중이 아닐 때만)
+        self.create_subscription(
+            Bool,
+            "/voice/mic_active",
+            self._on_mic_active,
             _QOS_INTENT,
             callback_group=self._normal_cbg,
         )
@@ -527,6 +535,12 @@ class OrchestratorNode(Node):
             done.wait(timeout=3.0)
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _on_mic_active(self, msg: Bool) -> None:
+        """대시보드 마이크 on/off → PLC LED 갱신 (이동 중이 아닐 때만)."""
+        self._voice_active = bool(msg.data)
+        if not self._is_moving:
+            self._set_plc("listening" if self._voice_active else "idle")
 
     def _set_plc(self, state: str) -> None:
         msg = String()

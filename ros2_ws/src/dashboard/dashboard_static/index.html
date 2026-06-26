@@ -187,6 +187,7 @@
           <button class="btn btn-blue"  onclick="doAction('fetch')">⬇ Fetch</button>
           <button class="btn btn-green" onclick="doAction('return')">⬆ Return</button>
           <button class="btn btn-gray"  onclick="doAction('home')">🏠 Home</button>
+          <button class="btn btn-gray" id="mic-btn" onclick="toggleMic()" style="min-width:90px">🎤 마이크 OFF</button>
         </div>
         <hr class="section-divider">
         <div style="margin-bottom:6px;font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600">공구함</div>
@@ -495,11 +496,13 @@ const robotMap = {
   _default:{ cls: 'badge-gray',   label: '—' },
 };
 const plcMap = {
-  idle:    { cls: 'badge-green',  label: '정상' },
-  moving:  { cls: 'badge-yellow', label: '이동' },
-  error:   { cls: 'badge-red',    label: '오류' },
-  e_stop:  { cls: 'badge-red',    label: 'E-STOP' },
-  _default:{ cls: 'badge-gray',   label: '—' },
+  idle:      { cls: 'badge-green',  label: '정상' },
+  listening: { cls: 'badge-yellow', label: '대기' },
+  inferring: { cls: 'badge-blue',   label: '분석중' },
+  moving:    { cls: 'badge-yellow', label: '이동' },
+  error:     { cls: 'badge-red',    label: '오류' },
+  e_stop:    { cls: 'badge-red',    label: 'E-STOP' },
+  _default:  { cls: 'badge-gray',   label: '—' },
 };
 const toolStatusMap = {
   in_slot:   { cls: 'badge-green',  label: 'in_slot' },
@@ -535,7 +538,33 @@ function renderDetections(dets, elId) {
     </div>`).join('');
 }
 
+function toggleMic() {
+  fetch('/action/mic_toggle', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      const btn = document.getElementById('mic-btn');
+      if (d.mic_active) {
+        btn.textContent = '🎤 마이크 ON';
+        btn.style.background = 'var(--yellow,#e3b341)';
+        btn.style.color = '#000';
+      } else {
+        btn.textContent = '🎤 마이크 OFF';
+        btn.style.background = '';
+        btn.style.color = '';
+      }
+    });
+}
+
 function updateState(s) {
+  // 마이크 버튼 동기화
+  if (s.mic_active !== undefined) {
+    const btn = document.getElementById('mic-btn');
+    if (btn) {
+      btn.textContent = s.mic_active ? '🎤 마이크 ON' : '🎤 마이크 OFF';
+      btn.style.background = s.mic_active ? 'var(--yellow,#e3b341)' : '';
+      btn.style.color = s.mic_active ? '#000' : '';
+    }
+  }
   // 이동 중 표시
   document.getElementById('moving-badge').style.display = s.is_moving ? 'inline' : 'none';
   document.getElementById('st-robot').innerHTML = badge(String(s.is_moving), robotMap);
@@ -589,24 +618,27 @@ function updateState(s) {
   }
 
   // 핸드오버 손 감지 배지 (탑뷰 위 오버레이)
-  const badge = document.getElementById('hand-status-badge');
-  if (badge) {
+  const handBadge = document.getElementById('hand-status-badge');
+  if (handBadge) {
     const topImg = document.getElementById('cam-top');
     const isHandOverlay = topImg && topImg.src && topImg.src.includes('hand_overlay');
     if (isHandOverlay) {
-      badge.style.display = 'block';
+      handBadge.style.display = 'block';
+      // hand_debug 텍스트에서 stable=N/M 진행도 추출 (예전 hand_viz stable 표시 복원)
+      const m = (s.hand_debug || '').match(/stable=\d+\/\d+/);
+      const stable = m ? '  ' + m[0] : '';
       if (s.hand_ready) {
-        badge.style.background = 'rgba(0,200,80,.85)';
-        badge.style.color = '#fff';
+        handBadge.style.background = 'rgba(0,200,80,.85)';
+        handBadge.style.color = '#fff';
         const p = s.hand_pose;
-        badge.textContent = p ? `LOCK  x=${p.x} y=${p.y} z=${p.z}mm` : 'LOCK';
+        handBadge.textContent = p ? `LOCK  x=${p.x} y=${p.y} z=${p.z}mm` : 'LOCK';
       } else {
-        badge.style.background = 'rgba(200,120,0,.75)';
-        badge.style.color = '#fff';
-        badge.textContent = 'WAITING';
+        handBadge.style.background = 'rgba(200,120,0,.75)';
+        handBadge.style.color = '#fff';
+        handBadge.textContent = 'WAITING' + stable;
       }
     } else {
-      badge.style.display = 'none';
+      handBadge.style.display = 'none';
     }
   }
 }

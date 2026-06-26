@@ -140,6 +140,7 @@ class DashboardNode(Node):
         # ── 공유 상태 ────────────────────────────────────────────────────
         self._state: dict[str, Any] = {
             "is_moving": False,
+            "mic_active": True,   # orchestrator 기본값(listening)과 동기화
             "plc_state": "unknown",
             "tool_status": "unknown",
             "tool_id": "socket_19mm",
@@ -153,6 +154,7 @@ class DashboardNode(Node):
             ],
             "hand_ready": False,
             "hand_pose": None,
+            "hand_debug": "",
         }
         self._state_lock = threading.Lock()
         self._gripper_history: deque[float] = deque(maxlen=_GRIPPER_CURRENT_MAXLEN)
@@ -187,6 +189,7 @@ class DashboardNode(Node):
         qos_be_hand = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.BEST_EFFORT)
         self.create_subscription(Bool, "/hand/ready", self._on_hand_ready, qos_be_hand)
         self.create_subscription(PoseStamped, "/hand/pose", self._on_hand_pose_msg, qos_be_hand)
+        self.create_subscription(String, "/hand/debug", self._on_hand_debug, qos_be_hand)
         if _HANDS_OK:
             self.create_subscription(
                 HandsMsgType, "/hands/detections", self._on_hands_det, qos_be_hand
@@ -213,6 +216,8 @@ class DashboardNode(Node):
 
         # ── ROS2 발행자 / 서비스 클라이언트 ─────────────────────────────
         self._intent_pub = self.create_publisher(Intent, "/voice/intent", 1)
+        self._plc_state_pub = self.create_publisher(String, "/plc/system_state", 1)
+        self._mic_active_pub = self.create_publisher(Bool, "/voice/mic_active", 1)
         self._plc_reset_pub = self.create_publisher(Bool, "/plc_reset", 1)
         self._home_cli        = self.create_client(Trigger, "/tool_action_server/home")
         self._estop_cli       = self.create_client(Trigger, "/tool_action_server/estop")
@@ -303,6 +308,11 @@ class DashboardNode(Node):
                 "z": round(p.z * 1000, 1),
             }
 
+    def _on_hand_debug(self, msg: String) -> None:
+        # hand_node가 1초마다 발행하는 상태 텍스트 (stable=N/90, hand_rx, depth_rx 등)
+        with self._state_lock:
+            self._state["hand_debug"] = msg.data
+
     def _on_hands_det(self, msg) -> None:
         with self._hand_lock:
             self._hand_landmarks = [list(h.landmarks_canon) for h in msg.hands]
@@ -334,6 +344,20 @@ class DashboardNode(Node):
                 for i, (x, y, _) in enumerate(pts):
                     c = (0, 100, 255) if i in tip_indices else (255, 255, 255)
                     cv2.circle(img, (int(x), int(y)), 5 if i in tip_indices else 3, c, -1)
+
+                # 손잡이 방향 화살표: 새끼MCP(17)→검지MCP(5) 축, 손바닥 중심 기준
+                palm_cx = int(np.mean(pts[[0, 5, 9, 13, 17], 0]))
+                palm_cy = int(np.mean(pts[[0, 5, 9, 13, 17], 1]))
+                ix, iy = int(pts[5][0]), int(pts[5][1])
+                px17, py17 = int(pts[17][0]), int(pts[17][1])
+                hdx, hdy = ix - px17, iy - py17
+                hlen = max(1, int(np.hypot(hdx, hdy)))
+                sc = 50.0 / hlen
+                arrow_tip = (int(palm_cx + hdx * sc), int(palm_cy + hdy * sc))
+                arrow_tail = (int(palm_cx - hdx * sc), int(palm_cy - hdy * sc))
+                cv2.arrowedLine(img, arrow_tail, arrow_tip, (0, 255, 255), 2, tipLength=0.25)
+                cv2.putText(img, "HANDLE", (arrow_tip[0] + 4, arrow_tip[1] - 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 255), 1)
 
             # ROI 박스
             cfg = self._hand_overlay_cfg
@@ -667,6 +691,16 @@ class DashboardNode(Node):
         self._plc_reset_pub.publish(msg)
         return {"success": True, "message": "PLC 리셋 신호 전송 완료 (/plc_reset)"}
 
+    def _mic_toggle(self) -> dict:
+        with self._state_lock:
+            self._state["mic_active"] = not self._state["mic_active"]
+            active = self._state["mic_active"]
+        # PLC 상태는 orchestrator/plc_node가 권한을 가짐 — 여기서는 voice gate만 제어
+        mic_msg = Bool()
+        mic_msg.data = active
+        self._mic_active_pub.publish(mic_msg)
+        return {"success": True, "mic_active": active}
+
     def _get_ros2_nodes(self) -> list[str]:
         try:
             r = subprocess.run(
@@ -900,6 +934,10 @@ class DashboardNode(Node):
         @app.post("/action/plc_reset")
         def action_plc_reset():
             return self._plc_reset()
+
+        @app.post("/action/mic_toggle")
+        def action_mic_toggle():
+            return self._mic_toggle()
 
         @app.get("/api/system/nodes")
         def api_system_nodes():

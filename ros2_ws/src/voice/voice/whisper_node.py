@@ -21,7 +21,7 @@ import time
 import rclpy
 from interfaces.msg import RobotStatus
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 from voice.audio_input import (
     SAMPLE_RATE_HZ,
@@ -67,7 +67,7 @@ class WhisperNode(Node):
             "whisper_initial_prompt",
             (
                 "코봇, 코버, 코보, 코부, 고봇, 고버, 고보, 고부, 꼬부, "
-                "공구함, 두산 로봇, 스테이징, 십자 드라이버, 커터칼, 라쳇 렌치, "
+                "공구함, 두산 로봇, 스테이징, 십자 드라이버, 커터칼, 렌치, 라쳇 렌치, "
                 "멕가이버, 스패너 16mm, 복스 소켓 19mm, 가져와, 꺼내줘, 반납, "
                 "돌려놔, 취소"
             ),
@@ -93,6 +93,7 @@ class WhisperNode(Node):
 
         # /robot/status 콜백과 마이크 worker thread가 공유하는 상태다.
         self._is_moving = False
+        self._mic_enabled = True   # /voice/mic_active 토픽으로 런타임 on/off
         self._state_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._recorder: MicRecorder | None = None
@@ -109,6 +110,13 @@ class WhisperNode(Node):
             self._handle_robot_status,
             1,
         )
+        # 대시보드 마이크 on/off 토글
+        self.create_subscription(
+            Bool,
+            "/voice/mic_active",
+            self._handle_mic_active,
+            1,
+        )
 
         enable_microphone = self.get_parameter(
             "enable_microphone"
@@ -122,6 +130,12 @@ class WhisperNode(Node):
         with self._state_lock:
             self._is_moving = bool(message.is_moving)
 
+    def _handle_mic_active(self, message: Bool) -> None:
+        """대시보드 마이크 on/off 토글 — /voice/mic_active 구독."""
+        with self._state_lock:
+            self._mic_enabled = bool(message.data)
+        self.get_logger().info(f"[whisper] 마이크 {'활성화' if message.data else '비활성화'}")
+
     def publish_transcript(self, transcript: str) -> bool:
         """STT 결과를 `/voice/raw_text`로 publish한다.
 
@@ -129,6 +143,11 @@ class WhisperNode(Node):
             publish했으면 True, 로봇 이동 중이거나 빈 문자열이면 False.
         """
 
+        with self._state_lock:
+            mic_enabled = self._mic_enabled
+        if not mic_enabled:
+            self.get_logger().debug("voice input blocked: 마이크 비활성화")
+            return False
         if self._robot_is_moving():
             self.get_logger().warning(
                 "voice input blocked because robot is moving"

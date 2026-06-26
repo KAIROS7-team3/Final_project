@@ -179,9 +179,10 @@ class GemmaIntentNode(Node):
             if not command_text:
                 return
             with self._context_lock:
+                prev = self._pending_context.replace("\x00", "").strip()
                 self._pending_context = (
-                    self._pending_context + " " + command_text
-                ).strip()
+                    (prev + " " + command_text).strip() if prev else command_text
+                )
                 context = self._pending_context
         else:
             # 첫 발화 — 웨이크워드 게이트 적용
@@ -193,7 +194,10 @@ class GemmaIntentNode(Node):
                 return
             command_text = gate.command_text.strip()
             if not command_text:
-                # 웨이크워드만 — 누적 모드 시작
+                # 웨이크워드만 — 누적 모드 시작 (_pending_context에 sentinel 세팅)
+                with self._context_lock:
+                    self._pending_context = "\x00"  # 비어있지 않음, Gemma엔 전달 안 됨
+                    self._followup_count = 0
                 self._reset_context_timer()
                 self.get_logger().info("웨이크워드 감지 — 명령을 말씀해주세요...")
                 return

@@ -128,8 +128,7 @@ def build_fetch_subtree(
             "SetMoving_false",
             publish_fn=publish_status_fn,
             is_moving=False,
-            set_plc_fn=set_plc_fn,
-            plc_state="idle",
+            # PLC 상태는 orchestrator finally가 단독 설정 — 이중 M0100 펄스 방지
         ),
     ])
 
@@ -144,6 +143,7 @@ def build_fetch_subtree(
             set_plc_fn=set_plc_fn,
             log_error_fn=log_error_fn,
             layer_id=layer_id,
+            on_close_drawer=on_close_drawer,
         ),
     ])
 
@@ -243,8 +243,7 @@ def build_handover_fetch_subtree(
             "SetMoving_false",
             publish_fn=publish_status_fn,
             is_moving=False,
-            set_plc_fn=set_plc_fn,
-            plc_state="idle",
+            # PLC 상태는 orchestrator finally가 단독 설정 — 이중 M0100 펄스 방지
         ),
     ])
 
@@ -258,6 +257,7 @@ def build_handover_fetch_subtree(
             set_plc_fn=set_plc_fn,
             log_error_fn=log_error_fn,
             layer_id=layer_id,
+            on_close_drawer=on_close_drawer,
         ),
     ])
 

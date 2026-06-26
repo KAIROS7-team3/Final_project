@@ -37,6 +37,7 @@ class RunAction(py_trees.behaviour.Behaviour):
         max_attempts: int = 1,
         feedback_callback: Callable[[str], None] | None = None,
         success_callback: Callable[[], None] | None = None,
+        no_retry_after_marker: str | None = None,
     ) -> None:
         super().__init__(name=name)
         self._client = action_client
@@ -45,6 +46,8 @@ class RunAction(py_trees.behaviour.Behaviour):
         self._max_attempts = max_attempts
         self._feedback_callback = feedback_callback
         self._success_callback = success_callback
+        self._no_retry_after_marker = no_retry_after_marker
+        self._marker_done = False  # no_retry_after_marker 수신 여부
         self.blackboard = self.attach_blackboard_client(name=name)
         self.blackboard.register_key(
             key=KEY_ACTIVE_TOOL_ID, access=py_trees.common.Access.READ
@@ -53,6 +56,7 @@ class RunAction(py_trees.behaviour.Behaviour):
     def update(self) -> py_trees.common.Status:
         tool_id = self.blackboard.active_tool_id or ""
         goal = self._build_goal_fn(tool_id)
+        self._marker_done = False  # 매 tick 초기화
 
         for attempt in range(self._max_attempts):
             if attempt > 0:
@@ -61,6 +65,21 @@ class RunAction(py_trees.behaviour.Behaviour):
                 )
             status = self._send_and_wait(goal)
             if status == py_trees.common.Status.SUCCESS:
+                if self._success_callback is not None:
+                    try:
+                        self._success_callback()
+                    except Exception as exc:
+                        self.logger.error(f"[{self.name}] success_callback 예외: {exc}")
+                return py_trees.common.Status.SUCCESS
+
+            # no_retry_after_marker를 이미 수신했으면 비가역적 동작(슬롯 거치)이
+            # 완료된 것이므로 재시도 없이 SUCCESS로 처리한다.
+            # (이후 HOME 타임아웃 등 후처리 실패는 무시)
+            if self._marker_done:
+                self.logger.warning(
+                    f"[{self.name}] '{self._no_retry_after_marker}' 완료 후 실패 — "
+                    "비가역 동작 성공으로 간주, retry 생략"
+                )
                 if self._success_callback is not None:
                     try:
                         self._success_callback()
@@ -93,10 +112,16 @@ class RunAction(py_trees.behaviour.Behaviour):
             done.set()
 
         def _on_feedback(feedback_msg):
+            phase = feedback_msg.feedback.phase
+            if (
+                self._no_retry_after_marker is not None
+                and phase == self._no_retry_after_marker
+            ):
+                self._marker_done = True
             if self._feedback_callback is None:
                 return
             try:
-                self._feedback_callback(feedback_msg.feedback.phase)
+                self._feedback_callback(phase)
             except Exception as exc:
                 self.logger.error(f"[{self.name}] feedback 콜백 예외: {exc}")
 

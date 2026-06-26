@@ -202,8 +202,18 @@ class HandNode(Node):
         self._depth_count: int = 0
         self._hand_count: int = 0
 
+        # depth 토픽은 realsense launch의 camera_namespace에 따라 달라진다:
+        #   vision_pipeline.launch (namespace="")     → /d455f/aligned_depth_to_color/image_raw  (기본)
+        #   realsense_bringup.launch (namespace=d455f) → /d455f/d455f/aligned_depth_to_color/image_raw
+        # 통합 운용은 vision_pipeline 기준이므로 single 네임스페이스를 기본값으로 둔다.
+        self._depth_topic: str = (
+            self.declare_parameter(
+                "depth_topic", "/d455f/aligned_depth_to_color/image_raw"
+            ).get_parameter_value().string_value
+        )
+        self.get_logger().info(f"[hand_node] depth 토픽 구독: {self._depth_topic}")
         self.create_subscription(
-            Image, "/d455f/d455f/aligned_depth_to_color/image_raw",
+            Image, self._depth_topic,
             self._on_depth, _QOS_DEPTH,
         )
         self.create_subscription(
@@ -356,19 +366,15 @@ class HandNode(Node):
                     self._publish_ready(False)
                     return
 
-                # 위치 업데이트 구간: 3~15cm → lock 갱신 + 재안정화 (로봇 정지)
+                # 위치 업데이트 구간: 3~15cm → lock 좌표 즉시 갱신 (재안정화 없음)
                 if dist_3d >= self._lock_update_dist:
                     self._locked_pos = palm_pos_base.copy()
                     self._locked_quat = _palm_normal_to_quat(palm_normal_base, finger_dir_base)
-                    self._locked = False          # 재안정화 필요
-                    self._pose_history.clear()    # stable 카운트 초기화
                     self.get_logger().info(
-                        f"[hand_node] 손 이동 감지 — 로봇 정지, 재안정화 대기 "
+                        f"[hand_node] 손 이동 → 좌표 갱신 "
                         f"(이동 {dist_3d:.3f}m) "
                         f"→ ({self._locked_pos[0]:.3f},{self._locked_pos[1]:.3f},{self._locked_pos[2]:.3f})"
                     )
-                    self._publish_ready(False)
-                    return
 
             yaw_deg = float(
                 Rotation.from_quat(self._locked_quat).as_euler("xyz", degrees=True)[2]
@@ -390,7 +396,7 @@ class HandNode(Node):
                 f"[LOCKED] xyz=({self._locked_pos[0]:.3f},{self._locked_pos[1]:.3f},{self._locked_pos[2]:.3f})"
             )
 
-            self._publish_pose(hand_msg.header.stamp)
+            self._publish_pose(hands_msg.header.stamp)
             self._publish_ready(True)
 
     # ─── 내부 계산 ────────────────────────────────────────────────────────────

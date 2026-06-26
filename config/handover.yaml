@@ -19,7 +19,7 @@ handover:
   min_fingers_open: 3              # 4개 손가락(검지~새끼) 중 최소 N개 펼침
 
   # ── Phase 3: 안정성 확인 ────────────────────────────────────────────────
-  stable_frames: 90                # 연속 안정 프레임 수 (@30fps ≈ 3s)
+  stable_frames: 50                # 연속 안정 프레임 수 (@30fps ≈ 3s)
   stable_threshold_m: 0.02         # 위치 변화 허용 범위 (2cm)
 
   # lock 후 감지 소실 허용 프레임 (occlusion 대응)

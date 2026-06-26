@@ -59,6 +59,8 @@ from interfaces.action import ExecutePhase
 from motion.sequence_engine import SequenceEngine
 
 from unit_actions.toolbox_motion import (
+    StepKind, PULSE_RELEASE, PULSE_GRIP_TOOL,
+    VEL_L, ACC_L, VEL_R, ACC_R,
     drawer_close_seq,
     drawer_open_seq,
     drawer_open_seq_v2,
@@ -99,15 +101,11 @@ _DEFAULT_CONFIG_PATH = str(
 )
 _STANDALONE_LAYER   = 1   # ~/open_toolbox · ~/close_toolbox 기본 layer
 
-# 핸드오버 속도 (S-6: approach_action_scale=0.2 기준)
-_HANDOVER_VEL_L: float = 5.0    # mm/s  (10.0 × 0.5)
+# 핸드오버 최종 접근 속도 (S-6: approach_action_scale=0.2 기준, 손 위 30mm→0mm 구간)
+_HANDOVER_VEL_L: float = 5.0    # mm/s
 _HANDOVER_ACC_L: float = 20.0
 _HANDOVER_VEL_R: float = 2.5    # deg/s
 _HANDOVER_ACC_R: float = 10.0
-_HANDOVER_PRE_VEL_L: float = VEL_L / 3.0   # pre_approach: 일반 속도 1/3 (30mm 여유 충돌 방지)
-_HANDOVER_PRE_ACC_L: float = ACC_L / 3.0
-_HANDOVER_PRE_VEL_R: float = VEL_R / 3.0
-_HANDOVER_PRE_ACC_R: float = ACC_R / 3.0
 
 # 핸드오버 rx/ry — fetch/place와 동일한 tool_approach_ori 기준 (RX=180, RY=180)
 _HANDOVER_RX: float = 180.0
@@ -264,7 +262,7 @@ class ExecutePhaseServer(Node):
             PlaceOnHand,
             "place_on_hand",
             execute_callback=self._on_place_on_hand,
-            goal_callback=self._goal_callback,
+            goal_callback=self._handover_goal_callback,
             cancel_callback=self._cancel_callback,
             callback_group=self._normal_cbg,
         )
@@ -273,7 +271,7 @@ class ExecutePhaseServer(Node):
             PlaceOnHand,
             "place_on_hand_test",
             execute_callback=self._on_place_on_hand_test,
-            goal_callback=self._goal_callback,
+            goal_callback=self._handover_goal_callback,
             cancel_callback=self._cancel_callback,
             callback_group=self._normal_cbg,
         )
@@ -319,6 +317,14 @@ class ExecutePhaseServer(Node):
         msg.data = state
         self._plc_pub.publish(msg)
 
+    def _set_tcp(self) -> None:
+        """TCP 설정 — engine에 위임 (startup timer와 동일)."""
+        self._engine.set_tcp()
+
+    def _publish_status(self, is_moving: bool) -> None:
+        """is_moving 상태 발행 — BT SetMoving 노드가 주 발행자이므로 로그만 기록."""
+        self.get_logger().debug(f"[TAS] _publish_status is_moving={is_moving}")
+
     # ── 액션 goal / cancel 핸들러 ────────────────────────────────────────────
 
     def _goal_callback(self, goal_request) -> GoalResponse:
@@ -328,6 +334,13 @@ class ExecutePhaseServer(Node):
         phase = getattr(goal_request, "phase", "")
         if phase not in _VALID_PHASES:
             self.get_logger().warn(f"[TAS] goal 거부 — 알 수 없는 phase: {phase!r}")
+            return GoalResponse.REJECT
+        return GoalResponse.ACCEPT
+
+    def _handover_goal_callback(self, goal_request) -> GoalResponse:
+        """PlaceOnHand / PlaceOnHand_test 전용 goal callback — phase 체크 없음."""
+        if self._engine.estop_triggered:
+            self.get_logger().warn("[TAS] goal 거부 — E-stop 래치 활성")
             return GoalResponse.REJECT
         return GoalResponse.ACCEPT
 
@@ -545,7 +558,7 @@ class ExecutePhaseServer(Node):
             self.get_logger().info(f"[TAS] place_on_hand 시작: tool_id={tool_id}")
             self._set_tcp()
             self._publish_status(is_moving=True)
-            self._set_plc("moving")
+            # PLC "moving" 상태는 BT SetMoving_true가 이미 설정함 — 여기서 중복 호출 금지
             self._current_tool_id = tool_id
             self._hand_approach_pos = None
             self._grip_taken = False
@@ -583,7 +596,8 @@ class ExecutePhaseServer(Node):
                 result.success = True
                 if not result.message:
                     result.message = f"place_on_hand 완료: {tool_id}"
-                self._set_plc("idle")
+                # PLC 최종 상태는 BT SetMoving_false + orchestrator finally가 담당 — 여기서 "idle" 호출 금지
+                # (조기 idle 호출 시 close_drawer 전에 초록불 켜지고, M0100 이중 펄스 경쟁 발생)
                 if "staging fallback" not in result.message:
                     self._log_event_async("fetch", f"place_on_hand 성공: tool_id={tool_id}")
                 self.get_logger().info(f"[TAS] place_on_hand 완료: tool_id={tool_id}")
@@ -915,7 +929,8 @@ class ExecutePhaseServer(Node):
         # place 단계에서 재사용할 위치 저장 (approach_height 제외)
         self._hand_approach_pos = [x_mm, y_mm, z_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
 
-        # ── 사전 이동: approach XY로 이동하되 Z는 손 Z + approach_height + 50mm ──
+        # ── 사전 이동: approach XY로 이동하되 Z는 손 Z + approach_height + 30mm ──
+        # 슬롯 → 손 위 이동 거리가 크므로 일반 속도 사용 (안전 높이 확보 후 이동)
         pre_pos = [x_mm, y_mm, z_mm + approach_h_mm + 30.0, _HANDOVER_RX, _HANDOVER_RY, rz]
         self.get_logger().info(
             f"[TAS] hand_pre_approach ({'handle' if handle_first else 'direct'}) "
@@ -923,8 +938,8 @@ class ExecutePhaseServer(Node):
         )
         req = MoveLine.Request()
         req.pos = [float(v) for v in pre_pos]
-        req.vel = [_HANDOVER_PRE_VEL_L, _HANDOVER_PRE_VEL_R]  # 일반 속도 1/3
-        req.acc = [_HANDOVER_PRE_ACC_L, _HANDOVER_PRE_ACC_R]
+        req.vel = [VEL_L, VEL_R]  # 일반 속도 — 슬롯→손 상공 이동은 거리가 크므로 정상 속도
+        req.acc = [ACC_L, ACC_R]
         req.time = 0.0
         req.radius = 0.0
         req.ref = DR_BASE
@@ -941,11 +956,9 @@ class ExecutePhaseServer(Node):
             return False
         self._wait_motion_complete(timeout=60.0)  # 실제 모션 완료 대기
 
-        # pre_approach 이동 중 손이 치워졌을 수 있으므로 재확인 (S-6)
-        _, ready_after = self._get_hand_state()
-        if not ready_after:
-            self.get_logger().warn("[TAS] pre_approach 후 손 감지 소실 — abort (S-6)")
-            return False
+        # pre_approach 완료 시점에 팔이 손 위를 가리므로 카메라 재감지는 시도하지 않는다.
+        # 손 좌표는 step ⑦(WAIT_HAND_POSE) 시점에 이미 lock됐고 _hand_approach_pos에 저장돼 있음.
+        # S-6 손 안정성은 사전(step ⑦)에 검증 완료 → 저장된 좌표로 하강 진행.
 
         # ── 본 approach: XY 유지, Z만 approach 높이로 하강 ──
         dsr_pos = [x_mm, y_mm, z_mm + approach_h_mm, _HANDOVER_RX, _HANDOVER_RY, rz]
@@ -1247,6 +1260,16 @@ class ExecutePhaseServer(Node):
             return self._move_hand_rz_approach(handle_first=True)
         elif step.kind == StepKind.MOVE_L_HAND_PLACE_HANDLE:
             return self._move_hand_place(handle_first=True)
+        elif step.kind in (
+            StepKind.MOVE_L_SLOT_XY,
+            StepKind.MOVE_L_SLOT_XYZ_FETCH,
+            StepKind.MOVE_L_SLOT_XYZ,
+            StepKind.MOVE_L_STAGING_PLACE,
+            StepKind.MOVE_L_STAGING_XYZ,
+        ):
+            # SequenceEngine이 toolbox.yaml 기반 slot/staging 좌표를 보유 → 위임
+            self._engine._tool_id = self._current_tool_id
+            return self._engine._exec_step(step)
         self.get_logger().warn(f"  알 수 없는 StepKind: {step.kind}")
         return False
 
@@ -1305,6 +1328,9 @@ class ExecutePhaseServer(Node):
 
     def _grip(self, step) -> bool:
         pulse = step.pulse if step.pulse is not None else 0
+        # 공구별 grip_stroke 오버라이드 적용 (toolbox.yaml, engine._grip_stroke_map)
+        if pulse == PULSE_GRIP_TOOL and self._current_tool_id in self._engine._grip_stroke_map:
+            pulse = self._engine._grip_stroke_map[self._current_tool_id]
         current = _GRIP_CURRENT if pulse >= PULSE_RELEASE else 0
         req = GripperSetPosition.Request()
         req.position = pulse

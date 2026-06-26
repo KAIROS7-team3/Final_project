@@ -102,6 +102,7 @@ def build_return_subtree(
             timeout_sec=180.0,
             max_attempts=max_return_attempts,
             feedback_callback=_on_return_feedback,
+            no_retry_after_marker="place",  # 슬롯 거치 완료 후 HOME 실패 시 retry 금지
         ),
         RunAction(
             name="RunAction_close_drawer",
@@ -114,8 +115,7 @@ def build_return_subtree(
             "SetMoving_false",
             publish_fn=publish_status_fn,
             is_moving=False,
-            set_plc_fn=set_plc_fn,
-            plc_state="idle",
+            # PLC 상태는 orchestrator finally가 단독 설정 — 이중 M0100 펄스 방지
         ),
     ])
 
