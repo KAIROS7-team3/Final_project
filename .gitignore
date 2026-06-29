@@ -38,6 +38,7 @@ __pycache__/
 .venv/
 venv/
 env/
+handpose_venv/
 *.egg-info/
 dist/
 build/

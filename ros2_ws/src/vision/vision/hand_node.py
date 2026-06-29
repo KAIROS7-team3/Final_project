@@ -18,6 +18,7 @@ Publish:
 """
 from __future__ import annotations
 
+import os
 import time
 import threading
 from collections import deque
@@ -38,7 +39,18 @@ from std_msgs.msg import Bool, String
 from handpose_interfaces.msg import Hands, HandLandmarks
 from vision.hand_eye_loader import HandEyeNotCalibratedError, camera_to_base, load_transform
 
-_CFG_DIR = Path(__file__).parents[4] / "config"
+def _find_cfg_dir() -> Path:
+    if env_root := os.environ.get("FINAL_PROJECT_ROOT"):
+        return Path(env_root) / "config"
+    # 설치 경로(install/.../site-packages/vision/)와 소스 경로(src/vision/vision/) 모두 대응:
+    # config/hand_eye.yaml이 있는 디렉터리를 부모를 따라 올라가며 탐색
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "config" / "hand_eye.yaml"
+        if candidate.exists():
+            return parent / "config"
+    return Path(__file__).parents[4] / "config"  # 최후 fallback
+
+_CFG_DIR = _find_cfg_dir()
 _HAND_EYE_PATH = _CFG_DIR / "hand_eye.yaml"
 _CAMERA_INFO_PATH = _CFG_DIR / "camera_info.yaml"
 _HANDOVER_CFG_PATH = _CFG_DIR / "handover.yaml"

@@ -64,9 +64,22 @@ DB 연결 실패 시 캐시 TTL(5분) 내에서만 동작. TTL 초과 → 모든
 
 ## S-8. FOD 상태 전이 무결성
 
-- `out` 또는 `staged` 상태가 임계 시간(기본 10분, `config/fod.yaml`)을 초과하면 `missing` 자동 전환
-- `missing` → 30초 내 `fod_alert` + PLC 노랑 점멸
-- `missing` 또는 `fod_alert` 상태의 공구는 모든 `fetch` 거부
+  ### staged → missing (비전 기반, 상시 관제)
+  - `staged` 공구가 탑뷰 카메라(`/vision/detections/top_view`)에서 **60초 연속 미감지**되면 `missing` 자동 전환
+  - BT pick-from-staging이 정상 실행된 경우는 DB 전이가 선행되므로 오탐 없음
+  - 노드 기동 직후에는 staged 공구에 60초 유예(grace) 부여 — 초기 미감지를 missing으로 오판하지 않음
+
+  ### out → missing (타임아웃 기반)
+  - `out` 상태가 `checkout_timeout_minutes`(기본 10분, `config/fod.yaml`)을 초과하면 `missing` 전환
+  - operator가 공구를 들고 있는 동안은 탑뷰로 감지 불가 → 타임아웃으로만 판단
+
+  ### missing → fod_alert
+  - `missing` 상태가 30분 지속되면 `fod_alert` + PLC 노랑 점멸
+  - 즉각 경보가 아닌 30분 유예를 두어 작업자가 정비 목적으로 가져간 정상 케이스를 구분
+
+  ### 공통
+  - `missing` 또는 `fod_alert` 상태의 공구는 모든 `fetch` 거부
+  - 파라미터: `config/fod.yaml` (`staging_vision_timeout_s`, `checkout_timeout_minutes`, `missing_to_alert_seconds`)
 
 ## S-9. 부팅 시 reconciliation
 

@@ -414,6 +414,74 @@ class ToolRepository:
 
         return updates
 
+    def get_tools_by_status(self, status: str) -> list[dict]:
+        """특정 status인 공구 목록을 반환한다 (tool_id 포함)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT tool_id, current_status, last_updated FROM tools WHERE current_status = ?",
+                (status,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_staged_vision_missing(self, tool_id: str) -> FodUpdate | None:
+        """staged 공구가 탑뷰 카메라에서 연속 미감지되어 missing으로 전이한다 (S-8).
+
+        현재 상태가 staged가 아니면 아무 것도 하지 않고 None을 반환한다.
+        (BT pick-from-staging이 선행 완료돼 이미 다른 상태면 오탐이 아님)
+        """
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT current_status FROM tools WHERE tool_id = ?", (tool_id,)
+            ).fetchone()
+            if row is None or str(row["current_status"]) != "staged":
+                conn.rollback()
+                return None
+            event_id = self._insert_tool_event(
+                conn=conn,
+                tool_id=tool_id,
+                event_type="timeout",
+                track=None,
+                status_before="staged",
+                status_after="missing",
+                notes="vision-based: not detected in top_view for staging_vision_timeout_s",
+                timestamp=now,
+            )
+            self._update_tool_row(conn, tool_id, "missing", event_id, now)
+            conn.commit()
+        return FodUpdate(tool_id, "staged", "missing")
+
+    def mark_missing_staged_recovery(self, tool_id: str) -> FodUpdate | None:
+        """missing 공구가 탑뷰에서 연속 감지되어 staged로 복구한다 (S-8 역방향).
+
+        현재 상태가 missing이 아니면 아무 것도 하지 않고 None을 반환한다.
+        """
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT current_status FROM tools WHERE tool_id = ?", (tool_id,)
+            ).fetchone()
+            if row is None or str(row["current_status"]) != "missing":
+                conn.rollback()
+                return None
+            event_id = self._insert_tool_event(
+                conn=conn,
+                tool_id=tool_id,
+                event_type="reconciled",
+                track=None,
+                status_before="missing",
+                status_after="staged",
+                notes="vision-based recovery: detected in top_view for staging_vision_timeout_s",
+                timestamp=now,
+            )
+            self._update_tool_row(conn, tool_id, "staged", event_id, now)
+            conn.commit()
+        return FodUpdate(tool_id, "missing", "staged")
+
     def log_rejection(
         self,
         tool_id: str,

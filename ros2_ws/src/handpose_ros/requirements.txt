@@ -1,0 +1,17 @@
+# handpose_venv 검증 버전 고정 (Python 3.10).
+#
+# ⚠️ numpy는 반드시 1.x. mediapipe·cv_bridge·cv2 모두 numpy 1.x C-ABI로 빌드돼
+#    있어 numpy 2.x로 올리면 cv_bridge import 시 `_ARRAY_API not found`로 죽고
+#    mediapipe 본체도 크래시한다.
+#
+# 설치:
+#   python3.10 -m venv handpose_venv
+#   handpose_venv/bin/pip install -r ros2_ws/src/handpose_ros/requirements.txt
+#
+# pyrealsense2는 librealsense2 SDK 버전과 맞춰야 하므로 여기서 고정하지 않는다.
+# (검증 환경: librealsense2 2.57.x + pyrealsense2==2.57.7.10387)
+numpy==1.26.4
+mediapipe==0.10.14
+opencv-contrib-python==4.11.0.86
+scipy==1.15.3
+protobuf==4.25.9

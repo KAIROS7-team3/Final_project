@@ -4,21 +4,22 @@
 # 참조: .claude/rules/safety.md S-8, docs/decisions.md ADR / 결정 #8
 
 schema:
-  version: 1
-  required: [checkout_timeout_minutes, alert_grace_seconds]
-  optional: [staging_recheck_interval_seconds, missing_to_alert_seconds]
+  version: 2
+  required: [checkout_timeout_minutes, missing_to_alert_seconds, staging_vision_timeout_s]
+  optional: []
 
-# 공구 대출 임계 시간 — 이 시간을 넘기면 missing 상태로 자동 전환 (S-8)
-# 결정 #8: 기본 10분, 운영 상황에 따라 조정 가능
+# ── staged → missing: 비전 기반 (S-8) ──────────────────────────────────────
+# /vision/detections/top_view 에서 staged 공구가 이 시간(초) 연속 미감지되면 missing 전환.
+# 로봇팔 일시 가림·YOLO 오탐 방지를 위해 60초로 설정.
+staging_vision_timeout_s: 60
+
+# ── out → missing: 타임아웃 기반 (S-8) ──────────────────────────────────────
+# operator가 공구를 손에 들고 있는 동안은 탑뷰 감지 불가 → 타임아웃으로만 판단.
 checkout_timeout_minutes: 10
 
-# missing 전환 후 fod_alert (PLC 노랑 점멸)까지 유예 시간 (S-8)
-# 수락 기준: FOD 알림이 공구 분실 후 30초 이내 (docs/conventions.md)
-missing_to_alert_seconds: 30
-
-# Staging Area 무단 회수 감지 (결정 #26)
-# idle 상태에서 주기적으로 YOLOv11s로 staging 슬롯 확인
-staging_recheck_interval_seconds: 60
+# ── missing → fod_alert: 30분 유예 (S-8) ──────────────────────────────────
+# 정비 목적 반출(정상 케이스)과 실제 분실을 구분하기 위해 30분(1800초) 유예.
+missing_to_alert_seconds: 1800
 
 # 부팅 시 reconciliation (S-9)
 boot_reconciliation:

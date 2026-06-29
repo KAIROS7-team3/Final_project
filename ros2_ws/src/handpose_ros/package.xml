@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>handpose_ros</name>
+  <version>0.1.0</version>
+  <description>MediaPipe 손 감지 ROS2 노드 — /hands/detections 발행.</description>
+  <maintainer email="seojunsoo312@gmail.com">KAIROS7-team3</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>handpose_interfaces</depend>
+
+  <exec_depend>python3-opencv</exec_depend>
+
+  <test_depend>ament_pep8</test_depend>
+  <test_depend>ament_pyflakes</test_depend>
+  <test_depend>pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
